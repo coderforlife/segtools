@@ -1,4 +1,4 @@
-histogram_equalizer
+segtools
 ===================
 
-Contains matlab scripts to histogram equalize a set of images
+Contains tools to assist in segmentation of EM data
