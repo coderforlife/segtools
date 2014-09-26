@@ -1,14 +1,15 @@
+
+
 These scripts were pulled from rocce and were located
-in /data/scratch/aperez/ZT16
-
-exact_histogram.m        generate_reference.m   mrcstack2png.sh  process_td.sh  run_ehs.m
-find_nonborder_pixels.m  
-
+in /data/scratch/aperez/ZT16.  They are scripts Alex uses
+to extract png files from mrc stack and to histogram equalize
+those png files
 
 mrcstack2png.sh
 ===============
 
 Converts .mrc file to png files
+
 
 generate_reference.sh  
 =====================
@@ -27,7 +28,12 @@ run_ehs.sh
 ==========
 
 Calls run_ehs.m to histogram equalize the images using the histogram files from
-generate_reference.sh
+generate_reference.sh.  Alex mentioned this needs matlab r2013a or better to work
 
 
+compiled_versions
+=================
 
+This directory contains slightly altered versions of above scripts that have
+been compiled via the matlab compiler.  See the README.md within that
+directory for more information
