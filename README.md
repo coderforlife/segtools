@@ -10,5 +10,5 @@ Python segmentation tools.
 
 rawscripts
 ----------
-This directory contains scripts pulled from various directories. These are priamrily for reference
+This directory contains scripts pulled from various directories. These are primarily for reference
 and eventually need to be adapated into some user-friendly system.
