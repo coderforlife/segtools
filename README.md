@@ -1,9 +1,14 @@
 segtools
 ===================
-
 Contains tools to assist in segmentation of EM data
 
-rawscripts
-==========
 
-This directory contains scripts pulled from various directories.  
+pysegtools
+----------
+Python segmentation tools.
+
+
+rawscripts
+----------
+This directory contains scripts pulled from various directories. These are priamrily for reference
+and eventually need to be adapated into some user-friendly system.
