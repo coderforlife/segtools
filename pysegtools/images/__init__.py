@@ -2,3 +2,4 @@
 
 from io import *
 from types import *
+from colors import *
