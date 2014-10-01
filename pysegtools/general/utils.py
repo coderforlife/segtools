@@ -1,19 +1,20 @@
 def check_reqs(scipy = True, numpy = True, PIL = True, psutil = False):
     """Checks to see if the required 3rd-party modules are available for import."""
-    def __die(name):
+    def __die(name, module_name = None):
+        if module_name == None: name = module_name
         from sys import stderr, exit
         print >> stderr, "Could not import the required module %s" % name
-        print >> stderr, "Try running 'easy_install %s' to install it" % name
+        print >> stderr, "Try running `pip %s` or `easy_install %s` to install it" % module_name, module_name
         exit(1)
-    if scipy:
-        try: import scipy
-        except: __die('scipy')
     if numpy:
         try: import numpy
         except: __die('numpy')
+    if scipy:
+        try: import scipy
+        except: __die('scipy')
     if PIL:
         try: import PIL
-        except: __die('PIL')
+        except: __die('PIL', 'Pillow')
     if psutil:
         try: import psutil
         except: __die('psutil')
