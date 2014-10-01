@@ -160,7 +160,7 @@ class Task:
         """
         self.pid = p.pid
         if self.parent._rusagelog:
-            from os_ext import wait4
+            from .general.os_ext import wait4
             pid, exitcode, rusage = wait4(self.pid, 0)
             del self.pid
             if exitcode: raise CalledProcessError(exitcode, str(self))
