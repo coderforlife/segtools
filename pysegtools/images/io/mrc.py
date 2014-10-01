@@ -82,12 +82,8 @@ class MRC(ImageStack):
         """
         if len(options) > 0: raise ValueError('The MRC ImageStack does not support any additional configuration')
 
-        # TODO
-        #if hasattr(f, 'mode') and 
-        #readonly = (hasattr(f, 'mode') and f.mode[0] == 'r' and (len(f.mode) == 1 or f.mode[1] != '+'))
-
         h = MRCHeader()
-        return MRC(h, h._create(f, readonly), readonly)
+        return MRC(h, h._create(f, shape, dtype), False)
 
     @classmethod
     def _creatable(cls, filename, ext, **opts):
@@ -272,21 +268,21 @@ class MRCHeader(Header):
         self._fields.update(MRCHeader.__fields_new)
         self._format = endian + MRCHeader.__format_new
         self._data = OrderedDict([
-##            ('nx',nx, 'ny': ny, 'nz': 0,
-##            ('mode',mode,
-##            ('nxstart',0, 'nystart': 0,'nzstart': 0,
-##            ('mx',nx, 'my': ny, 'mz': 1,
-##            ('xlen',float(nx), 'ylen': float(ny), 'zlen': 1.0,
-##            ('alpha',90.0, 'beta': 90.0, 'gamma': 90.0, 'mapc': 1, 'mapr': 2, 'maps': 3,
-##            ('amin',0.0, 'amax': 0.0, 'amean': 0.0,
-##            ('ispf',0, 'next': 0, 'creatid': 0, 'nint': 0, 'nreal': 0,
-##            ('imodStamp': IMOD, 'imodFlags': MRCFlags.SignedByte if dtype == IM_INT8 else MRCFlags(0),
-##            ('idtype',0, 'lens': 0, 'nd1': 0, 'nd2': 0, 'vd1': 0, 'vd2': 0,
-##            ('tiltangles0': 0.0, 'tiltangles1': 0.0, 'tiltangles2': 0.0, 'tiltangles3': 0.0, 'tiltangles4': 0.0, 'tiltangles5': 0.0,
-##            ('xorg',0.0), 'yorg': 0.0, 'zorg': 0.0,
-##            ('cmap',MAP_), 'stamp': MRCEndian.Little if endian == '<' else MRCEndian.Big,
-##            ('rms',0.0),
-##            ('nlabl',1),
+            ('nx',nx), ('ny',ny), ('nz',0),
+            ('mode',mode),
+            ('nxstart',0), ('nystart',0), ('nzstart',0),
+            ('mx',nx), ('my',ny), ('mz',1),
+            ('xlen',float(nx)), ('ylen',float(ny)), ('zlen',1.0),
+            ('alpha',90.0), ('beta',90.0), ('gamma',90.0), ('mapc',1), ('mapr',2), ('maps',3),
+            ('amin',0.0), ('amax',0.0), ('amean',0.0),
+            ('ispf',0), ('next',0), ('creatid',0), ('nint',0), ('nreal',0),
+            ('imodStamp',IMOD), ('imodFlags',MRCFlags.SignedByte if dtype == IM_INT8 else MRCFlags(0)),
+            ('idtype',0), ('lens',0), ('nd1',0), ('nd2',0), ('vd1',0), ('vd2',0),
+            ('tiltangles0',0.0), ('tiltangles1',0.0), ('tiltangles2',0.0), ('tiltangles3',0.0), ('tiltangles4',0.0), ('tiltangles5',0.0),
+            ('xorg',0.0), ('yorg',0.0), ('zorg',0.0),
+            ('cmap',MAP_), ('stamp',MRCEndian.Little if endian == '<' else MRCEndian.Big),
+            ('rms',0.0),
+            ('nlabl',1),
         ])
         self._labels = ['Python MRC Creation']
         self._check()

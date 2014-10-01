@@ -81,10 +81,11 @@ def get_input(args, readonly=True):
             except Exception as e: raise; help_msg(2, "Failed to open input image-stack '"+name+"': "+str(e))
         g = m.groups()
         before, digits, after = g[:3]
-        start = g[3] or 0
-        stop = g[4] # inclusive, None for infinite
-        step = g[5] or 1 # if it was not provided or given as 0 then we get 1
+        start = int(g[3] or 0)
+        stop = None if g[4]==None else int(g[4]) # inclusive, None for infinite
+        step = int(g[5] or 1) # if it was not provided or given as 0 then we get 1
         # TODO: could force number of digits using '[0-9]'*len(digits) in glob pattern instead of '*'
+        files = []
         for f in iglob(before+'*'+after):
             if not f.startswith(before) or not f.endswith(after): continue # possible?
             num = f[len(before):-len(after)]
@@ -106,12 +107,15 @@ def get_output(args, in_stack, append=False):
     """
     Gets the output stack from the arguments after -o till the end and returns the ImageStack instance and a textual version.
     """
+    import os.path
+    from .general.utils import make_dir
     from .images import ImageStack
     if args == None or len(args) == 0: return None, None
     elif append: return get_input(args, False)
     elif args[0] == '-l':
         files = arg[1:]
         if len(files) != len(in_stack): help_msg(2, "When using a file list for the output stack it must have exactly one file for each slice in the input-stack.")
+        if any(not make_dir(os.path.dirname(f)) for f in files if os.path.dirname(f) != ''): help_msg(2, "Failed to create new image-stack because the file directories could not be created.")
         try: return ImageStack.create(files, (in_stack.h, in_stack.w), in_stack.dtype), " ".join(files)
         except Exception as e: help_msg(2, "Failed to create new image-stack '"+(" ".join(files))+"': "+str(e))
     elif len(args) != 1: help_msg(2, "You must provide only one argument after -o if not using -l.")
@@ -120,7 +124,7 @@ def get_output(args, in_stack, append=False):
         m = numeric_pattern.search(name)
         if m == None:
             name, options = get_opts(name)
-            try: return ImageStack.create(name, (in_stack.h, in_stack.w), in_stack.dtype, options), name
+            try: return ImageStack.create(name, (in_stack.h, in_stack.w), in_stack.dtype, **options), name
             except Exception as e: help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
         g = m.groups()
         before, digits, after = g[:3]
@@ -129,7 +133,9 @@ def get_output(args, in_stack, append=False):
         stop = g[4] # inclusive, None for infinite
         step = g[5] or 1 # if it was not provided or given as 0 then we get 1
         if stop != None and (stop-start)//step != len(in_stack): help_msg(2, "When using numerical pattern with a file range it must cover the exact number of slices in the input stack (easiest to just leave of the upper bound).")
-        try: return ImageStack.create([before + str(i*step+start).zfill(ndigits) + after for i in xrange(len(in_stack))], (in_stack.h, in_stack.w), in_stack.dtype, pattern=before+("%%0%dd"%ndigits)+after, start=start, step=step), name
+        files = [before + str(i*step+start).zfill(ndigits) + after for i in xrange(len(in_stack))]
+        if any(not make_dir(os.path.dirname(f)) for f in files if os.path.dirname(f) != ''): help_msg(2, "Failed to create new image-stack because the file directories could not be created.")
+        try: return ImageStack.create(files, (in_stack.h, in_stack.w), in_stack.dtype, pattern=before+("%%0%dd"%ndigits)+after, start=start, step=step), name
         except Exception as e: help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
 
 if __name__ == "__main__":
@@ -173,9 +179,7 @@ if __name__ == "__main__":
                     stop = g[1] # inclusive, None for infinite (not allowed for z argument)
                     if stop == None: help_msg(2, "Invalid z argument supplied.")
                     step = g[2] or 1 # if it was not provided or given as 0 then we get 1
-                    z.extend(range(start, stop+1, step))
-            #z = list(set(z)) # remove duplicates
-            #z.sort()
+                    z.extend(range(int(start), int(stop)+1, int(step)))
         elif o == "-l": help_msg(2, "-l can only be used immediately after -i or -o.")
         # TODO: else: imfilters.append(imfilter_util.parse_opt(o,a,help_msg))
         else: help_msg(2, "currently no other ooptions are supported.")
@@ -222,9 +226,6 @@ if __name__ == "__main__":
             if len(out_stack.header) == 0: print "No header information"
             else:
                 print "Header:"
-                #print "  pattern? " + out_stack.header.pattern
-                #print "  keys?    " + out_stack.header.keys()
-                #print "  dict?    " + str(out_stack.header.__dict__)
                 for k,v in out_stack.header.iteritems(): print "  %s = %s" % (k,v)
             print "----------------------------------------"
         else: exit(0)

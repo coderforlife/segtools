@@ -3,7 +3,7 @@
 from numpy import void
 
 from types import im_standardize_dtype
-from numbers import Integral, Real, Copmlex
+from numbers import Integral, Real, Complex
 from _util import dtype_cast
 
 __all__ = ['get_color']
@@ -197,7 +197,7 @@ def get_color(x, im):
     elif im.dtype in IM_INT_TYPES:
         if isinstance(x, basestring) and len(x) > 1 and x[0] == '#': x = long(x[1:], 16)
         return _get_int_color(x, im.dtype)
-    elif im.dtype in IM_FLOAT_TYPES: return return dtype_cast(x, im.dtype)
+    elif im.dtype in IM_FLOAT_TYPES: return dtype_cast(x, im.dtype)
     elif im.dtype in IM_COMPLEX_TYPES:
         # TODO: this is likely very broken (e.g. complex is not of the complex128 resolution, what if we have an integer-based complex number like INT16_2?)
         if isinstance(x, tuple) and len(x) == 2: x = complex(x[0], x[1])

@@ -96,7 +96,7 @@ class ImageStack(object):
             ext = splitext(filename)[1].lower().lstrip('.')
             highest_cls, highest_mq = None, MatchQuality.NotAtAll
             for cls in ImageStack.__subclasses__():
-                mq = cls._creatable(cls, filename, ext, **options)
+                mq = cls._creatable(filename, ext, **options)
                 if mq > highest_mq: highest_cls, highest_mq = cls, mq
                 if mq == MatchQuality.Definitely: break
             if highest_mq == MatchQuality.NotAtAll: raise ValueError
