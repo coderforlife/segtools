@@ -1,8 +1,8 @@
 from collections import Iterable
 import os
 
-from stack import ImageStack, Header, Field, NumericField
-from _base import iminfo, imread, imsave
+from _stack import ImageStack, Header, Field, NumericField
+from _single import iminfo, imread, imsave
 
 __all__ = ['ImageStackCollection']
 

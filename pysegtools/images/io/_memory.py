@@ -2,7 +2,7 @@ from numpy import ndarray, empty, newaxis, delete
 from collections import Iterable, Sequence
 
 from ..types import im_standardize_dtype, imstack_standardize_dtype
-from stack import ImageStack, Header
+from _stack import ImageStack, Header
 
 __all__ = ['MemoryImageStack']
 

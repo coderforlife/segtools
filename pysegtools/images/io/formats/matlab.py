@@ -1,6 +1,7 @@
 from numpy import complex64, complex128
 
-from ..types import *
+from .._single import iminfo, imread
+from ...types import *
 
 # TODO: doesn't handle endian-ness, unsure if anything needs to be done
 # TODO: support imsave and stacks
@@ -88,6 +89,7 @@ def iminfo_mat(filename, name = None):
         else: raise ValueError('MAT file matrix has unsupported shape or data type for images')
     elif len(shape) == 2 and cls in mat_classes: return shape, dtype
     else: raise ValueError('MAT file matrix has unsupported shape or data type for images')
+iminfo.register('.mat', iminfo_mat)
 
 def imread_mat(filename, name = None):
     """
@@ -115,3 +117,4 @@ def imread_mat(filename, name = None):
         else: raise ValueError('MAT file matrix has unsupported shape or data type for images')
     elif len(im.shape) == 2 and cls in mat_classes: return im
     else: raise ValueError('MAT file matrix has unsupported shape or data type for images')
+imread.register('.mat', imread_mat)

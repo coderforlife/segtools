@@ -78,7 +78,8 @@ class ImageStack(object):
             if highest_mq == MatchQuality.NotAtAll: raise ValueError
             return highest_cls.open(filename, readonly, **options)
         elif isinstance(filename, Iterable):
-            return collection.ImageStackCollection.open(filename, readonly, **options)
+            from _collection import ImageStackCollection
+            return ImageStackCollection.open(filename, readonly, **options)
         else:
             raise ValueError
         
@@ -102,7 +103,8 @@ class ImageStack(object):
             if highest_mq == MatchQuality.NotAtAll: raise ValueError
             return highest_cls.create(filename, shape, dtype, **options)
         elif filename == None or isinstance(filename, Iterable):
-            return collection.ImageStackCollection.create(filename, shape, dtype, **options)
+            from _collection import ImageStackCollection
+            return ImageStackCollection.create(filename, shape, dtype, **options)
         else:
             raise ValueError
 
@@ -581,9 +583,5 @@ class ImageStackViewHeader(Header):
     def _update_depth(self, d): pass
     def save(self): raise AttributeError('views cannot be saved')
 
-# Imports subclasses so that we can make sure ImageStack.__subclasses__() lists all of them when opening/creating.
-# These must happen *after* ImageStack, Header, and Field are defined and cannot be like "from XXX import YYY"
-import mrc
-#import metafile
-import collection
-#import memory # not imported this way since it does not use the stand open/create system
+# Import additional formats
+import formats

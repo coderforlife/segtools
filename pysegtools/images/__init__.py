@@ -1,5 +1,6 @@
 """Image functions. All images are numpy arrays in memory."""
 
-from io import *
+import filters
+import io
 from types import *
 from colors import *

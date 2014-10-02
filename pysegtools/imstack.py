@@ -15,7 +15,7 @@ def help_msg(err = 0, msg = None):
     from os.path import basename
     from sys import stderr, argv, exit
     from textwrap import fill, TextWrapper
-    from general.utils import get_terminal_width
+    from .general.utils import get_terminal_width
     from .images.io import ImageStack
     # TODO: from .images import imfilter_util
     w = max(get_terminal_width()-1, 20)
@@ -60,7 +60,7 @@ def get_input(args, readonly=True):
     """
     Gets the input stack from the arguments after -i before -o (or the end) and returns the ImageStack instance and a textual version.
     """
-    from .images import ImageStack
+    from .images.io import ImageStack
     if args == None or len(args) == 0: help_msg(2, "You must provide an input image stack.")
     elif args[0] == '-l':
         if not readonly: help_msg(2, "You cannot append to an image stack that is a fixed list of files, you must use a numeric pattern instead.")
@@ -109,7 +109,7 @@ def get_output(args, in_stack, append=False):
     """
     import os.path
     from .general.utils import make_dir
-    from .images import ImageStack
+    from .images.io import ImageStack
     if args == None or len(args) == 0: return None, None
     elif append: return get_input(args, False)
     elif args[0] == '-l':
@@ -117,7 +117,7 @@ def get_output(args, in_stack, append=False):
         if len(files) != len(in_stack): help_msg(2, "When using a file list for the output stack it must have exactly one file for each slice in the input-stack.")
         if any(not make_dir(os.path.dirname(f)) for f in files if os.path.dirname(f) != ''): help_msg(2, "Failed to create new image-stack because the file directories could not be created.")
         try: return ImageStack.create(files, (in_stack.h, in_stack.w), in_stack.dtype), " ".join(files)
-        except Exception as e: help_msg(2, "Failed to create new image-stack '"+(" ".join(files))+"': "+str(e))
+        except Exception as e: raise; help_msg(2, "Failed to create new image-stack '"+(" ".join(files))+"': "+str(e))
     elif len(args) != 1: help_msg(2, "You must provide only one argument after -o if not using -l.")
     else:
         name = args[0]
@@ -125,7 +125,7 @@ def get_output(args, in_stack, append=False):
         if m == None:
             name, options = get_opts(name)
             try: return ImageStack.create(name, (in_stack.h, in_stack.w), in_stack.dtype, **options), name
-            except Exception as e: help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
+            except Exception as e: raise; help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
         g = m.groups()
         before, digits, after = g[:3]
         ndigits = len(digits)
@@ -136,7 +136,7 @@ def get_output(args, in_stack, append=False):
         files = [before + str(i*step+start).zfill(ndigits) + after for i in xrange(len(in_stack))]
         if any(not make_dir(os.path.dirname(f)) for f in files if os.path.dirname(f) != ''): help_msg(2, "Failed to create new image-stack because the file directories could not be created.")
         try: return ImageStack.create(files, (in_stack.h, in_stack.w), in_stack.dtype, pattern=before+("%%0%dd"%ndigits)+after, start=start, step=step), name
-        except Exception as e: help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
+        except Exception as e: raise; help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
 
 if __name__ == "__main__":
     from os.path import realpath, isfile
@@ -236,3 +236,6 @@ if __name__ == "__main__":
     ##### Convert all slices #####
     # TODO: for im in iter(in_stack): out_stack.append(imf(im))
     for im in iter(in_stack): out_stack.append(im)
+
+    out_stack.save()
+

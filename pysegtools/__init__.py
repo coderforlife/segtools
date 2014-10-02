@@ -1,2 +1,3 @@
-__all__ = ['general', 'images']
-
+import general
+import images
+import tasks

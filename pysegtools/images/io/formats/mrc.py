@@ -1,11 +1,11 @@
 from collections import OrderedDict
 from numpy import empty, int16, int32, float32
 
-from ...general.datawrapper import ListWrapper, ReadOnlyListWrapper
-from ...general.enum import Enum, Flags
-from ..types import *
-from stack import ImageStack, Header, Field, FixedField, MatchQuality
-from _util import file_shift_contents, openfile, imread_raw, imsave_raw
+from ....general.datawrapper import ListWrapper, ReadOnlyListWrapper
+from ....general.enum import Enum, Flags
+from ...types import *
+from .._stack import ImageStack, Header, Field, FixedField, MatchQuality
+from .._util import file_shift_contents, openfile, imread_raw, imsave_raw
 
 __all__ = ['MRC']
 
@@ -390,7 +390,7 @@ class MRCHeader(Header):
         only updated when update_pixel_values is True (which is default).
         """
         if self._imstack._readonly: raise AttributeError('header is readonly')
-        if update_pixel_values: self.update_header_pixel_values()
+        if update_pixel_values: self.update_pixel_values()
         self._check()
         if self._old_next != self._data['next']:
             # Header changed size, need to shift image data
