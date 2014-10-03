@@ -8,7 +8,7 @@ from ....general.gzip import GzipFile
 from ....general.enum import Enum
 from ..._util import prod, dtype_cast, itr2str, splitstr, get_list, _bool
 
-from ..._types import *
+from ...types import *
 from .._single import iminfo, imread, imsave
 from .._stack import ImageStack, Header, Field, FixedField
 from .._util import openfile, get_file_size, file_shift_contents, imread_raw, imsave_raw, imread_ascii_raw, imsave_ascii_raw
@@ -20,20 +20,20 @@ dtype2met = {
     # handle these specially
     #IM_RGB24  : 'MET_UCHAR_ARRAY',
     #IM_RGBA32 : 'MET_UCHAR_ARRAY',
-    IM_BYTE   : 'MET_UCHAR',
-    IM_SBYTE  : 'MET_CHAR',
-    IM_SHORT  : 'MET_SHORT',      IM_SHORT_BE  : 'MET_SHORT',
-    IM_USHORT : 'MET_USHORT',     IM_USHORT_BE : 'MET_USHORT',
-    IM_INT    : 'MET_INT',        IM_INT_BE    : 'MET_INT',
-    IM_UINT   : 'MET_UINT',       IM_UINT_BE   : 'MET_UINT',
-    IM_LONG   : 'MET_LONG_LONG',  IM_LONG_BE   : 'MET_LONG_LONG',
-    IM_ULONG  : 'MET_ULONG_LONG', IM_ULONG_BE  : 'MET_ULONG_LONG',
-    IM_FLOAT  : 'MET_FLOAT',
-    IM_DOUBLE : 'MET_DOUBLE',
+    IM_UINT8  : 'MET_UCHAR',
+    IM_INT8   : 'MET_CHAR',
+    IM_INT16  : 'MET_SHORT',      IM_INT16_BE  : 'MET_SHORT',
+    IM_UINT16 : 'MET_USHORT',     IM_UINT16_BE : 'MET_USHORT',
+    IM_INT32  : 'MET_INT',        IM_INT32_BE  : 'MET_INT',
+    IM_UINT32 : 'MET_UINT',       IM_UINT32_BE : 'MET_UINT',
+    IM_INT64  : 'MET_LONG_LONG',  IM_INT64_BE  : 'MET_LONG_LONG',
+    IM_UINT64 : 'MET_ULONG_LONG', IM_UINT64_BE : 'MET_ULONG_LONG',
+    IM_FLOAT32 : 'MET_FLOAT',
+    IM_FLOAT64 : 'MET_DOUBLE',
 }
 met2dtype = { v:k for k,v in dtype2met.iteritems() }
-met2dtype['MET_LONG']  = IM_INT  # synonyms
-met2dtype['MET_ULONG'] = IM_UINT
+met2dtype['MET_LONG']  = IM_INT32  # synonyms
+met2dtype['MET_ULONG'] = IM_UINT32
 # Note: MET_*_ARRAY is equivilient to MET_*, we standardize while reading the header
 
 req_keys = ('ObjectType','NDims','DimSize','ElementType','ElementDataFile')
@@ -288,9 +288,9 @@ def imsave_mhd(filename, im, datafile=None, CompressedData=False, BinaryData=Tru
         ('BinaryDataByteOrderMSB', str(im.dtype.byteorder == '>' or im.dtype.byteorder == '=' and byteorder != 'little')),
         ('CompressedData', str(CompressedData)),
         ]
-    if im.dtype == IM_RGB24:
+    if im.dtype == IM_RGB24 or im.dtype == IM_RGBA32:
         alltags.append(('ElementType', 'MET_UCHAR_ARRAY'))
-        alltags.append(('ElementNumberOfChannels', '3'))
+        alltags.append(('ElementNumberOfChannels', '3' if im.dtype == IM_RGB24 else '4'))
     else:
         if im.dtype not in dtype2met: raise ValueError('Format of image is not supported')
         alltags.append(('ElementType', dtype2met[im.dtype]))
