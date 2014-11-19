@@ -195,87 +195,103 @@ def get_file_size(f):
     else:
         try: return os.fstat(f.fileno()).st_size
         except: f.seek(0,SEEK_END); return f.tell()
-        
-def copy_data(f, src, dst, buf):
-    """
-    Copy data within a single file-like object (f) from one offset (src) to another offset (dst).
-    The provided buffer must be a pre-allocated memoryview of the right number of bytes that will
-    be copied. The file-like object must support seek, complete readinto, and complete write. By
-    complete, the function must not stop short of the amount of data requested.
-    """
-    # Read from source
+
+def _copy_data(f, src, dst, buf):
     f.seek(src)
     read = f.readinto(buf)
     if read == 0: return 0 # all done
-
-    # Write to destination
     f.seek(dst)
-    #written = 0
-    #while written < read: written += f.write(buf[written:read])
-    f.write(buf[:read])
+    return f.write(buf[:read]) # Return actual amount of data copied
 
-    # Return actual amount of data copied
-    return read
+def _copy_data_complete(f, src, dst, buf):
+    f.seek(src)
+    n = 0
+    while n < len(buf): n += f.readinto(buf[n:])
+    f.seek(dst)
+    n = 0
+    while n < len(buf): n += f.write(buf[n:])
 
-def file_shift_contents(f, old_offset, new_offset, buf_size=16777216): # 16 MB
+def copy_data(f, src, dst, size=None, truncate=None, buf_size=16777216):
     """
-    Shift file contents within a single file-like object (f) from old_offset to new_offset using a
-    buffer (defaulting to 16MB in size). This is a more advanced version of copy_data. It copies all
-    data from the old offset to the end to the new offset in chunks making sure not to overwrite
-    data if moving forward. If the shift moves data backward, the file is truncated. The file-like
-    object must support seek, complete readinto, complete write, truncate, and get_file_size. By
-    complete, the function must not stop short of the amount of data requested.
+    Copy data within a single file-like object `f` from `src` offset to `dst` offset of `size`
+    bytes possibly truncating the file at `dst`+`size`. If `size` is not provided or is None, all
+    data from `src` to the end of the file is copied. If truncate is not provided it defaults to
+    False if `size` is given, True otherwise.
     """
-    # f is a file handle opened with r/w and supports readinto
-    # we want to shift the data at old_offset to new_offset
-    # nothing before min(old_offset, new_offset) will be changed
-    # if new_offset > old_offset then zeros will be added
-    # if new_offset < old_offset then the file size will decrease
-    if old_offset < 0 or new_offset < 0: raise ValueError
-    if old_offset == new_offset: return # no change
+    # Parameter and no-copy check
+    if src < 0 or dst < 0: raise ValueError
+    truncate = (size is None) if truncate is None else bool(truncate)
+    file_size = get_file_size(f)
+    if size is None or src+size > file_size: size = file_size-src
+    src_start, dst_start = src, dst
+    src_end, dst_end = src + size, dst + size
+    if src == dst or size == 0: # nothing to copy, but may truncate
+        if truncate and src_end != file_size: f.truncate(src_end)
+        return
 
     # Setup buffers
     buf_raw = bytearray(buf_size)
     buf = memoryview(buf_raw) # allows us to slice without copying
-    
-    if old_offset < new_offset:
-        # Grow the file
-        shift = new_offset - old_offset
-        old_size = get_file_size(f)
-        new_size = old_size + shift
-        f.truncate(new_size)
-        
+
+    if src < dst:
         # Copy data moving backwards
-        orig_old_off, orig_new_off = old_offset, new_offset
-        old_offset, new_offset = old_size - buf_size, new_size - buf_size
-        while old_offset > orig_old_off:
-            if copy_data(f, old_offset, new_offset, buf) != buf_size: raise IOError
-            old_offset -= buf_size
-            new_offset -= buf_size
-        if old_offset < orig_old_off:
-            rem = old_offset+buf_size-orig_old_off
-            if copy_data(f, orig_old_off, orig_new_off, buf[:rem]) != rem: raise IOError
-
-        # Fill in with zeros from orig_old_off to orig_new_off
-        f.seek(orig_old_off)
-        buf_raw = bytearray(min(shift, buf_size)) # re-initializes to all 0s of the right size
-        buf = memoryview(buf_raw)
-        while shift >= buf_size:
-            f.write(buf)
-            shift -= buf_size
-            #shift -= f.write(buf)
-        f.write(buf[:shift])
-        #written = 0
-        #while written < shift: written += f.write(buf[written:shift])
-
+        if dst_end > file_size: f.truncate(dst_end)
+        src, dst = src_end - buf_size, dst_end - buf_size
+        while src > src_start:
+            copied = _copy_data_complete(f, src, dst, buf)
+            src -= buf_size
+            dst -= buf_size
+        if src < src_start: _copy_data_complete(f, src_start, dst_start, buf[:buf_size-src_start])
     else:
         # Copy data moving forward
-        while True:
-            copied = copy_data(f, old_offset, new_offset, buf)
-            if copied == 0: break # all done
-            old_offset += copied
-            new_offset += copied
-        
-        # Shrink the file
-        f.truncate(new_offset)
+        while size >= buf_size:
+            copied = _copy_data(f, src, dst, buf)
+            src += copied
+            dst += copied
+            size -= copied
+        if size > 0: _copy_data_complete(f, src, dst, buf[:size])
+    
+    # Truncate the file
+    if truncate: f.truncate(dst_end)
 
+def fill_data(f, off=0, size=None, val=0, buf_size=16777216):
+    """
+    Fill a part of a file in with values. The parameters are off (the starting offset, defaults to
+    0), size (the number of bytes to fill in, defaults to all after off), val (the value to fill in
+    with, defaulting to 0), and a buffer size (default to 16MB).
+    """
+    from itertools import repeat
+    if off < 0: raise ValueError
+    file_size = get_file_size(f)
+    if size is None or off+size > file_size: size = file_size-off
+    if size == 0: return
+    sz = min(size, buf_size)
+    buf_raw = bytearray(sz if val == 0 else repeat(val, sz))
+    buf = memoryview(buf_raw)
+    f.seek(off)
+    while size >= buf_size: size -= f.write(buf)
+    while size > 0:         size -= f.write(buf[:size])
+
+def file_remove_ranges(f, ranges, buf_size=16777216): # 16 MB
+    """
+    Remove the given ranges from the file, shift all contents after them toward the start of the
+    file. This is done with copying data at most once. The ranges must be tuples with start stop
+    file offsets (stop is actually +1 the last file offset removed). The file is truncated at the
+    end. The file-like object must support seek, complete readinto, complete write, truncate, and
+    get_file_size. By complete, the function must not stop short of the amount of data requested
+    (unless end-of-file for readinto).
+    """
+    from ...general.interval import Interval, IntervalSet
+    intervals = IntervalSet(Interval(start,stop,upper_closed=False) for start,stop in ranges)
+    if not intervals: return # nothing to remove
+    keep_ints = IntervalSet([Interval(0, get_file_size(f), upper_closed=False)]) - intervals
+    if not keep_ints: f.truncate(0); return # remove everything
+    buf_raw = bytearray(buf_size)
+    buf = memoryview(buf_raw) # allows us to slice without copying
+    position = 0
+    for i in keep_ints:
+        n = i.upper_bound - i.lower_bound
+        if position != i.lower_bound:
+            copy_data(f, i.lower_bound, position, n)
+        position += n
+    f.truncate(position)

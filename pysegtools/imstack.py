@@ -2,6 +2,8 @@
 
 """Command line program to convert an image stack to another stack by processing each slice."""
 
+__all__ = ["main"]
+
 from .general.utils import check_reqs
 check_reqs()
 
@@ -16,41 +18,66 @@ def help_msg(err = 0, msg = None):
     from sys import stderr, argv, exit
     from textwrap import fill, TextWrapper
     from .general.utils import get_terminal_width
-    from .images.io import ImageStack
-    # TODO: from .images import imfilter_util
-    w = max(get_terminal_width()-1, 20)
+    w = max(get_terminal_width()-1, 24)
     tw = TextWrapper(width = w, subsequent_indent = ' '*18)
-    lst_itm = TextWrapper(width = w, initial_indent = ' * ', subsequent_indent = ' '*3)
-    if msg != None: print >> stderr, fill(msg, w)
+    if msg != None: print >> stderr, fill(msg, w)+'\n'
     print fill("Image Stack Reader and Converter Tool", w)
     print ""
-    print "===== General Usage ====="
-    print tw.fill("%s [args] -i [-l] input [filters] [-o [-l] output]" % basename(argv[0]))
-    print tw.fill("  -h  --help      Display this help")
+    print tw.fill("%s [args] -i input [[filters] -o [-a] output]" % basename(argv[0]))
+    print tw.fill("  -h  --help [x]  Display this help or information about a filter or format")
     print tw.fill("  -v  --verbose   Display all information about image stack(s)")
-    print tw.fill("  -z indices      The slice indices to use from the input-stack, a comma-seperated list of single indicies or number ranges* with stops")
     print tw.fill("  -a  --append    Append data to the output-stack instead of creating a new output-stack, single-file output stacks must exist")
     print ""
-    print fill("The input and output stacks can either be a single 3D image file or a collection of same-sized 2D image files.", w)
+    print fill("You may provide any arguments via a file using @argfile which will read that file in as POSIX-style command arguments (including supporting # for comments).", w)
     print ""
-    print fill("For image formats that support 3D images, simply give the filename after -i or -o. The supported formats for this are:", w)
-    for l in ImageStack.supported_list(): print lst_itm.fill(l)
-    print fill("To specify the options, put a colon (:) after the filename and seperate each option with a comma.", w)
-    print ""
-    print fill("For collections of 2D image files (including PNG, TIFF, BMP, JPEG, MHA/MHA, IM, and MAT) specify either a numeric pattern or a list of files. If using a list of files you must start the list with -l.", w)
-    print ""
-    print fill("To use a numeric pattern use number signs (#) in place of the slice number. The filename may be followed by a colon (:) and a number range*. For input-stacks it will take all filenames with any number of digits in place of the # signs and use them in numerical order. If a number range is provided it limits the values allowed in place of the # signs. For output-stacks the number of # signs dictactes how numbers will be padded with 0s. Output-stacks start at value 0 by default.", w)
+    print fill("For more information on the input and output arguemnts, see --help input or --help output. For a list of available filters see --help filters.", w)
     print ""
     print fill("===== Identify Usage =====", w)
-    print fill("If an output-stack is not provided then information about the input stack is printed out.", w)
+    print fill("If output is not provided then information about the input stack is printed out.", w)
     print ""
-# TODO:
-#    print fill("===== Convert Usage =====", w)
-#    print fill("Convert the input-stack to the output-stack possibly running image filters on the slices.", w)
-#    for l in imfilter_util.usage: print tw.fill(l) if len(l) > 20 and l[0] == ' ' else fill(l, w)
-#    print ""
-    print "* Number ranges are specified as one of <start>-<stop>, <start>-<stop>@<step>, <start>, or <start>@<step> where start and stop are non-negative integers and step is a positive integer. A missing stop value means go till the end and step defaults to 1."
+    print fill("===== Convert Usage =====", w)
+    print fill("Convert the input to the output possibly running it through image filters.", w)
     exit(err)
+
+def help_adv(topic):
+    from sys import exit
+    from textwrap import fill, TextWrapper
+    from .general.utils import get_terminal_width
+    from .images.io import ImageStack
+    # TODO: from .images import imfilter_util
+    w = max(get_terminal_width()-1, 24)
+    tw = TextWrapper(width = w, subsequent_indent = ' '*18)
+    lst_itm = TextWrapper(width = w, initial_indent = ' * ', subsequent_indent = ' '*3)
+    formats = {f.lower():f for f in ImageStack.supported_list()}
+    filters = []
+    
+    if topic in ("input", "output"):
+        print "===== Input and Output Stack Specifications and Formats ====="       
+        print fill("The input and output stacks can either be a single 3D image file or a collection of 2D image files.", w)
+        print ""
+        print fill("For image formats that support 3D images simply give the filename after -i or -o. The supported formats for this are:", w)
+        for l in formats.itervalues(): print lst_itm.fill(l)
+        print fill("Some formats take extra options, to use them put a colon (:) after the filename and seperate each option with a comma. To get more information about a format and its options, use --help {format}, for example --help MRC.", w)
+        print ""
+        print fill("For collections of 2D image files (including PNG, TIFF, BMP, JPEG, MHA/MHA, IM, and MAT) specify either a numeric pattern or a list of files:", w)
+        print lst_itm.fill("A numeric pattern is a filepath that uses number signs (#) in place of a number. The numeric pattern may be followed by a colon (:) and a number range*. For input-stacks it will take all filenames with any number of digits in place of the # signs and use them in numerical order. If a number range is provided it limits the values allowed in place of the # signs. For output-stacks the number of # signs dictactes how numbers will be padded with 0s. Output-stacks start at value 0 by default. Examples:")
+        print "     file###.png"
+        print "     file###.png:2-10@2"
+        print lst_itm.fill("A list of files is given between [ and ] as individual arguments. Examples:")
+        print "     [ file1.png file2.png file3.png ]"
+        print "     [ dir/*.png ]"
+        print ""
+        print "* Number ranges are specified as one of <start>-<stop>, <start>-<stop>@<step>, <start>, or <start>@<step> where start and stop are non-negative integers and step is a positive integer. A missing stop value means go till the end and step defaults to 1."
+    elif topic == "filters":
+        print "===== Filters ====="
+        # TODO
+    elif topic.lower() in formats:
+        print "===== Format: %s =====" % formats[topic]
+        # TODO
+    elif topic in filters:
+        print "===== Filter: %s =====" % topic
+        # TODO
+    exit(0)
 
 def get_opts(s):
     x = s[2:].rsplit(':',1)
@@ -58,27 +85,29 @@ def get_opts(s):
 
 def get_input(args, readonly=True):
     """
-    Gets the input stack from the arguments after -i before -o (or the end) and returns the ImageStack instance and a textual version.
+    Gets the input stack from the arguments after -i and returns the ImageStack instance and a
+    textual version. The args have already been "pre-parsed" in that the [] argument is removed,
+    and if not a list only the filename is given.
     """
     from .images.io import ImageStack
-    if args == None or len(args) == 0: help_msg(2, "You must provide an input image stack.")
-    elif args[0] == '-l':
+    from glob import iglob
+    from os.path import isfile
+    if isinstance(args, list):
         if not readonly: help_msg(2, "You cannot append to an image stack that is a fixed list of files, you must use a numeric pattern instead.")
         files = []
-        for i in args[1:]:
+        for i in args:
             if not isfile(i): help_msg(3, "File '%s' does not exist." % i)
             files.append(i)
-        if len(files) == 0: help_msg(2, "You need to provide at least one image after -l.")
-        try: return ImageStack.open(files, readonly), " ".join(files)
-        except Exception as e: help_msg(2, "Failed to open input image-stack '"+(" ".join(files))+"': "+str(e))
-    elif len(args) != 1: help_msg(2, "You must provide only one argument after -i if not using -l.")
-    else:
-        name = args[0]
+        name = " ".join(files)
+        try: return ImageStack.open(files, readonly), name
+        except Exception as e: help_msg(2, "Failed to open image-stack '"+name+"': "+str(e))
+    else: #isinstance(args, basestring)
+        name = args
         m = numeric_pattern.search(name)
         if m == None:
             name, options = get_opts(name)
             try: return ImageStack.open(name, readonly, **options), name
-            except Exception as e: raise; help_msg(2, "Failed to open input image-stack '"+name+"': "+str(e))
+            except Exception as e: raise; help_msg(2, "Failed to open image-stack '"+name+"': "+str(e))
         g = m.groups()
         before, digits, after = g[:3]
         start = int(g[3] or 0)
@@ -101,30 +130,33 @@ def get_input(args, readonly=True):
             options['start'] = start
             options['step'] = step
         try: return ImageStack.open([f for i,f in files], readonly, **options), name
-        except Exception as e: help_msg(2, "Failed to open input image-stack '"+name+"': "+str(e))
+        except Exception as e: help_msg(2, "Failed to open image-stack '"+name+"': "+str(e))
         
-def get_output(args, in_stack, append=False):
+def get_output(args, ims, append):
     """
-    Gets the output stack from the arguments after -o till the end and returns the ImageStack instance and a textual version.
+    Gets the output stack from the arguments after -o till the end and returns the ImageStack
+    instance and a textual version. The args have already been "pre-parsed" in that the -a and []
+    arguments have been removed, and if not a list only the filename is given.
     """
     import os.path
     from .general.utils import make_dir
     from .images.io import ImageStack
-    if args == None or len(args) == 0: return None, None
-    elif append: return get_input(args, False)
-    elif args[0] == '-l':
-        files = arg[1:]
-        if len(files) != len(in_stack): help_msg(2, "When using a file list for the output stack it must have exactly one file for each slice in the input-stack.")
+    if args == None: return None, None
+    elif append:
+        return get_input(args, False)
+    elif isinstance(args, list):
+        files = args
+        if len(files) != len(ims): help_msg(2, "When using a list of filenames for the output stack it must have exactly one filename for each slice in the input-stack.")
         if any(not make_dir(os.path.dirname(f)) for f in files if os.path.dirname(f) != ''): help_msg(2, "Failed to create new image-stack because the file directories could not be created.")
-        try: return ImageStack.create(files, (in_stack.h, in_stack.w), in_stack.dtype), " ".join(files)
-        except Exception as e: raise; help_msg(2, "Failed to create new image-stack '"+(" ".join(files))+"': "+str(e))
-    elif len(args) != 1: help_msg(2, "You must provide only one argument after -o if not using -l.")
-    else:
-        name = args[0]
+        name =  " ".join(files)
+        try: return ImageStack.create(files, ims), name
+        except Exception as e: raise; help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
+    else: #isinstance(args, basestring)
+        name = args
         m = numeric_pattern.search(name)
         if m == None:
             name, options = get_opts(name)
-            try: return ImageStack.create(name, (in_stack.h, in_stack.w), in_stack.dtype, **options), name
+            try: return ImageStack.create(name, ims, **options), name
             except Exception as e: raise; help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
         g = m.groups()
         before, digits, after = g[:3]
@@ -132,110 +164,170 @@ def get_output(args, in_stack, append=False):
         start = g[3] or 0
         stop = g[4] # inclusive, None for infinite
         step = g[5] or 1 # if it was not provided or given as 0 then we get 1
-        if stop != None and (stop-start)//step != len(in_stack): help_msg(2, "When using numerical pattern with a file range it must cover the exact number of slices in the input stack (easiest to just leave of the upper bound).")
-        files = [before + str(i*step+start).zfill(ndigits) + after for i in xrange(len(in_stack))]
+        if stop != None and (stop-start)//step != len(ims): help_msg(2, "When using numerical pattern with a range it must cover the exact number of slices in the input stack (easiest to just leave off the upper bound).")
+        files = [before + str(i*step+start).zfill(ndigits) + after for i in xrange(len(ims))]
         if any(not make_dir(os.path.dirname(f)) for f in files if os.path.dirname(f) != ''): help_msg(2, "Failed to create new image-stack because the file directories could not be created.")
-        try: return ImageStack.create(files, (in_stack.h, in_stack.w), in_stack.dtype, pattern=before+("%%0%dd"%ndigits)+after, start=start, step=step), name
+        try: return ImageStack.create(files, ims, pattern=before+("%%0%dd"%ndigits)+after, start=start, step=step), name
         except Exception as e: raise; help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
 
-if __name__ == "__main__":
+def split_args(args):
+    """
+    Splits an argument list into groups starting with either -x or --long_name followed by any
+    values that follow them (values are anything that does not start with - (except -# where # is .
+    or a number).
+    """
+    out = []
+    for a in args:
+        if len(a) >= 2 and a[0] == '-' and a[1] not in '.0123456789':
+            if a[1]!='-': out.extend(['-'+x] for x in a[1:])
+            else:         out.append([a])
+        else:             out[-1].append(a)
+    return out
+
+def extract_args(args, names):
+    """
+    Extract arguments from an un-ordered argument matrix (as returned by split_args). The names
+    should be like -x or --long_name. This returns all matching rows and removes those rows from
+    the arguments matrix.
+    """
+    matches = [i for i,row in enumerate(args) if row[0] in names]
+    extracted = [args[i] for i in matches]
+    for i in reversed(matches): del args[i]
+    return extracted
+
+def main():
     from os.path import realpath, isfile
     from sys import argv, exit
-    from getopt import getopt, GetoptError
     from glob import iglob
+    import shlex
     
-    from .images import dtype2desc #imfilter_util
+    from .images import dtype2desc # TODO: imfilter_util
     
+    ##### Parse Arguments #####
+    # Seperate out the arguments into 4 sections:
+    #   general - the arguments that come before the input stack
+    #   input   - the arguments that define the input stack (the -i and [] are removed)
+    #   filter  - the arguments that define the filters to be run
+    #   output  - ths arguments that define the output stack (the -o, [], and -a are removed)
     args = argv[1:]
-    try:
-        i = args.index("-o")
-        args, output = args[:i], args[i+1:]
-    except ValueError: output = None
+    append = False
+
+    ## Find and expand @argfile arguments
+    # This loop goes through all @ arguments in reverse order providing the index of the @ argument
+    for i in reversed([i for i,a in enumerate(args) if len(a)>0 and a[0] == '@']):
+        with open(args[i][1:], 'r') as argfile: args[i:i+1] = shlex.split(argfile.read(), True) # read the file, split it, and insert in place of the @ argument
+
+    if len(args) == 0: help_msg()
+    
+    # Input stack
     try:
         i = args.index("-i")
-        args, input = args[:i], args[i+1:]
-    except ValueError: input = None
+        if i == len(args) - 1: help_msg(2, "Must include input stack after -i.")
+        general_args = args[:i]
+        input_args = args[i+1:]
+        if input_args[0] == "[":
+            try:
+                end = input_args.index("]")
+                if end ==  1: help_msg(2, "No files given in input filename list.")
+                input_args, filter_args = input_args[1:end], input_args[end+1:]
+            except ValueError: help_msg(2, "No terminating ']' for input filename list.")
+        else:
+            input_args, filter_args = input_args[0], input_args[1:]
+    except ValueError:
+        general_args = args
+        input_args = None
+        filter_args = []
+            
+    # Output stack
+    try:
+        i = filter_args.index("-o")
+        if i == len(filter_args) - 1: help_msg(2, "Must include output stack after -o.")
+        filter_args, output_args = filter_args[:i], filter_args[i+1:]
+        if output_args[0] in ("-a", "--append"):
+            append = True
+            del output_args[0]
+        if output_args[0] in ("["):
+            try:
+                end = output_args.index("]")
+                if end ==  1: help_msg(2, "No files given in output filename list.")
+                if end != len(output_args) - 1: help_msg(2, "The output stack must be the last argument.")
+                output_args = output_args[1:-1]
+            except ValueError: help_msg(2, "No terminating ']' for output filename list.")
+        elif len(output_args) != 1: help_msg(2, "The output stack must be the last argument.")
+        else: output_args = output_args[0]
+    except ValueError:
+        output_args = None
+        if len(filter_args) > 0: help_msg(2, "Filters cannot be used unless outputting to a file.")
+
+
+    # General arguments
+    general_args = split_args(general_args)
+
+    help_args = extract_args(general_args, ('-h', '--help'))
+    if len(help_args) > 1: help_msg(2, "Can only be one -h/--help argument.")
+    if len(help_args) == 1:
+        if len(help_args[0]) > 2: help_msg(2, "-h/--help can take at most more value")
+        if len(help_args[0]) == 2: help_adv(help_args[0][1])
+        help_msg()
     
-    try: opts, args = getopt(args, "hvz:l", ["help","verbose","append"]) #+imfilter_util.getopt_short, +imfilter_util.getopt_long
-    except GetoptError as err: help_msg(2, str(err))
+    verbose_args = extract_args(general_args, ('-v', '--verbose'))
+    if len(verbose_args) > 1: help_msg(2, "Can only be one -v/--verbose argument.")
+    verbose = len(verbose_args) == 1
+    if verbose and len(verbose_args[0]) > 1: help_msg(2, "-v/--verbose does not take any values")
 
-    ##### Parse arguments #####
-    z = []
-    imfilters = []
-    append = False
-    verbose = False
-    for i,(o,a) in enumerate(opts):
-        if o == "-h" or o == "--help": help_msg()
-        elif o == "-a" or o == "--append": append = True
-        elif o == "-v" or o == "--verbose": verbose = True
-        elif o == "-z":
-            for p in a.split(","):
-                if p.isdigit(): z.append(int(p)) # single digit
-                else: # range of numbers
-                    m = number_range.search(p)
-                    if m == None: help_msg(2, "Invalid z argument supplied.")
-                    g = m.groups()
-                    start = g[0] or 0
-                    stop = g[1] # inclusive, None for infinite (not allowed for z argument)
-                    if stop == None: help_msg(2, "Invalid z argument supplied.")
-                    step = g[2] or 1 # if it was not provided or given as 0 then we get 1
-                    z.extend(range(int(start), int(stop)+1, int(step)))
-        elif o == "-l": help_msg(2, "-l can only be used immediately after -i or -o.")
-        # TODO: else: imfilters.append(imfilter_util.parse_opt(o,a,help_msg))
-        else: help_msg(2, "currently no other ooptions are supported.")
-    # TODO: imf, imf_names = imfilter_util.list2imfilter(imfilters)
-    if len(args) != 0: help_msg(2, "Filenames can only come after -i or -o.")
+    if len(general_args) > 0: help_msg(2, "Unknown general arguments provided: " + ", ".join(a[0] for a in general_args))
+    
 
-    # Open input stack
-    in_stack, in_name = get_input(input)
-    if z:
-        if min(z) < 0 or max(z) >= len(in_stack): help_msg(2, "z argument supplied is out of range for given input-stack.")
-        in_stack = in_stack[z]
+    # Filters
+    filter_args = split_args(filter_args)
 
-    # Create output stack
-    # TODO: get output type from filters
-    out_stack, out_name = get_output(output, in_stack, append)
 
-    ##### Print information #####
+    ##### Open Input Stack #####
+    if args == None: help_msg(2, "You must provide an input image stack.")
+    in_stack, in_name = get_input(input_args)
     if verbose:
         print "----------------------------------------"
         print "Input Image Stack: %s" % in_name
-        print "Dimensions (WxHxD): %d x %d x %d" % (in_stack.w, in_stack.h, in_stack.d)
-        print "Data Type:   %s" % dtype2desc(in_stack.dtype)
-        sec_bytes = in_stack.w * in_stack.h * in_stack.dtype.itemsize
-        print "Bytes/Slice: %d" % sec_bytes
-        print "Total Bytes: %d" % (in_stack.d * sec_bytes)
+#        print "Dimensions (WxHxD): %d x %d x %d" % (in_stack.w, in_stack.h, in_stack.d)
+#        print "Data Type:   %s" % dtype2desc(in_stack.dtype)
+#        sec_bytes = in_stack.w * in_stack.h * in_stack.dtype.itemsize
+#        print "Bytes/Slice: %d" % sec_bytes
+#        print "Total Bytes: %d" % (in_stack.d * sec_bytes)
         print "Handler:     %s" % type(in_stack).__name__
         if len(in_stack.header) == 0: print "No header information"
         else:
             print "Header:"
             for k,v in in_stack.header.iteritems(): print "  %s = %s" % (k,v)
         print "----------------------------------------"
-        print "Using Slices: %s" % ("(all)" if len(z) == 0 else (", ".join(z)))
-        # TODO: print "Image Filters: %s" % ("(none)" if len(imf_names) == 0 else ", ".join(imf_names))
-        print "----------------------------------------"
-        if output != None:
-            print "Output Image Stack: %s" % out_name
-            if append: print "Appending data to output instead of overwriting"
-            print "Dimensions (WxHxD): %d x %d x %d" % (out_stack.w, out_stack.h, len(in_stack))
-            print "Data Type:   %s" % dtype2desc(out_stack.dtype)
-            sec_bytes = out_stack.w * out_stack.h * out_stack.dtype.itemsize
-            print "Bytes/Slice: %d" % sec_bytes
-            print "Total Bytes: %d" % (len(in_stack) * sec_bytes)
-            print "Handler:     %s" % type(out_stack).__name__
-            if len(out_stack.header) == 0: print "No header information"
-            else:
-                print "Header:"
-                for k,v in out_stack.header.iteritems(): print "  %s = %s" % (k,v)
-            print "----------------------------------------"
-        else: exit(0)
-    elif output == None:
-        print "%dx%dx%d %s" % (in_stack.w, in_stack.h, in_stack.d, dtype2desc(in_stack.dtype))
+        if output_args == None: exit(0)
+    elif output_args == None:
+        print str(in_stack)
         exit(0)
+    ims = in_stack
 
-    ##### Convert all slices #####
-    # TODO: for im in iter(in_stack): out_stack.append(imf(im))
-    for im in iter(in_stack): out_stack.append(im)
+    
+    ##### Process Filters #####
+    # TODO
 
+
+    ##### Save Output Stack #####
+    out_stack, out_name = get_output(output_args, ims, append)
     out_stack.save()
+    
+    if verbose:
+        print "----------------------------------------"
+        print "Output Image Stack: %s" % out_name
+        if append: print "Appending data to output instead of overwriting"
+        print "Dimensions (WxHxD): %d x %d x %d" % (out_stack.w, out_stack.h, len(in_stack))
+        print "Data Type:   %s" % dtype2desc(out_stack.dtype)
+        sec_bytes = out_stack.w * out_stack.h * out_stack.dtype.itemsize
+        print "Bytes/Slice: %d" % sec_bytes
+        print "Total Bytes: %d" % (len(in_stack) * sec_bytes)
+        print "Handler:     %s" % type(out_stack).__name__
+        if len(out_stack.header) == 0: print "No header information"
+        else:
+            print "Header:"
+            for k,v in out_stack.header.iteritems(): print "  %s = %s" % (k,v)
+        print "----------------------------------------"
 
+if __name__ == "__main__": main()

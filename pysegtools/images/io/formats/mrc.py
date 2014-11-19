@@ -4,8 +4,8 @@ from numpy import empty, int16, int32, float32
 from ....general.datawrapper import ListWrapper, ReadOnlyListWrapper
 from ....general.enum import Enum, Flags
 from ...types import *
-from .._stack import ImageStack, Header, Field, FixedField, MatchQuality
-from .._util import file_shift_contents, openfile, imread_raw, imsave_raw
+from .._stack import UniformImageStack, ImageSlice, ImageStackHeader, Field, FixedField, MatchQuality
+from .._util import copy_data, openfile, imread_raw, imsave_raw
 
 __all__ = ['MRC']
 
@@ -36,7 +36,7 @@ class MRCEndian(int32, Enum):
 
 # TODO: support mapc/mapr/maps = 2,1,3 using Fortran-ordered arrays?
 
-class MRC(ImageStack):
+class MRC(UniformImageStack):
     """  
     Represents an MRC image. Supports all features of the "IMOD" variant of MRC files.
     """
@@ -75,15 +75,19 @@ class MRC(ImageStack):
         return MatchQuality.Definitely if map == MAP_ else MatchQuality.Likely
 
     @classmethod
-    def create(cls, f, shape, dtype, **options):
+    def create(cls, f, ims, **options):
         """
         Creates a new MRC file. Provide a filename or a file-like object. You must provide a shape as
         a height and width tuple and a dtype image type. No extra options are supported.
         """
         if len(options) > 0: raise ValueError('The MRC ImageStack does not support any additional configuration')
-
+        if len(ims) == 0: raise ValueError('The MRC ImageStack requires at least one input image slice to be created')
+        shape, dtype = ims[0].shape, ims[0].dtype
+        if any(shape != im.shape or dtype != im.dtype for im in ims[1:]): raise ValueError('ims')
         h = MRCHeader()
-        return MRC(h, h._create(f, shape, dtype), False)
+        s = MRC(h, h._create(f, shape, dtype), False)
+        s._insert(0, ims)
+        return s
 
     @classmethod
     def _creatable(cls, filename, ext, **opts):
@@ -96,42 +100,64 @@ class MRC(ImageStack):
     def _description(cls): return "MRC"
         
     def __init__(self, h, f, readonly=False):
-        super(MRC, self).__init__(h.nx, h.ny, h.nz, h._dtype, h, readonly)
-        h._imstack = self
-        self._off = HDR_LEN + LBL_LEN * LBL_COUNT + h.next
-        #self._stride = h.nx
-        #self._sec_gap = 0
         self._file = f
+        self._off = HDR_LEN + LBL_LEN * LBL_COUNT + h.next
+        self._slc_bytes = h.nx * h.ny * h._dtype.itemsize
+        super(MRC, self).__init__(h, [MRCSlice(self, h, z) for z in xrange(h.nz)], h.nx, h.ny, h._dtype, readonly)
 
-    # General
     def close(self):
         if hasattr(self, '_file') and self._file:
             self._file.close()
             self._file = None
 
-    # Internal section reading and writing
-    def _get_section(self, i, seq):
-        if not seq: self._file.seek(self._off + i * self._sec_bytes)
-        return imread_raw(self._file, self._shape, self._dtype, 'C')
+    def _get_off(self, z): return self._off+z*self._slc_bytes
 
-    def _set_section(self, i, im, seq):
-        if not seq: self._file.seek(self._off + i * self._sec_bytes)
-        imsave_raw(self._file, im)
+    def _delete(self, idx):
+        file_remove_ranges(self._file, [(self._get_off(start), self._get_off(stop)) for start,stop in idx])
+        for start,stop in idx: self._delete_slices(start, stop)
+    def _insert(self, idx, ims):
+        if any(self._shape != im.shape or self._dtype != im.dtype for im in ims): raise ValueError('im')
+        end = idx + len(ims)
+        if idx != self._d: copy_data(self._file, self._get_off(idx), self._get_off(end))
+        else:              self._file.truncate(self._get_off(end))
+        self._insert_slices(idx, [MRCSlice(self, self._header, z) for z in xrange(idx, end)])
+        self._file.seek(self._get_off(idx)) # TODO: don't seek if it won't change position?
+        for z,im in zip(xrange(idx, end), ims):
+            im = im.data
+            imsave_raw(self._file, im)
+            self._slices[z]._cache_data(im)
 
-    def _del_sections(self, start, stop):
-        file_shift_contents(self._file, self._off+stop*self._sec_bytes, self._off+start*self._sec_bytes)
-
-    # Getting Slices
     @property
     def stack(self):
         self._file.seek(self._off)
         return imread_raw(self._file, (self._d,)+self._shape, self._dtype, 'C')
 
+class MRCSlice(ImageSlice):
+    def __init__(self, stack, header, z):
+        super(MRCSlice, self).__init__(stack, z)
+        self._set_props(header._dtype, header.nx, header.ny)
+        self._file = stack._file
+        self._off = stack._get_off(z)
+    def _get_props(self): pass
+    def _update(self, z):
+        super(MRCSlice, self)._update(z)
+        self._off = self._stack._get_off(z)
+    def _get_data(self):
+        self._file.seek(self._off) # TODO: don't seek if it won't change position?
+        return imread_raw(self._file, self._shape, self._dtype, 'C')
+    def _set_data(self, im):
+        if self._shape != im.shape or self._dtype != im.dtype: raise ValueError('im')
+        self._file.seek(self._off) # TODO: don't seek if it won't change position?
+        im = im.data
+        imsave_raw(self._file, im)
+        return im
+
+    
 def _f(cast): return Field(cast, False, False)
 def _f_ro(cast): return Field(cast, True, False)
 def _f_fix(cast, value): return FixedField(cast, value, False)
 
-class MRCHeader(Header):
+class MRCHeader(ImageStackHeader):
     __format_new = '10i6f3i3fiih30xhh20xii6h6f3f2ifi' # needs endian byte before using
     __format_old = '<10i6f3i3fiih30xhh20xii6h6f6h3fi' # always little endian
 
@@ -342,13 +368,13 @@ class MRCHeader(Header):
         else:
             itr = iter(self._imstack)
             im = itr.next()
-            amin = im.min()
-            amax = im.max()
-            amean = im.mean()
+            amin = im.data.min()
+            amax = im.data.max()
+            amean = im.data.mean()
             for im in itr:
-                amin = min(amin, im.min())
-                amax = max(amax, im.max())
-                amean += im.mean()
+                amin = min(amin, im.data.min())
+                amax = max(amax, im.data.max())
+                amean += im.data.mean()
             self._data['amin'] = float32(amin)
             self._data['amax'] = float32(amax)
             self._data['amean'] = float32(amean) / self._data['nz']
@@ -396,9 +422,10 @@ class MRCHeader(Header):
             # Header changed size, need to shift image data
             next = self._data['next']
             new_off = HDR_LEN + LBL_LEN * LBL_COUNT + next
-            file_shift_contents(f, self._imstack._off, new_off)
+            copy_data(f, self._imstack._off, new_off)
             self._old_next = next
             self._imstack._off = new_off
+            self._imstack._update_offs(0)
         self._save(self._imstack._file)
         
     def _save(self, f):

@@ -10,8 +10,8 @@ from ..._util import prod, dtype_cast, itr2str, splitstr, get_list, _bool
 
 from ...types import *
 from .._single import iminfo, imread, imsave
-from .._stack import ImageStack, Header, Field, FixedField
-from .._util import openfile, get_file_size, file_shift_contents, imread_raw, imsave_raw, imread_ascii_raw, imsave_ascii_raw
+from .._stack import ImageStack, ImageStackHeader, Field, FixedField
+from .._util import openfile, get_file_size, copy_data, imread_raw, imsave_raw, imread_ascii_raw, imsave_ascii_raw
 
 __all__ = ['iminfo_mha', 'iminfo_mhd', 'imread_mha', 'imread_mhd', 'imsave_mha', 'imsave_mhd']
  # TODO: 'Metafile'

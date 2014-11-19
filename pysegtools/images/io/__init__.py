@@ -6,6 +6,6 @@ from _single import iminfo, imread, imsave
 
 from _stack import ImageStack
 from _memory import MemoryImageStack
-from _collection import ImageStackCollection
+from _collection import ImageCollectionStack
 
 import formats

@@ -1,12 +1,12 @@
 from collections import Iterable
 import os
 
-from _stack import ImageStack, Header, Field, NumericField
+from _stack import ImageStack, ImageSlice, ImageStackHeader, Field, NumericField
 from _single import iminfo, imread, imsave
 
-__all__ = ['ImageStackCollection']
+__all__ = ['ImageCollectionStack']
 
-class ImageStackCollection(ImageStack):
+class ImageCollectionStack(ImageStack):
     """
     An image stack that is composed of many other files. It uses iminfo/imread/imsave from images so
     supports any of those file formats.
@@ -16,7 +16,11 @@ class ImageStackCollection(ImageStack):
     def open(cls, files, readonly=False, pattern=None, start=0, step=1, **options):
         """
         Opens many files (from an iterable) as a single image-stack. You can specify if changes can
-        be made or not. Extra options supported are:
+        be made or not. The list of files can contain both existing and non-existing files, however
+        only the leading existing files are used as "existing", all files after the first listed
+        non-existing file are assumed to be non-existent (and may be overwritten).
+
+        Extra options supported are:
          * pattern: a string with a %d (or similar) printf-pattern used when adding extra slices,
            if not provided new slices cannot be added. The pattern must include a file extension
            which is used to determine the file-format to save as.
@@ -27,18 +31,18 @@ class ImageStackCollection(ImageStack):
 
         Note that "pattern" is not automatically used to find files to open, instead it is only used
         when appending new slices. If you wish to have all the files from a pattern, you can do:
-          ims = ImageStackCollection.open((pattern%i for i in xrange(existing_count)), pattern=pattern)
+          ims = ImageCollectionStack.open((pattern%(i*step+start) for i in xrange(existing_count)), pattern=pattern, start=start, step=step)
         """
         if isinstance(files, basestring): files = [files]
-        if not isinstance(files, Iterable): raise ValueError('files must be an iterable with at least one filename')
+        if not isinstance(files, Iterable): raise ValueError('files must be an iterable of filenames')
         files = [os.path.abspath(f) for f in files]
-        if len(files) == 0 or any(not os.path.isfile(f) for f in files): raise ValueError('files must be an iterable with at least one entry of existing filenames')
+        num_files_found = next((i for i,f in enumerate(files) if not os.path.isfile(f)), len(files))
         if len(options) > 0: raise ValueError('unsupported options provided')
-        h = ImageStackCollectionHeader(pattern, start, step, files)
-        return ImageStackCollection(h, files, files, readonly)
+        h = ImageCollectionStackHeader(pattern, start, step, files)
+        return ImageCollectionStack(h, files, files[:num_files_found], readonly)
 
     @classmethod
-    def create(cls, files, shape, dtype, pattern=None, start=0, step=1, **options):
+    def create(cls, files, ims, pattern=None, start=0, step=1, **options):
         """
         Creates in image-stack saving to multiple files. The files are an iterable of filenames to
         save slices as, or if None then only the pattern is used. The files are overwritten and
@@ -52,31 +56,73 @@ class ImageStackCollection(ImageStack):
            into pattern
         """
         if isinstance(files, basestring): files = [files]
-        if files != None and not isinstance(files, Iterable): raise ValueError('files must be an iterable with at least one filename')
+        if files != None and not isinstance(files, Iterable): raise ValueError('files must be an iterable of filenames')
         files = [] if files == None else [os.path.abspath(f) for f in files]
         if len(options) > 0: raise ValueError('unsupported options provided')
-        h = ImageStackCollectionHeader(pattern, start, step, shape=shape, dtype=dtype)
-        return ImageStackCollection(h, files, [], False)
+        h = ImageCollectionStackHeader(pattern, start, step)
+        s = ImageCollectionStack(h, files, [], False)
+        s._insert(0, ims)
+        return s
     
     def __init__(self, h, all_file_names, starting_files, readonly=False):
-        super(ImageStackCollection, self).__init__(h._shape[1], h._shape[0], len(starting_files), h._dtype, h, readonly)
-        h._imstack = self
+        super(ImageCollectionStack, self).__init__(h, [ImageFileSlice(self, f, z) for z, f in enumerate(starting_files)], readonly)
         self._orig_files = all_file_names
-        self._files = starting_files
 
-    def _get_section(self, i, seq): return imread(self._files[i])
-    def _set_section(self, i, im, seq):
-        if i == self._d:
-            if i < len(self._orig_files): f = self._orig_files[i]
-            elif 'pattern' in self._h:    f = self._h.pattern % (self._h.start + i * self._h.step)
-            else: raise ValueError('ran out of usable filenames without a pattern option')
-            self._files.append(f)
-        imsave(self._files[i], im)
-    def _del_sections(self, start, stop):
-        move = stop - start
-        for f in self._files[start:stop]: os.remove(f)
-        for i,f in enumerate(self._files[stop:]): os.rename(f, self._files[i-move])
-        del self._files[start:stop]
+    def __rename(self, slices, filenames):
+        """
+        Rename all slices given by "shifting" them into the filenames given. The first slice is
+        given the first filename in filenames and so forth, when filenames is depleted the next
+        slice take the filename from the first slice (which has already been renamed). You can
+        think of the used filenames as filenames + [s._filename for s in slices].
+        """
+        for s in slices:
+            src, dst = s._filename, filenames.pop(0)
+            os.rename(src, dst)
+            filenames.append(src)
+            s._filename = dst
+
+    def _insert(self, idx, ims):
+        # Note: the renaming may run into problems on Windows because if the file exists the rename
+        # will fail. This only affects insert and only the first len(ims) renames.
+        end = self._d+len(ims)
+        filenames = self._orig_files[self._d:end]
+        if len(filenames) < len(ims):
+            if 'pattern' not in self._header: raise ValueError('ran out of usable filenames without a pattern option')
+            start, step = self._header.start, self._header.step
+            start, stop = start+(idx+len(filenames))*step, start+end*step
+            filenames.extend(self._header.pattern % i for i in xrange(start, stop, step))
+        filenames.reverse()
+        self.__rename(reversed(self._slices[idx:self._d]), filenames)
+        filenames.reverse()
+        self._insert_slices(idx, [ImageFileSlice(self, f, z+idx) for z, f in enumerate(filenames)])
+        for s, im in zip(self._slices[idx:end], ims):
+            im = im.data
+            imsave(s._filename, im)
+            s._cache_data(im)
+        
+    def _delete(self, idx):
+        for start, stop in idx:
+            # This could be done in a slightly better way by going from the lowest start to the
+            # highest like how file_remove_ranges does it (instead of highest to lowest like is
+            # easier). This would only reduce the number of renames while complicating the process.
+            filenames = [s._filename for s in self._slices[start:stop]]
+            for f in filenames: os.remove(f)
+            self.__rename(self._slices[stop:], filenames)
+            self._delete_slices(start, stop)
+
+class ImageFileSlice(ImageSlice):
+    def __init__(self, stack, filename, z):
+        super(ImageFileSlice, self).__init__(stack, z)
+        self._filename = filename
+    def _get_props(self):
+        shape, dtype = iminfo(self._filename)
+        self._set_props(dtype, shape)
+    def _get_data(self): return imread(self._filename)
+    def _set_data(self, im):
+        im = im.data
+        imsave(self._filename, im)
+        self._set_props(im.dtype, im.shape)
+        return im
 
 def cast_pattern(s):
     s = os.path.abspath(str(s))
@@ -84,7 +130,7 @@ def cast_pattern(s):
     except: raise ValueError('pattern must have a single printf-style replacement option similar to %d')
     return s
 
-class ImageStackCollectionHeader(Header):
+class ImageCollectionStackHeader(ImageStackHeader):
     """
     Header for a collection of images as a stack. The only fields are a tuple of the files that back
     the collection. If there is a pattern for files to load, it along with the starting and step
@@ -98,26 +144,18 @@ class ImageStackCollectionHeader(Header):
         }
     
     # Setup all instance variables to make sure they are in __dict__
-
     # Required for headers
     _imstack = None
     _fields = None
     _data = None
-    
-    # Specific to collections
-    _shape = None
-    _dtype = None
-    def __init__(self, pattern, start, step, files=(), shape=None, dtype=None):
-        self._fields = ImageStackCollectionHeader.__fields_raw.copy()
+    def __init__(self, pattern, start, step, files=()):
+        self._fields = ImageCollectionStackHeader.__fields_raw.copy()
         self._data = {} if pattern == None else {'pattern':pattern,'start':start,'step':step}
-        if shape == None and dtype == None:
-            shape, dtype = iminfo(files[0])
-            if any(iminfo(f) != (shape, dtype) for f in files[1:]): raise ValueError('all files must have same dimensions and data-type')
         self._data['files'] = tuple(files)
         self._check()
-        self._shape = shape
-        self._dtype = dtype
     def save(self, update_pixel_values=True):
         if self._imstack._readonly: raise AttributeError('header is readonly')
-    def _update_depth(self, d): self._data['files'] = tuple(self._imstack._files)
+    def _update_depth(self, d):
+        fs = self._data['files']; l = len(fs)
+        self._data['files'] = fs[:d] if d<=l else fs + tuple(s._filename for s in self._imstack._slices[l:])
     def _get_field_name(self, f): return f if f in self._fields else None

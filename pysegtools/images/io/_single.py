@@ -57,7 +57,7 @@ def iminfo(filename):
     else:
         from PIL import Image
         im = Image.open(filename)
-        return im.size, pil_mode_to_dtype[im.palette.mode if im.mode == 'P' else im.mode]
+        return tuple(reversed(im.size)), pil_mode_to_dtype[im.palette.mode if im.mode == 'P' else im.mode]
 def _iminfo_register(ext, info):
     """
     Register a file extension to use a particular info-gathering function. The function needs to
@@ -103,8 +103,8 @@ def imread(filename):
             from PIL import Image
             from numpy import asarray
             im = Image.open(filename)
-            im = asarray(im.getdata(), dtype=IM_BIT).reshape(im.size) # TODO: does this need to be im.size[::-1]?
-        return im
+            im = asarray(im.getdata(), dtype=IM_BIT).reshape(tuple(reversed(im.size)))
+        return im_standardize_dtype(im)
 def _imread_register(ext, read):
     """
     Register a file extension to use a particular reading function. The reading function needs to

@@ -1,15 +1,21 @@
-from abc import ABCMeta, abstractmethod
-from collections import Iterable
+from __future__ import division
+from abc import ABCMeta, abstractmethod, abstractproperty
+from collections import Iterable, OrderedDict
+from itertools import repeat
 from numbers import Integral
-from numpy import ndarray
+from numpy import ndarray, ceil
 
 from ...general.datawrapper import DictionaryWrapperWithAttr
 from ...general.enum import Enum
-from ..types import im_standardize_dtype
+from ..types import im_standardize_dtype, dtype2desc
+from ..source import ImageSource, DeferredPropertiesImageSource
 
-__all__ = ['ImageStack','Header','Field','FixedField','NumericField','MatchQuality']
+__all__ = ['ImageStack','UniformImageStack','ImageSlice','ImageStackHeader','Field','FixedField','NumericField','MatchQuality']
 
-# TODO: improve sequential get/set ability to work even when not explicit
+def slice_len(start, stop, step): return max(int(ceil((stop-start)/step)), 0) #max((stop-start+step-(1 if step>0 else -1))//step, 0)
+def check_int(i):
+    if int(i) == i: return int(i)
+    raise ValueError()
 
 class MatchQuality(int, Enum):
     NotAtAll = 0
@@ -18,49 +24,27 @@ class MatchQuality(int, Enum):
     Likely = 75
     Definitely = 100
 
-def read_slice(idx, d):
-    # Fix up the start, stop, and step values (supporting negative and/or missing values)
-    # Note that idx.stop can be either None or 2147483647 indicating "all the way to the end" and
-    # if a step is not given, negative values are pre-converted to positive values using the __len__
-    start, stop, step = idx.start, idx.stop, idx.step
-    if step == None: step = 1
-    elif step == 0: raise ValueError('slice step cannot be zero')
-    if step > 0:
-        start = 0 if start == None else max(start+d if start < 0 else start, 0)
-        stop  = d if stop  == None else min(stop +d if stop  < 0 else stop , d)
-        if start >= stop: return 0, 1, 1 # empty
-    else:
-        start = d-1 if start == None else min(start+d if start < 0 else start, d-1)
-        stop  =  -1 if stop  == None else max(stop +d if stop  < 0 else stop ,  -1)
-        if start <= stop: return 0, 1, 1 # empty
-    return start, stop, step
-
-def is_sequential(l):
-    if len(l) > 0:
-        y = l[0] - 1
-        for x in l:
-            if x != y + 1: return False
-            y = x
-    return True
-
 class ImageStack(object):
     """
     A stack of images. This is either backed by a file format that already has multiple images (like
-    MRC, MHA/MHD, and TIFF) or a collection of seperate images.
+    MRC, MHA/MHD, and TIFF) or a collection of seperate 2D images.
 
-    When loading an image stack only the header(s) is/are loaded. Individual 2D slices are returned
-    with the [] or when iterating. Slices are only loaded as needed and by default are not cached.
-    The number of slices is available with len(). The [] also accepts slice-notation and iterables
-    of indicies and always returns a view in these cases (so as to not force everything to load into
-    memory usage). To force everything to load you can use the stack() function which returns the
-    entire stack as a 3D array or one can use list() on the return value of [] to get a list of 2D
-    slices.
+    When loading an image stack only the header(s) is/are loaded. Individual 2D slice headers are
+    returned with the [] or when iterating. Slice image data is only leaded as needed and by default
+    are not cached. The number of slices is available with len(). The [] also accepts slice-notation
+    and iterables of indicies and returns a list of ImageSlice objects.
 
     When writing, slices are typically saved immediately but the header typically is not. Call
     the save() function to force all data including the header to be saved.
     """
     
     __metaclass__ = ABCMeta
+
+    @classmethod
+    def _get_all_subclasses(cls):
+        subcls = cls.__subclasses__()
+        for sc in list(subcls): subcls.extend(sc._get_all_subclasses())
+        return subcls
     
     @classmethod
     def open(cls, filename, readonly=False, **options):
@@ -71,47 +55,50 @@ class ImageStack(object):
         """
         if isinstance(filename, basestring):
             highest_cls, highest_mq = None, MatchQuality.NotAtAll
-            for cls in ImageStack.__subclasses__():
+            for cls in cls._get_all_subclasses():
                 with open(filename, 'r') as f: mq = cls._openable(f, **options)
                 if mq > highest_mq: highest_cls, highest_mq = cls, mq
                 if mq == MatchQuality.Definitely: break
             if highest_mq == MatchQuality.NotAtAll: raise ValueError
             return highest_cls.open(filename, readonly, **options)
         elif isinstance(filename, Iterable):
-            from _collection import ImageStackCollection
-            return ImageStackCollection.open(filename, readonly, **options)
-        else:
-            raise ValueError
+            from _collection import ImageCollectionStack
+            return ImageCollectionStack.open(filename, readonly, **options)
+        else: raise ValueError()
         
     @classmethod
-    def create(cls, filename, shape, dtype, **options):
+    def create(cls, filename, ims, **options):
         """
-        Creates an empty image-stack file or writes to a series of images as a stack. If 'filename'
-        is a string then it is treated as a new file. Otherwise it needs to be an iterable of file
-        names (even empty) or None in which case a collection of files are used to write to. Extra
-        options are only supported by some file formats. When filenames is None or an empty iterable
+        Creates an image-stack file or writes to a series of images as a stack. If 'filename' is a
+        string then it is treated as a new file. Otherwise it needs to be an iterable of file names
+        (even empty) or None in which case a collection of files are used to write to. Extra options
+        are only supported by some file formats. When filenames is None or an empty iterable
         then you need to give a "pattern" option with an extension and %d.
+
+        The new stack is created from the given iterable of ndarrays or ImageSources. While some
+        formats can be created with no images given, many do require at least one image to be
+        created so that at least the dtype and shape is known.
         """
+        ims = [ImageSource.as_image_source(im) for im in ims]
         if isinstance(filename, basestring):
             from os.path import splitext
             ext = splitext(filename)[1].lower().lstrip('.')
             highest_cls, highest_mq = None, MatchQuality.NotAtAll
-            for cls in ImageStack.__subclasses__():
+            for cls in cls._get_all_subclasses():
                 mq = cls._creatable(filename, ext, **options)
                 if mq > highest_mq: highest_cls, highest_mq = cls, mq
                 if mq == MatchQuality.Definitely: break
             if highest_mq == MatchQuality.NotAtAll: raise ValueError
-            return highest_cls.create(filename, shape, dtype, **options)
+            return highest_cls.create(filename, ims, **options)
         elif filename == None or isinstance(filename, Iterable):
-            from _collection import ImageStackCollection
-            return ImageStackCollection.create(filename, shape, dtype, **options)
-        else:
-            raise ValueError
+            from _collection import ImageCollectionStack
+            return ImageCollectionStack.create(filename, ims, **options)
+        else: raise ValueError()
 
     @classmethod
     def supported_list(cls):
         descs = []
-        for cls in ImageStack.__subclasses__():
+        for cls in cls._get_all_subclasses():
             desc = cls._description()
             if desc is not None: descs.append(desc)
         return descs
@@ -120,7 +107,9 @@ class ImageStack(object):
     def _openable(cls, f, **opts):
         """
         Return how likely a readable file-like object is openable as an ImageStack given the
-        dictionary of options. Returns a MatchQuality rating.
+        dictionary of options. Returns a MatchQuality rating. If this returns anything besides
+        NotAtAll then the class must provide a static/class method like:
+            `open(filename_or_file, readonly, **options)`
         """
         return MatchQuality.NotAtAll
 
@@ -128,7 +117,9 @@ class ImageStack(object):
     def _creatable(cls, filename, ext, **opts):
         """
         Return how likely a filename/ext (without .) is creatable as an ImageStack given the
-        dictionary of options. Returns a MatchQuality rating.
+        dictionary of options. Returns a MatchQuality rating. If this returns anything besides
+        NotAtAll then the class must provide a static/class method like:
+            `create(filename, ims, **options)`
         """
         return MatchQuality.NotAtAll
     
@@ -139,17 +130,13 @@ class ImageStack(object):
         """
         return None
     
-    def __init__(self, w, h, d, dtype, header, readonly=False):
-        self._w = w
-        self._h = h
-        self._d = d
-        self._dtype = dtype
-        self._shape = (h, w)
+    def __init__(self, header, slices, readonly=False):
         self._header = header
+        header._imstack = self
+        self._slices = slices
+        self._d = len(slices)
         self._readonly = bool(readonly)
-        self._sec_pxls  = w * h
-        self._sec_bytes = w * h * dtype.itemsize
-        self.__cache_size = 0
+        self._cache_size = 0
 
 
     # General
@@ -157,35 +144,66 @@ class ImageStack(object):
         if self._readonly: raise AttributeError('readonly')
         self._header.save()
     def close(self): pass
-    def __del__(self): self.close()
+    def __delete__(self): self.close()
     @property
-    def w(self): return self._w
-    @property
-    def h(self): return self._h
+    def is_uniform(self): return False
     @property
     def d(self): return self._d
-    @property
-    def dtype(self): return self._dtype
-    @property
-    def shape(self): return self._shape
     @property
     def readonly(self): return self._readonly
     @property
     def header(self): return self._header
     def __len__(self): return self._d
+    def __str__(self):
+        """Gets a basic representation of this class as a string."""
+        if self._d == 0: return "(no slices)"
+        props = [(im.w,im.h,im.dtype) for im in self._slices]
+        props0 = props[0]
+        if all(p == props0 for p in props[1:]): # is it uniform?
+            return "%dx%dx%d %s" % (props0[0], props0[1], self._d, dtype2desc(props0[2]))
+        return "\n".join("%d: %dx%d %s" % (i, p[0], p[1], dtype2desc(p[2])) for i,p in enumerate(props))
+    def print_detailed_info(self, s):
+        pass
 
+    # Internal slice maniplutions - primary functions to be implemented by base classes
+    # Getting and setting individual slices is done in the ImageSlice objects
+    @abstractmethod
+    def _delete(self, idxs):
+        """
+        Internal slice deletion function to be implemented by sub-classes. The given idxs is a list
+        of tuples each with two values: start and stop. Each tuple represents a continous (step 1)
+        range of values from start to stop-1. The start value is always less than the stop value.
+        The tuples themselves are in descending order. This will usually be only called with a list
+        of a single tuple. If stop == self._d we are removing from the end.
 
-    # Internal section reading and writing - primary functions to be implemented by base classes
-    @abstractmethod
-    def _get_section(self, i, seq): pass
-    @abstractmethod
-    def _set_section(self, i, im, seq): pass # if i == self._d we are appending
-    @abstractmethod
-    def _del_sections(self, start, stop): pass # step of 1, if stop == self._d then they are being removed from the end
+        This method must call _delete_slices(start, stop) which updates the internal slices list,
+        the cache, and the stack depth. It should be called when appropiate (as soon as the data is
+        deleted). Also note that after that function is called, the indices of all slices after
+        "stop" change, so care must be taken to call it in the right order.
+        """
+        pass
 
-    # Caching of slices (without caching these just forward to the above functions 
+    @abstractmethod
+    def _insert(self, idx, ims):
+        """
+        Internal slice insertion function to be implemented by sub-classes. The idx is the start of
+        the insertion (what currently is at idx will end up after the inserted images). If idx is
+        equal to the current number of slices then the images are appended. The argument ims is
+        always a list of ImageSource objects.
+
+        The function must call _insert_slices(idx, slices) which updates the internal slices list,
+        the cache (in part), and the stack depth. It should be called when appropiate (after
+        "space" has been made but preferrably before the data is saved which may not always be
+        possible).
+
+        This must call ImageSlice._cache_data(im) after a slice is written.
+        """
+        pass
+        
+
+    # Caching of slices
     @property
-    def cache_size(self): return self.__cache_size
+    def cache_size(self): return self._cache_size
     @cache_size.setter
     def cache_size(self, value):
         """
@@ -193,213 +211,319 @@ class ImageStack(object):
         without disk reads. Default is 0 which means no slices are cached. If -1 then all slices
         will be cached as they are accessed.
         """
+        # The cache uses the following member variables:
+        #  _cache_size        either 0 (cache off), -1 (unlimited cache), or a value >0 (max cache size)
+        #  _cache             the LRU cache, an OrderedDict of indices which are cached with popitem(False) as least recently used
+        #  ._slices[]._cache  the cached data for a slice (if it exists)
         value = int(value)
         if value < -1: raise ValueError
         if value == 0: # removing cache
-            if self.__cache_size != 0:
-                del self.__cache
-                del self.__cache_order
+            if self._cache_size:
+                del self._cache
+                for s in self._slices:
+                    if hasattr(s, '_cache'): del s._cache
         elif value != 0:
-            if self.__cache_size == 0: # creating cache
-                self.__cache_ = [None]*self._d
-                self.__cache_order = deque()
+            if not self._cache_size: # creating cache
+                self._cache = OrderedDict()
             elif value != -1:
-                while len(self.__cache_order) > value: # cache is shrinking
-                    self.__cache[self.__cache_order.popleft()] = None
-        self.__cache_size = value
-    def cache_size_in_bytes(self, bytes): self.cache_size = bytes // self._sec_bytes;
-    def __cache_it(self, i):
+                while len(self._cache) > value: # cache is shrinking
+                    del self._slices[self._cache.popitem(False)[0]]._cache
+        self._cache_size = value
+    # TODO: def set_cache_size_in_bytes(self, bytes): self.cache_size = bytes // self._sec_bytes;
+    def _cache_it(self, i):
         # Places an index into the cache list (but doesn't do anything with the cached data itself)
-        # Returns true if the index is already cached (in which case it is moved to the back of the queue)
+        # Returns True if the index is already cached (in which case it is moved to the back of the LRU)
         # Otherwise if the queue is full then the oldest thing is removed from the cache
-        already_in_cache = self.__cache[i] != None
-        if already_in_cache:
-            self.__cache_order.remove(i)
-        elif len(self.__cache_order) == self.__cache_size: # cache full
-            self.__cache[self.__cache_order.popleft()] = None
-        self.__cache_order.append(i)
+        already_in_cache = self._cache.pop(i, False)
+        if not already_in_cache and len(self._cache) == self._cache_size: # cache full
+            del self._slices[self._cache.popitem(False)]._cache
+        self._cache[i] = True
         return already_in_cache
-    def __get_section(self, i, seq):
-        if self.__cache_size == 0: return self._get_section(i, seq)
-        if not self.__cache_it(i):
-            self.__cache[i] = im_standardize_dtype(self._get_section(i, seq))
-        return self.__cache[i] # the cache is full on un-writeable copies already, so no .copy()
-    def __set_section(self, i, im, seq):
-        im = im_standardize_dtype(im)
-        if self._shape != im.shape or self._dtype != im.dtype: raise ValueError('im')
-        self._set_section(i, im)
-        if self.__cache_size != 0:
-            self.__cache_it(i)
+
+    def _delete_slices(self, start, stop):
+        ss = stop - start
+        
+        # Update cache
+        if self._cache_size: self.__update_cache(i-ss if i>=stop else i for i in self._cache if i<start or i>=stop)
+
+        # Update slices and depth
+        del self._slices[start:stop]
+        self._d -= ss
+        for z in xrange(start, self._d): self._slices[z]._update(z)
+        self._header._update_depth(self._d)
+        
+    def _insert_slices(self, idx, slices):
+        ln = len(slices)
+        
+        # Update slices and depth
+        self._slices[idx:idx] = slices
+        self._d += ln
+        for z in xrange(idx+ln, self._d): self._slices[z]._update(z)
+        self._header._update_depth(self._d)
+
+        # Update cache
+        if self._cache_size: self.__update_cache(i+ln if i>=idx else i for i in self._cache)
+
+    def __update_cache(self, c): self._cache = OrderedDict(zip(c, repeat(True)))
+
+    # Getting Slices
+    def __getitem__(self, idx):
+        """
+        Get image slices. Accepts integers, index slices, or iterable indices. When using an integral
+        index this returns an ImageSlice object. For index slice and iterable indices it returns a
+        list of ImageSlice objects. Images slice data is not loaded until the data attribute of the
+        ImageSlice object is used.
+        """
+        if isinstance(idx, (Integral, slice)): return self._slices[idx]
+        elif isinstance(idx, Iterable):        return [self._slices[i] for i in idx]
+        else: raise TypeError('index')
+    def __iter__(self):
+        for i in xrange(self._d): yield self._slices[i]
+
+    # Setting and adding slices
+    def __setitem__(self, idx, ims):
+        """
+        Sets a slices to new images, writing them to disk. The images can be either ndarrays,
+        ImageSource, or ImageSlice objects. Accepts advanced indexing as follows:
+
+        * Integer index: accepts integers in [-N, N] where negative values are relative to the end
+        of the stack. If N is given than the image is appended. You can only set single images with
+        this method.
+
+        * Slice index: accepts all slices and they and converted into indices like is done for
+        lists. You must set an iterable of images, with some restricitions:
+          - If step is +1 or -1 any length iterable is allowed, if the iterable is smaller than the
+            slice then extra entries are removed from the stack, if the iterable is larger than the
+            slice than extra entries are inserted into the stack at the last value of the slice.
+          - If step is any other value than the iterable must have exactly the same length as the
+            slice.
+
+        * Iterable index of integers: accepts an iterable integers each in [-N, N] as per integer
+        indices. Note that since an index of N appends, the acceptable range will possibly be
+        different as the indices are read. You must set an iterable of images which is the same
+        length as the number of indices.
+
+        In general, to conserve memory, when setting a long list of images it is preferable to use
+        ImageSource objects (e.g. ImageSlice) which can dynamically load or create the image data.
+
+        Notes on exceptions: any set is broken down into individual operation of set, delete, and
+        "create space" (for inserting). If any operation causes an exception, it should
+        happen before it has caused any changes to the stack or data on disk. Thus, when an
+        exception does occur the stack will still be valid but only some of the requested operations
+        will have been completed. The strange one is "create space" which may leave slices of
+        garbage data if a subsequent set operation raises an exception.
+        """
+        if self._readonly: raise Exception('readonly')
+        if isinstance(idx, Integral):
+            if idx < 0: idx += self._d
+            if not (0 <= idx <= self._d): raise IndexError()
+            if idx == self._d: self._insert(idx, [ImageSource.as_image_source(im)])
+            else:              self._slices[idx].data = im
+        elif isinstance(idx, slice):
+            start, stop, step = idx.indices(self._d)
+            length = slice_len(start, stop, step)
+            ims = [ImageSource.as_image_source(im) for im in ims]
+            if step == +1:
+                for i in xrange(min(length, len(ims))): self._slices[start+i].data = ims[i]
+                if   len(ims) < length: self._delete([(start+len(ims), stop)])
+                elif len(ims) > length: self._insert(stop, ims[length:])
+            elif step == -1:
+                for i in xrange(min(length, len(ims))): self._slices[start-i].data = ims[i]
+                if   len(ims) < length: self._delete([(stop, start-len(ims)+1)])
+                elif len(ims) > length: self._insert(stop+1, ims[:length-1:-1])
+            elif len(ims) != length:
+                raise ValueError("setting slices with |step|>1 requires an iterable of the same length as the indices")
+            else:
+                for i, im in enumerate(ims): self._slices[start+i*step].data = im
+        elif isinstance(idx, Iterable):
+            idx = [check_int(i+self._d) if i < 0 else i for i in idx]
+            reduce(lambda d,i: (d+1 if i==d else d) if 0<=i<=d else [][0], idx, self._d) # check if any indicies will be out of range - [][0] causes an IndexError
+            ims = [ImageSource.as_image_source(im) for im in ims]
+            if len(ims) != len(idx):
+                raise ValueError("setting iterable indices requires an iterable of the same length as the indices")
+            for i, im in zip(idx, ims):
+                if i == self._d: self._insert(self._d, [im])
+                else:            self._slices[i].data = im
+        else: raise TypeError('index')
+    def append(self, im):
+        """Appends a single slice, writing it to disk."""
+        # equivilient to self[len(self)] = im
+        if self._readonly: raise Exception('readonly')
+        self._insert(self._d, [ImageSource.as_image_source(im)])
+    def extend(self, ims):
+        """Appends many slices, writing them to disk."""
+        # equivilient to self[len(self):] = ims
+        if self._readonly: raise Exception('readonly')
+        ims = [ImageSource.as_image_source(im) for im in ims]
+        self._insert(self._d, ims)
+    def __iadd__(self, im):
+        """Either appends or extends depending on the data type."""
+        if isinstance(im, ImageSource):
+            self.append(im)
+        elif isinstance(im, ndarray):
+            im = im_standardize_dtype(im)
+            if   im.ndim == 2: self.append(im)
+            elif im.ndim == 3: self.extend(im)
+            else: raise ValueError()
+        else: self.extend(im)
+    def insert(self, i, im):
+        """Insert a single slice, writing it to disk."""
+        # equivilent to ims[i:i] = im
+        if self._readonly: raise Exception('readonly')
+        self._insert(i, [ImageSource.as_image_source(im)])
+        
+    # Removing slices
+    def __delitem__(self, idx):
+        """
+        Removes slices. Accepts integers, index slices, or iterable indices. Updates the disk
+        immediately. Typically only efficient when removing from the end (e.g. del ims[-1] or
+        del ims[x:]). You can also use shorten to make sure you are removing from the end.
+        """
+        # We take the indices given to us and convert them into a "standard" format. The standard
+        # format is a list of tuples of start/stop indices of a continous range. The continous
+        # ranges are always specified with low-number first then high number (which is +1 the actual
+        # range end, like what you woudl give to the range function). The tuples themselves are
+        # sorted such that the start index is decreasing.
+        if self._readonly: raise Exception('readonly')
+        if isinstance(idx, Integral):
+            if idx < 0: idx += self._d
+            if not (0 <= idx < self._d): raise IndexError()
+            idx = [(idx,idx+1)]
+        elif isinstance(idx, slice):
+            start, stop, step = idx.indices(self._d)
+            count = slice_len(start, stop, step)
+            if count == 0: return
+            # make step negative so we always move from the end towards the beginning
+            if step > 0: start, stop, step = stop-1, start-1, -step
+            idx = [(stop+1,start+1)] if step == -1 else [(i,i+1) for i in xrange(start, stop, step)]
+        elif isinstance(idx, Iterable):
+            # get a descending sorted list with all duplicate entries removed and negative values corrected
+            idxx = list(sorted(set(check_int(i+self._d if i < 0 else i) for i in idx), reverse=True))
+            if len(idxx) == 0: return
+            if idxx[-1] < 0 or idxx[0] >= self._d: raise IndexError()
+            idx = []
+            prev = -1 # i+1 can never be equal to this the first iteration in the loop
+            for i in idxx:
+                if prev==i+1: idx[-1] = (i, idx[-1][1])
+                else:         idx.append((i, i+1))
+                prev = i
+        else: raise TypeError('index')
+        self._delete(idx)
+    def shorten(self, count=1):
+        """Removes 'count' slices from the end of the stack (default 1)."""
+        # equivilient to del self[-count:]
+        if self._readonly: raise Exception('readonly')
+        if count <= 0 or count > self._d: raise ValueError('count')
+        self._delete([(self._d-count,self._d)])
+    def clear(self):
+        """Remove all slices from the stack."""
+        # equivilient to del self[:]
+        if self._readonly: raise Exception('readonly')
+        self._delete([(0,self._d)])
+
+class UniformImageStack(ImageStack):
+    """
+    An image stack where every slice has the same shape and data type. Provides some additional
+    properties.
+    """
+    __metaclass__ = ABCMeta
+
+    def __init__(self, header, slices, w, h, dtype, readonly=False):
+        super(UniformImageStack, self).__init__(header, slices, readonly)
+        self._w = w
+        self._h = h
+        self._shape = (h, w)
+        self._dtype = dtype
+        self._slc_pxls  = w * h
+        self._slc_bytes = w * h * dtype.itemsize
+
+    @property
+    def is_uniform(self): return True
+
+    @property
+    def w(self): return self._w
+    @property
+    def h(self): return self._h
+    @property
+    def shape(self): return self._shape
+    @property
+    def dtype(self): return self._dtype
+    
+    @property
+    def stack(self):
+        """Get the entire stack as a single 3D image."""
+        from numpy import empty
+        stack = empty((self._d,) + self._shape, dtype=self._dtype)
+        for i, sec in enumerate(self): stack[i,:,:] = sec
+        return stack
+
+    def __str__(self): return "%dx%dx%d %s" % (self._w, self._h, self._d, dtype2desc(self._dtype))
+
+
+class ImageSlice(DeferredPropertiesImageSource):
+    """
+    A image slice from an image stack. These must be implemented for specific formats. The
+    implementor must either call _set_props during initialization or implement a non-trivial
+    _get_props function (the trivial one would be def _get_props(self): pass).
+    """
+    __metaclass__ = ABCMeta
+    
+    def __init__(self, stack, z):
+        self._stack = stack
+        self._z = z
+
+    @property
+    def stack(self): return self._stack
+    @property
+    def z(self): return self._z
+
+    @property
+    def data(self):
+        if not self._stack._cache_size: return self._get_data()
+        if not self._stack._cache_it(self._x): self._cache = self._get_data()
+        return self._cache # the cache is full on un-writeable copies already, so no .copy()
+
+    @data.setter
+    def data(self, im):
+        self._cache_data(self._set_data(ImageSource.as_image_source(im)))
+
+    def _cache_data(self, im):
+        if self._stack._cache_size:
+            self._stack._cache_it(self._z)
             if im.flags.writeable:
                 # TODO: not writable != truly read-only/immutable...
                 # TODO: make copy-on-write
                 im = im.copy()
                 im.flags.writeable = False
-            if i == self._d: self.__cache.append(im)
-            else:            self.__cache[i] = im
-    def __del_sections(self, start, stop):
-        self._del_sections(start, stop)
-        if self.__cache_size != 0:
-            for i in xrange(start, stop):
-                if self.__cache[i] != None: self.__cache_order.remove(i)
-            if stop != self._d:
-                # need to update all values greater than stop
-                shift = stop - start
-                vals = range(stop, self._d)
-                for _ in xrange(len(self.__cache_order)):
-                    val = self.__cache_order.popleft()
-                    if val in vals: val -= shift
-                    d.append(val)
-            del self.__cache[start:stop]
-            
-        
-    # Getting Slices
-    def __getitem__(self, idx):
-        """
-        Get data of slices. Accepts integral, slice, or iterable indices. When using an integral
-        index this returns the actual slice. For slice and iterable indices it returns a view into
-        the ImageStack. The images are still not loaded until actually needed in these cases.
-        """
-        if isinstance(idx, Integral):
-            if idx < 0: idx += self._d
-            if not (0 <= idx < self._d): raise IndexError()
-            return self.__get_section(idx, False)
-        elif isinstance(idx, slice):
-            start, stop, step = read_slice(idx, self._d)
-            return ImageStackView(self, range(start, stop, step), step == 1)
-        elif isinstance(idx, Iterable):
-            idx = list(idx)
-            return ImageStackView(self, idx, is_sequential(idx))
-        else: raise TypeError('index')
-    def __iter__(self):
-        if self._d > 0:
-            yield self._get_section(0, False)
-            for i in xrange(1, self._d): yield self.__get_section(i, True)
-    @property
-    def stack(self):
-        """Get the entire stack as a single 3D image."""
-        from numpy import empty
-        s = empty((self._d,) + self._shape, dtype=self._dtype)
-        for i, sec in enumerate(self): stack[i,:,:] = sec
-        return s
+            self._cache = im
 
-
-    # Setting and adding slices        
-    def __setitem__(self, idx, im):
-        """Sets a slice to a new image, writing it to disk. Accepts only integral indices."""
-        if self._readonly: raise Exception('readonly')
-        if not isinstance(idx, Integral): raise TypeError('index')
-        if idx < 0: idx = self._d - idx
-        if idx >= self._d: raise ValueError('index')
-        self._set_section(idx, im, False)
-    def append(self, im):
-        """Appends a single slice, writing it to disk."""
-        if self._readonly: raise Exception('readonly')
-        self._set_section(self._d, im, False)
-        self._d += 1
-        self._header._update_depth(self._d)
-    def extend(self, ims):
-        """Appends many slices, writing them to disk."""
-        if self._readonly: raise Exception('readonly')
-        seq = False
-        for im in ims:
-            self._set_section(im, self._d, seq)
-            self._d += 1
-            seq = True
-        self._header._update_depth(self._d)
-    def __iadd__(self, im):
-        """Either appends or extends depending on the data type."""
-        if isinstance(im, ndarray):
-            try:               self.append(im_standardize_dtype(im))
-            except ValueError: self.extend(im)
-        else:
-            self.extend(im)
+    @abstractmethod
+    def _get_data(self):
+        """
+        Internal function for getting image data. Must return an ndarray with shape and dtype of
+        this slice (which should be a standardized type).
+        """
+        pass
     
-    # Removing slices
-    def __delitem__(self, idx):
+    @abstractmethod
+    def _set_data(self, im):
         """
-        Removes slices. Accepts integral and slices indices. Updates the disk immediately.
-        Typically only efficient when removing from the end (e.g. del ims[-1] or del ims[x:]).
+        Internal function for setting image data. The image is an ImageSource object. If the image
+        data is not acceptable (for example, the shape or dtype is not acceptable for this format)
+        then an exception should be thrown. In the case of an exception, it must be thrown before
+        any changes are made to this ImageSlice properties or the data on disk.
+
+        This method can optionally copy any metadata it is aware of from the image to this slice. 
+
+        This must return what self._get_data() would return.
         """
-        if self._readonly: raise Exception('readonly')
-        if isinstance(idx, Integral):
-            if idx < 0: idx += self._d
-            if not (0 <= idx < self._d): raise IndexError()
-            self.__del_sections(idx, idx+1)
-            self._d -= 1
-        elif isinstance(idx, slice):
-            start, stop, step = read_slice(idx, self._d)
-            if start + 1 == stop: return
-            if step == +1:
-                self.__del_sections(start, stop)
-                self._d -= stop - start
-            elif step == -1:
-                self.__del_sections(stop+1, start+1)
-                self._d -= start - stop
-            else:
-                # make step negative so we always move from the end towards the start
-                if step > 0: start, stop, step = stop-1, start-1, -step
-                for i in xrange(start, stop, step): self.__del_sections(i, i+1)
-                self._d -= (1 - start + stop + step) // step
-        else: raise TypeError('index')
-        self._header._update_depth(self._d)
-    def shorten(self, count=1):
-        """Removes 'count' slices from the end of the stack (default 1)."""
-        #del self[-count:]
-        if self._readonly: raise Exception('readonly')
-        if count <= 0 or count > self._d: raise ValueError('count')
-        self.__del_sections(self._d - count, self._d)
-        self._d -= count
-        self._header._update_depth(self._d)
-    def clear(self):
-        """Remove all slices from the stack."""
-        #del self[:]
-        if self._readonly: raise Exception('readonly')
-        self.__del_sections(0, self._d)
-        self._d = 0
-        self._header._update_depth(0)
+        pass
 
+    def _update(self, z):
+        """Update this slice when the Z value changes. By default this just sets the z value."""
+        self._z = z
 
-class ImageStackView(ImageStack):
-    """
-    A view of an image stack. This is given when requesting more than one slice from an image stack.
-    It acts mostly like the underlying image stack (allowing to get, set, and delete slices for the
-    base image stack). It however does not support the following:
-     * changing caching options (it will use the caching of the base image stack)
-     * appending slices
-     * the header is completely none-functional (cannot get or set anything or save it)
-    """
-    # TODO: add the ability for headers to have some utility?
-    def __init__(self, ims, ind, seq): # ImageStack, list of indices, if those indices are sequential
-        if isinstance(ims, ImageStackView):
-            # TODO: decide if we should "collapse" views or not (currently this collapses)
-            seq = seq and ims._seq
-            ind = [ims._ind[i] for i in ind]
-            ims = ims._ims
-        self._ims = ims
-        self._ind = list(ind)
-        self._seq = bool(seq)
-        super(ImageStackView, self).__init__(self._ims._w, self._ims._h, len(ind), self._ims._dtype,
-                                             ImageStackViewHeader(self), self._ims._readonly)
-
-    @property
-    def base(self):
-        """Get the base image stack for this view."""
-        return base._ims
-    def save(self): raise AttributeError('views cannot be saved')
-    @ImageStack.cache_size.setter
-    def cache_size(self, value): raise AttributeError('views do not directly support caching, set the cache size on the base ImageStack instead')
-    def _get_section(self, i, seq): return self._ims._get_section(self._ind[i], seq and self._seq)
-    def _set_section(self, i, im, seq):
-        if i >= len(self._ind): raise AttributeError('views cannot be appended to')
-        self._ims._set_section(self._ind[i], im, seq and self._seq)
-    def _del_sections(self, start, stop):
-        if self._seq : self._ims._del_sections(self, self._ind[start], self._ind[stop])
-        else:
-            for i in self._ind[stop-1:start-1:-1]: self._ims._del_sections(i, i+1)
-        del self._ind[start:stop]
-
-class Header(DictionaryWrapperWithAttr):
+class ImageStackHeader(DictionaryWrapperWithAttr):
     """
     The header of an image stack. This is primarily a dictionary with built-in checking of names and
     values based on the image stack type. In general this provides image-format specific information
@@ -570,18 +694,6 @@ class NumericField(Field):
         v = self._cast(v)
         if self.min != None and v < self.min or self.max != None and v > self.max: raise ValueError('value not in range')
         return v
-
-class ImageStackViewHeader(Header):
-    """
-    The header for an image stack view. Makes it so there are no fields and it cannot be saved.
-    """
-    _imstack = None
-    _fields = None
-    _data = None
-    def __init__(self, ims): self._imstack = ims; _fields = {}; _data = {};
-    def _get_field_name(self, f): return None
-    def _update_depth(self, d): pass
-    def save(self): raise AttributeError('views cannot be saved')
 
 # Import additional formats
 import formats
