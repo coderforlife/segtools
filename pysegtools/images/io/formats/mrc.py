@@ -4,7 +4,7 @@ from numpy import empty, int16, int32, float32
 from ....general.datawrapper import ListWrapper, ReadOnlyListWrapper
 from ....general.enum import Enum, Flags
 from ...types import *
-from .._stack import UniformImageStack, ImageSlice, ImageStackHeader, Field, FixedField, MatchQuality
+from .._stack import HomogeneousImageStack, ImageSlice, ImageStackHeader, Field, FixedField, MatchQuality
 from .._util import copy_data, openfile, imread_raw, imsave_raw
 
 __all__ = ['MRC']
@@ -36,7 +36,7 @@ class MRCEndian(int32, Enum):
 
 # TODO: support mapc/mapr/maps = 2,1,3 using Fortran-ordered arrays?
 
-class MRC(UniformImageStack):
+class MRC(HomogeneousImageStack):
     """  
     Represents an MRC image. Supports all features of the "IMOD" variant of MRC files.
     """

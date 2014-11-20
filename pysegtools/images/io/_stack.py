@@ -6,11 +6,11 @@ from numbers import Integral
 from numpy import ndarray, ceil
 
 from ...general.datawrapper import DictionaryWrapperWithAttr
-from ...general.enum import Enum
+from ...general.enum import Enum, Flags
 from ..types import im_standardize_dtype, dtype2desc
 from ..source import ImageSource, DeferredPropertiesImageSource
 
-__all__ = ['ImageStack','UniformImageStack','ImageSlice','ImageStackHeader','Field','FixedField','NumericField','MatchQuality']
+__all__ = ['ImageStack','HomogeneousImageStack','Homogeneous','ImageSlice','ImageStackHeader','Field','FixedField','NumericField','MatchQuality']
 
 def slice_len(start, stop, step): return max(int(ceil((stop-start)/step)), 0) #max((stop-start+step-(1 if step>0 else -1))//step, 0)
 def check_int(i):
@@ -24,10 +24,15 @@ class MatchQuality(int, Enum):
     Likely = 75
     Definitely = 100
 
+class Homogeneous(int, Flags):
+    Shape = 1
+    DType = 2
+    Both  = 3
+
 class ImageStack(object):
     """
     A stack of images. This is either backed by a file format that already has multiple images (like
-    MRC, MHA/MHD, and TIFF) or a collection of seperate 2D images.
+    MRC, MHA/MHD, and TIFF) or a collection of seperate 2D image files.
 
     When loading an image stack only the header(s) is/are loaded. Individual 2D slice headers are
     returned with the [] or when iterating. Slice image data is only leaded as needed and by default
@@ -62,8 +67,8 @@ class ImageStack(object):
             if highest_mq == MatchQuality.NotAtAll: raise ValueError
             return highest_cls.open(filename, readonly, **options)
         elif isinstance(filename, Iterable):
-            from _collection import ImageCollectionStack
-            return ImageCollectionStack.open(filename, readonly, **options)
+            from _files import FileStack
+            return FileStack.open(filename, readonly, **options)
         else: raise ValueError()
         
     @classmethod
@@ -91,8 +96,8 @@ class ImageStack(object):
             if highest_mq == MatchQuality.NotAtAll: raise ValueError
             return highest_cls.create(filename, ims, **options)
         elif filename == None or isinstance(filename, Iterable):
-            from _collection import ImageCollectionStack
-            return ImageCollectionStack.create(filename, ims, **options)
+            from _files import FileStack
+            return FileStack.create(filename, ims, **options)
         else: raise ValueError()
 
     @classmethod
@@ -137,7 +142,7 @@ class ImageStack(object):
         self._d = len(slices)
         self._readonly = bool(readonly)
         self._cache_size = 0
-
+        self._homogeneous = Homogeneous.Both if self._d <= 1 else None
 
     # General
     def save(self):
@@ -145,8 +150,6 @@ class ImageStack(object):
         self._header.save()
     def close(self): pass
     def __delete__(self): self.close()
-    @property
-    def is_uniform(self): return False
     @property
     def d(self): return self._d
     @property
@@ -159,11 +162,55 @@ class ImageStack(object):
         if self._d == 0: return "(no slices)"
         props = [(im.w,im.h,im.dtype) for im in self._slices]
         props0 = props[0]
-        if all(p == props0 for p in props[1:]): # is it uniform?
+        if all(p == props0 for p in props[1:]): # is it homogeneous?
             return "%dx%dx%d %s" % (props0[0], props0[1], self._d, dtype2desc(props0[2]))
         return "\n".join("%d: %dx%d %s" % (i, p[0], p[1], dtype2desc(p[2])) for i,p in enumerate(props))
     def print_detailed_info(self, s):
         pass
+
+    # Homogeneous interface
+    def _get_homogeneous_info(self):
+        if self._d == 0: return Homogeneous.Both, (None, None), None
+        shape = self._slices[0].shape
+        dtype = self._slices[0].dtype
+        if self._homogeneous is None:
+            self._homogeneous = Homogeneous._None
+            if all(shape == im.shape for im in self._slices): # TODO: skip first
+                self._homogeneous |= Homogeneous.Shape
+            else: shape = None
+            if all(dtype == im.dtype for im in self._slices): # TODO: skip first
+                self._homogeneous |= Homogeneous.DType
+            else: dtype = None
+        else:
+            if Homogeneous.Shape not in self._homogeneous: shape = None
+            if Homogeneous.DType not in self._homogeneous: dtype = None
+        return self._homogeneous, shape, dtype
+    def _update_homogeneous_set(self, z, shape, dtype):
+        s = self._slices[-1 if z == 0 else 0]
+        if Homogeneous.Shape in self._homogeneous and shape != s.shape:
+            self._homogeneous &= ~Homogeneous.Shape
+        if Homogeneous.DType in self._homogeneous and dtype != s.dtype:
+            self._homogeneous &= ~Homogeneous.DType
+    def _update_homogeneous_del(self):
+        if self._d <= 1: self._homogeneous = Homogeneous.Both
+        elif self._homogeneous != Homogeneous.Both: self._homogeneous = None # may have become homogeneous with the deletion
+    @property
+    def is_homogeneous(self): return self._get_homogeneous_info()[0] != Homogeneous._None
+    @property
+    def w(self): return self.shape[1]
+    @property
+    def h(self): return self.shape[0]
+    @property
+    def shape(self):
+        h = self._get_homogeneous_info()
+        if Homogeneous.Shape not in h[0]: raise AttributeError('property unavailable on heterogeneous image stacks')
+        return h[1]
+    @property
+    def dtype(self):
+        h = self._get_homogeneous_info()
+        if Homogeneous.DType not in h[0]: raise AttributeError('property unavailable on heterogeneous image stacks')
+        return h[2]
+    
 
     # Internal slice maniplutions - primary functions to be implemented by base classes
     # Getting and setting individual slices is done in the ImageSlice objects
@@ -251,6 +298,7 @@ class ImageStack(object):
         self._d -= ss
         for z in xrange(start, self._d): self._slices[z]._update(z)
         self._header._update_depth(self._d)
+        self._update_homogeneous_del()
         
     def _insert_slices(self, idx, slices):
         ln = len(slices)
@@ -283,7 +331,7 @@ class ImageStack(object):
     # Setting and adding slices
     def __setitem__(self, idx, ims):
         """
-        Sets a slices to new images, writing them to disk. The images can be either ndarrays,
+        Sets slices to new images, writing them to disk. The images can be either ndarrays,
         ImageSource, or ImageSlice objects. Accepts advanced indexing as follows:
 
         * Integer index: accepts integers in [-N, N] where negative values are relative to the end
@@ -421,24 +469,29 @@ class ImageStack(object):
         if self._readonly: raise Exception('readonly')
         self._delete([(0,self._d)])
 
-class UniformImageStack(ImageStack):
+class HomogeneousImageStack(ImageStack):
     """
-    An image stack where every slice has the same shape and data type. Provides some additional
-    properties.
+    An image stack where every slice has the same shape and data type. Provides speed ups for many
+    of the homogeneous properties and adds the stack property.
     """
     __metaclass__ = ABCMeta
 
     def __init__(self, header, slices, w, h, dtype, readonly=False):
-        super(UniformImageStack, self).__init__(header, slices, readonly)
+        super(HomogeneousImageStack, self).__init__(header, slices, readonly)
         self._w = w
         self._h = h
         self._shape = (h, w)
         self._dtype = dtype
         self._slc_pxls  = w * h
         self._slc_bytes = w * h * dtype.itemsize
+        self._homogeneous = Homogeneous.Both
+
+    def _get_homogeneous_info(self): return Homogeneous.Both, self._shape, self._dtype
+    def _update_homogeneous_set(self, z, shape, dtype): pass
+    def _update_homogeneous_del(self): pass
 
     @property
-    def is_uniform(self): return True
+    def is_homogeneous(self): return True
 
     @property
     def w(self): return self._w
@@ -496,6 +549,7 @@ class ImageSlice(DeferredPropertiesImageSource):
                 im = im.copy()
                 im.flags.writeable = False
             self._cache = im
+        self._stack._update_homogeneous_set(self._z, im.shape, im.dtype)
 
     @abstractmethod
     def _get_data(self):
