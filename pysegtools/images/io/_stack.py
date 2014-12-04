@@ -5,7 +5,7 @@ from numbers import Integral
 from itertools import repeat
 from numpy import ndarray, ceil
 
-from .._stack import ImageStack, HomogeneousImageStack, ImageSlice
+from .._stack import ImageStack, HomogeneousImageStack, ImageSlice, Homogeneous
 from ..types import im_standardize_dtype, dtype2desc
 from ..source import ImageSource
 from ...general.datawrapper import DictionaryWrapperWithAttr
@@ -163,10 +163,33 @@ class FileImageStack(ImageStack):
         """Gets a basic representation of this class as a string."""
         if self._d == 0: return "(no slices)"
         h,s,d = self._get_homogeneous_info()
-        if h[0] == Homogeneous.Both: return "%dx%dx%d %s" % (s[1], s[0], self._d, dtype2desc(d))
-        return "\n".join("%d: %dx%d %s"%(z,im.w,im.h,dtype2desc(im.dtype)) for z,im in enumerate(self._slices))
-    def print_detailed_info(self, s):
-        pass
+        if h == Homogeneous.Both: return "%dx%dx%d %s" % (s[1], s[0], self._d, dtype2desc(d))
+        line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s"
+        return "\n".join(line%(z,im.w,im.h,dtype2desc(im.dtype)) for z,im in enumerate(self._slices))
+    def print_detailed_info(self):
+        h,s,d = self._get_homogeneous_info()
+        total_bytes = 0
+        if self._d == 0:
+            print "Slices:      0"
+        elif h == Homogeneous.Both:
+            print "Dimensions:  %d x %d x %d (WxHxD)" % (s[1], s[0], self._d)
+            print "Data Type:   %s" % dtype2desc(d)
+            sec_bytes = s[1] * s[0] * d.itemsize
+            print "Bytes/Slice: %d" % sec_bytes
+            total_bytes = self._d * sec_bytes
+        else:
+            print "Slices:      %d" % (self._d)
+            line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s  %d bytes"
+            for z,im in enumerate(self._slices):
+                sec_bytes = im.w * im.h * im.dtype.itemsize
+                print line % (z, im.w, im.h, dtype2desc(im.dtype), sec_bytes)
+                total_bytes += sec_bytes
+        print "Total Bytes: %d" % (self._d * sec_bytes)
+        print "Handler:     %s" % type(self).__name__
+        if len(self.header) == 0: print "No header information"
+        else:
+            print "Header:"
+            for k,v in self._header.iteritems(): print "  %s = %s" % (k,v)
 
     # Internal slice maniplutions - primary functions to be implemented by base classes
     # Getting and setting individual slices is done in the FileImageSlice objects
@@ -381,11 +404,20 @@ class HomogeneousFileImageStack(HomogeneousImageStack, FileImageStack):
     __metaclass__ = ABCMeta
 
     def __init__(self, header, slices, w, h, dtype, readonly=False):
-        super(HomogeneousFileImageStack, self).__init__(header, slices, readonly)
-        HomogeneousImageStack._init_props(slices, w, h, dtype)
-
+        FileImageStack.__init__(self, header, slices, readonly)
+        HomogeneousImageStack._init_props(self, w, h, dtype)
     def __str__(self): return "%dx%dx%d %s" % (self._w, self._h, self._d, dtype2desc(self._dtype))
-
+    def print_detailed_info(self):
+        print "Dimensions:  %d x %d x %d (WxHxD)" % (self._w, self._h, self._d)
+        print "Data Type:   %s" % dtype2desc(self._dtype)
+        sec_bytes = self._w * self._h * self._dtype.itemsize
+        print "Bytes/Slice: %d" % sec_bytes
+        print "Total Bytes: %d" % (self._d * sec_bytes)
+        print "Handler:     %s" % type(self).__name__
+        if len(self.header) == 0: print "No header information"
+        else:
+            print "Header:"
+            for k,v in self._header.iteritems(): print "  %s = %s" % (k,v)
 
 class FileImageSlice(ImageSlice):
     """

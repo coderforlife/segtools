@@ -216,8 +216,7 @@ def main():
     from sys import argv, exit
     from glob import iglob
     import shlex
-    
-    from .images import FilteredImageStack, dtype2desc
+    from .images import FilteredImageStack
     
     ##### Parse Arguments #####
     # Seperate out the arguments into 4 sections:
@@ -300,28 +299,16 @@ def main():
 
     ##### Open Input Stack #####
     if args == None: help_msg(2, "You must provide an input image stack.")
-    in_stack, in_name = get_input(input_args)
+    ims, in_name = get_input(input_args)
     if verbose:
         print "----------------------------------------"
         print "Input Image Stack: %s" % in_name
-# TODO: update for new system
-#        print "Dimensions (WxHxD): %d x %d x %d" % (in_stack.w, in_stack.h, in_stack.d)
-#        print "Data Type:   %s" % dtype2desc(in_stack.dtype)
-#        sec_bytes = in_stack.w * in_stack.h * in_stack.dtype.itemsize
-#        print "Bytes/Slice: %d" % sec_bytes
-#        print "Total Bytes: %d" % (in_stack.d * sec_bytes)
-        print "Handler:     %s" % type(in_stack).__name__
-        if len(in_stack.header) == 0: print "No header information"
-        else:
-            print "Header:"
-            for k,v in in_stack.header.iteritems(): print "  %s = %s" % (k,v)
+        ims.print_detailed_info()
         print "----------------------------------------"
         if output_args == None: exit(0)
     elif output_args == None:
-        print str(in_stack)
+        print str(ims)
         exit(0)
-    ims = in_stack
-
     
     ##### Process Filters #####
     for flt,args,kwargs in filters:
@@ -329,24 +316,14 @@ def main():
         if verbose: print str(ims) or "<filter without description>"
 
     ##### Save Output Stack #####
-    out_stack, out_name = get_output(output_args, ims, append)
-    out_stack.save()
+    ims, out_name = get_output(output_args, ims, append)
+    ims.save()
     
     if verbose:
         print "----------------------------------------"
-# TODO: update for new system
         print "Output Image Stack: %s" % out_name
-        if append: print "Appending data to output instead of overwriting"
-        print "Dimensions (WxHxD): %d x %d x %d" % (out_stack.w, out_stack.h, len(in_stack))
-        print "Data Type:   %s" % dtype2desc(out_stack.dtype)
-        sec_bytes = out_stack.w * out_stack.h * out_stack.dtype.itemsize
-        print "Bytes/Slice: %d" % sec_bytes
-        print "Total Bytes: %d" % (len(in_stack) * sec_bytes)
-        print "Handler:     %s" % type(out_stack).__name__
-        if len(out_stack.header) == 0: print "No header information"
-        else:
-            print "Header:"
-            for k,v in out_stack.header.iteritems(): print "  %s = %s" % (k,v)
+        if append: print "Appended data to output instead of overwriting"
+        ims.print_detailed_info()
         print "----------------------------------------"
 
 if __name__ == "__main__": main()
