@@ -1,6 +1,7 @@
 from abc import ABCMeta, abstractproperty, abstractmethod
 from numpy import ndarray
 from collections import Iterable, OrderedDict
+from itertools import islice
 from numbers import Integral
 
 from ..general.enum import Flags
@@ -67,10 +68,10 @@ class ImageStack(object):
         dtype = self._slices[0].dtype
         if self._homogeneous is None:
             self._homogeneous = Homogeneous._None
-            if all(shape == im.shape for im in self._slices): # TODO: skip first
+            if all(shape == im.shape for im in islice(self._slices, 1, None)):
                 self._homogeneous |= Homogeneous.Shape
             else: shape = None
-            if all(dtype == im.dtype for im in self._slices): # TODO: skip first
+            if all(dtype == im.dtype for im in  islice(self._slices, 1, None)):
                 self._homogeneous |= Homogeneous.DType
             else: dtype = None
         else:
