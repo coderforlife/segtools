@@ -1,16 +1,17 @@
 from __future__ import division
-from abc import ABCMeta, abstractmethod, abstractproperty
+from abc import ABCMeta, abstractmethod
 from collections import Iterable, OrderedDict
-from itertools import repeat
 from numbers import Integral
+from itertools import repeat
 from numpy import ndarray, ceil
 
-from ...general.datawrapper import DictionaryWrapperWithAttr
-from ...general.enum import Enum, Flags
+from .._stack import ImageStack, HomogeneousImageStack, ImageSlice
 from ..types import im_standardize_dtype, dtype2desc
-from ..source import ImageSource, DeferredPropertiesImageSource
+from ..source import ImageSource
+from ...general.datawrapper import DictionaryWrapperWithAttr
+from ...general.enum import Enum
 
-__all__ = ['ImageStack','HomogeneousImageStack','Homogeneous','ImageSlice','ImageStackHeader','Field','FixedField','NumericField','MatchQuality']
+__all__ = ['FileImageStack','HomogeneousFileImageStack','FileImageSlice','FileImageStackHeader','Field','FixedField','NumericField','MatchQuality']
 
 def slice_len(start, stop, step): return max(int(ceil((stop-start)/step)), 0) #max((stop-start+step-(1 if step>0 else -1))//step, 0)
 def check_int(i):
@@ -24,32 +25,21 @@ class MatchQuality(int, Enum):
     Likely = 75
     Definitely = 100
 
-class Homogeneous(int, Flags):
-    Shape = 1
-    DType = 2
-    Both  = 3
-
-class ImageStack(object):
+class FileImageStack(ImageStack):
     """
-    A stack of images. This is either backed by a file format that already has multiple images (like
-    MRC, MHA/MHD, and TIFF) or a collection of seperate 2D image files.
+    A stack of 2D image slices on disk. This is either backed by a file format that already has
+    multiple slices (like MRC, MHA/MHD, and TIFF) or a collection of seperate 2D image files.
 
-    When loading an image stack only the header(s) is/are loaded. Individual 2D slice headers are
-    returned with the [] or when iterating. Slice image data is only leaded as needed and by default
-    are not cached. The number of slices is available with len(). The [] also accepts slice-notation
-    and iterables of indicies and returns a list of ImageSlice objects.
+    When loading an image stack only the header(s) is/are loaded. THe image data is not read until
+    accessed.
+
+    In addtion to getting slices in ImageStack we add setting, inserting, and deleting slices.
 
     When writing, slices are typically saved immediately but the header typically is not. Call
     the save() function to force all data including the header to be saved.
     """
     
     __metaclass__ = ABCMeta
-
-    @classmethod
-    def _get_all_subclasses(cls):
-        subcls = cls.__subclasses__()
-        for sc in list(subcls): subcls.extend(sc._get_all_subclasses())
-        return subcls
     
     @classmethod
     def open(cls, filename, readonly=False, **options):
@@ -67,8 +57,8 @@ class ImageStack(object):
             if highest_mq == MatchQuality.NotAtAll: raise ValueError
             return highest_cls.open(filename, readonly, **options)
         elif isinstance(filename, Iterable):
-            from _files import FileStack
-            return FileStack.open(filename, readonly, **options)
+            from _collection import FileCollectionStack
+            return FileCollectionStack.open(filename, readonly, **options)
         else: raise ValueError()
         
     @classmethod
@@ -96,53 +86,68 @@ class ImageStack(object):
             if highest_mq == MatchQuality.NotAtAll: raise ValueError
             return highest_cls.create(filename, ims, **options)
         elif filename == None or isinstance(filename, Iterable):
-            from _files import FileStack
-            return FileStack.create(filename, ims, **options)
+            from _collection import FileCollectionStack
+            return FileCollectionStack.create(filename, ims, **options)
         else: raise ValueError()
 
     @classmethod
-    def supported_list(cls):
-        descs = []
+    def formats(cls):
+        formats = []
         for cls in cls._get_all_subclasses():
-            desc = cls._description()
-            if desc is not None: descs.append(desc)
-        return descs
+            f = cls._format_name()
+            if f is not None: formats.append(f)
+        return formats
+
+    @classmethod
+    def description(cls, name):
+        name = name.lower()
+        for cls in cls._get_all_subclasses():
+            f = cls._format_name()
+            if f != None and f.lower() == name:
+                return cls._description()
+        return None
 
     @classmethod
     def _openable(cls, f, **opts):
         """
-        Return how likely a readable file-like object is openable as an ImageStack given the
+        Return how likely a readable file-like object is openable as a FileImageStack given the
         dictionary of options. Returns a MatchQuality rating. If this returns anything besides
         NotAtAll then the class must provide a static/class method like:
             `open(filename_or_file, readonly, **options)`
+        Option keys are always strings, values can be either strings or other values (but strings
+        must be accepted for any value and you must convert). An exception should be thrown if
+        there any unknown option keys or option values cannot be used.
         """
         return MatchQuality.NotAtAll
 
     @classmethod
     def _creatable(cls, filename, ext, **opts):
         """
-        Return how likely a filename/ext (without .) is creatable as an ImageStack given the
+        Return how likely a filename/ext (without .) is creatable as a FileImageStack given the
         dictionary of options. Returns a MatchQuality rating. If this returns anything besides
         NotAtAll then the class must provide a static/class method like:
-            `create(filename, ims, **options)`
+            `create(filename, list_of_ImageSources, **options)`
+        Option keys are always strings, values can be either strings or other values (but strings
+        must be accepted for any value and you must convert). An exception should be thrown if
+        there any unknown option keys or option values cannot be used.
         """
         return MatchQuality.NotAtAll
     
     @classmethod
+    def _format_name(cls):
+        """Return the name of this image stack handler to be displayed in help outputs."""
+        return None
+    
+    @classmethod
     def _description(cls):
-        """
-        Return the description of this image stack handler to be displayed in help outputs.
-        """
+        """Return the long description of this image stack handler to be displayed in help outputs."""
         return None
     
     def __init__(self, header, slices, readonly=False):
+        super(FileImageStack, self).__init__(slices)
         self._header = header
         header._imstack = self
-        self._slices = slices
-        self._d = len(slices)
         self._readonly = bool(readonly)
-        self._cache_size = 0
-        self._homogeneous = Homogeneous.Both if self._d <= 1 else None
 
     # General
     def save(self):
@@ -151,69 +156,20 @@ class ImageStack(object):
     def close(self): pass
     def __delete__(self): self.close()
     @property
-    def d(self): return self._d
-    @property
     def readonly(self): return self._readonly
     @property
     def header(self): return self._header
-    def __len__(self): return self._d
     def __str__(self):
         """Gets a basic representation of this class as a string."""
         if self._d == 0: return "(no slices)"
-        props = [(im.w,im.h,im.dtype) for im in self._slices]
-        props0 = props[0]
-        if all(p == props0 for p in props[1:]): # is it homogeneous?
-            return "%dx%dx%d %s" % (props0[0], props0[1], self._d, dtype2desc(props0[2]))
-        return "\n".join("%d: %dx%d %s" % (i, p[0], p[1], dtype2desc(p[2])) for i,p in enumerate(props))
+        h,s,d = self._get_homogeneous_info()
+        if h[0] == Homogeneous.Both: return "%dx%dx%d %s" % (s[1], s[0], self._d, dtype2desc(d))
+        return "\n".join("%d: %dx%d %s"%(z,im.w,im.h,dtype2desc(im.dtype)) for z,im in enumerate(self._slices))
     def print_detailed_info(self, s):
         pass
 
-    # Homogeneous interface
-    def _get_homogeneous_info(self):
-        if self._d == 0: return Homogeneous.Both, (None, None), None
-        shape = self._slices[0].shape
-        dtype = self._slices[0].dtype
-        if self._homogeneous is None:
-            self._homogeneous = Homogeneous._None
-            if all(shape == im.shape for im in self._slices): # TODO: skip first
-                self._homogeneous |= Homogeneous.Shape
-            else: shape = None
-            if all(dtype == im.dtype for im in self._slices): # TODO: skip first
-                self._homogeneous |= Homogeneous.DType
-            else: dtype = None
-        else:
-            if Homogeneous.Shape not in self._homogeneous: shape = None
-            if Homogeneous.DType not in self._homogeneous: dtype = None
-        return self._homogeneous, shape, dtype
-    def _update_homogeneous_set(self, z, shape, dtype):
-        s = self._slices[-1 if z == 0 else 0]
-        if Homogeneous.Shape in self._homogeneous and shape != s.shape:
-            self._homogeneous &= ~Homogeneous.Shape
-        if Homogeneous.DType in self._homogeneous and dtype != s.dtype:
-            self._homogeneous &= ~Homogeneous.DType
-    def _update_homogeneous_del(self):
-        if self._d <= 1: self._homogeneous = Homogeneous.Both
-        elif self._homogeneous != Homogeneous.Both: self._homogeneous = None # may have become homogeneous with the deletion
-    @property
-    def is_homogeneous(self): return self._get_homogeneous_info()[0] != Homogeneous._None
-    @property
-    def w(self): return self.shape[1]
-    @property
-    def h(self): return self.shape[0]
-    @property
-    def shape(self):
-        h = self._get_homogeneous_info()
-        if Homogeneous.Shape not in h[0]: raise AttributeError('property unavailable on heterogeneous image stacks')
-        return h[1]
-    @property
-    def dtype(self):
-        h = self._get_homogeneous_info()
-        if Homogeneous.DType not in h[0]: raise AttributeError('property unavailable on heterogeneous image stacks')
-        return h[2]
-    
-
     # Internal slice maniplutions - primary functions to be implemented by base classes
-    # Getting and setting individual slices is done in the ImageSlice objects
+    # Getting and setting individual slices is done in the FileImageSlice objects
     @abstractmethod
     def _delete(self, idxs):
         """
@@ -243,50 +199,14 @@ class ImageStack(object):
         "space" has been made but preferrably before the data is saved which may not always be
         possible).
 
-        This must call ImageSlice._cache_data(im) after a slice is written.
+        This must call FileImageSlice._cache_data(im) after a slice is written.
         """
         pass
         
 
     # Caching of slices
-    @property
-    def cache_size(self): return self._cache_size
-    @cache_size.setter
-    def cache_size(self, value):
-        """
-        Set the size of the cache. This number of recently accessed or set slices will be available
-        without disk reads. Default is 0 which means no slices are cached. If -1 then all slices
-        will be cached as they are accessed.
-        """
-        # The cache uses the following member variables:
-        #  _cache_size        either 0 (cache off), -1 (unlimited cache), or a value >0 (max cache size)
-        #  _cache             the LRU cache, an OrderedDict of indices which are cached with popitem(False) as least recently used
-        #  ._slices[]._cache  the cached data for a slice (if it exists)
-        value = int(value)
-        if value < -1: raise ValueError
-        if value == 0: # removing cache
-            if self._cache_size:
-                del self._cache
-                for s in self._slices:
-                    if hasattr(s, '_cache'): del s._cache
-        elif value != 0:
-            if not self._cache_size: # creating cache
-                self._cache = OrderedDict()
-            elif value != -1:
-                while len(self._cache) > value: # cache is shrinking
-                    del self._slices[self._cache.popitem(False)[0]]._cache
-        self._cache_size = value
-    # TODO: def set_cache_size_in_bytes(self, bytes): self.cache_size = bytes // self._sec_bytes;
-    def _cache_it(self, i):
-        # Places an index into the cache list (but doesn't do anything with the cached data itself)
-        # Returns True if the index is already cached (in which case it is moved to the back of the LRU)
-        # Otherwise if the queue is full then the oldest thing is removed from the cache
-        already_in_cache = self._cache.pop(i, False)
-        if not already_in_cache and len(self._cache) == self._cache_size: # cache full
-            del self._slices[self._cache.popitem(False)]._cache
-        self._cache[i] = True
-        return already_in_cache
-
+    def __update_cache(self, c): self._cache = OrderedDict(zip(c, repeat(True)))
+    
     def _delete_slices(self, start, stop):
         ss = stop - start
         
@@ -298,7 +218,8 @@ class ImageStack(object):
         self._d -= ss
         for z in xrange(start, self._d): self._slices[z]._update(z)
         self._header._update_depth(self._d)
-        self._update_homogeneous_del()
+        if self._d <= 1: self._homogeneous = Homogeneous.Both
+        elif self._homogeneous != Homogeneous.Both: self._homogeneous = None # may have become homogeneous with the deletion
         
     def _insert_slices(self, idx, slices):
         ln = len(slices)
@@ -312,27 +233,11 @@ class ImageStack(object):
         # Update cache
         if self._cache_size: self.__update_cache(i+ln if i>=idx else i for i in self._cache)
 
-    def __update_cache(self, c): self._cache = OrderedDict(zip(c, repeat(True)))
-
-    # Getting Slices
-    def __getitem__(self, idx):
-        """
-        Get image slices. Accepts integers, index slices, or iterable indices. When using an integral
-        index this returns an ImageSlice object. For index slice and iterable indices it returns a
-        list of ImageSlice objects. Images slice data is not loaded until the data attribute of the
-        ImageSlice object is used.
-        """
-        if isinstance(idx, (Integral, slice)): return self._slices[idx]
-        elif isinstance(idx, Iterable):        return [self._slices[i] for i in idx]
-        else: raise TypeError('index')
-    def __iter__(self):
-        for i in xrange(self._d): yield self._slices[i]
-
     # Setting and adding slices
     def __setitem__(self, idx, ims):
         """
-        Sets slices to new images, writing them to disk. The images can be either ndarrays,
-        ImageSource, or ImageSlice objects. Accepts advanced indexing as follows:
+        Sets slices to new images, writing them to disk. The images can be either ndarrays or 
+        ImageSource. Accepts advanced indexing as follows:
 
         * Integer index: accepts integers in [-N, N] where negative values are relative to the end
         of the stack. If N is given than the image is appended. You can only set single images with
@@ -352,7 +257,7 @@ class ImageStack(object):
         length as the number of indices.
 
         In general, to conserve memory, when setting a long list of images it is preferable to use
-        ImageSource objects (e.g. ImageSlice) which can dynamically load or create the image data.
+        ImageSource objects which can dynamically load or create the image data.
 
         Notes on exceptions: any set is broken down into individual operation of set, delete, and
         "create space" (for inserting). If any operation causes an exception, it should
@@ -469,74 +374,29 @@ class ImageStack(object):
         if self._readonly: raise Exception('readonly')
         self._delete([(0,self._d)])
 
-class HomogeneousImageStack(ImageStack):
+class HomogeneousFileImageStack(HomogeneousImageStack, FileImageStack):
     """
-    An image stack where every slice has the same shape and data type. Provides speed ups for many
-    of the homogeneous properties and adds the stack property.
+    An file-based image stack where every slice has the same shape and data type.
     """
     __metaclass__ = ABCMeta
 
     def __init__(self, header, slices, w, h, dtype, readonly=False):
-        super(HomogeneousImageStack, self).__init__(header, slices, readonly)
-        self._w = w
-        self._h = h
-        self._shape = (h, w)
-        self._dtype = dtype
-        self._slc_pxls  = w * h
-        self._slc_bytes = w * h * dtype.itemsize
-        self._homogeneous = Homogeneous.Both
-
-    def _get_homogeneous_info(self): return Homogeneous.Both, self._shape, self._dtype
-    def _update_homogeneous_set(self, z, shape, dtype): pass
-    def _update_homogeneous_del(self): pass
-
-    @property
-    def is_homogeneous(self): return True
-
-    @property
-    def w(self): return self._w
-    @property
-    def h(self): return self._h
-    @property
-    def shape(self): return self._shape
-    @property
-    def dtype(self): return self._dtype
-    
-    @property
-    def stack(self):
-        """Get the entire stack as a single 3D image."""
-        from numpy import empty
-        stack = empty((self._d,) + self._shape, dtype=self._dtype)
-        for i, sec in enumerate(self): stack[i,:,:] = sec
-        return stack
+        super(HomogeneousFileImageStack, self).__init__(header, slices, readonly)
+        HomogeneousImageStack._init_props(slices, w, h, dtype)
 
     def __str__(self): return "%dx%dx%d %s" % (self._w, self._h, self._d, dtype2desc(self._dtype))
 
 
-class ImageSlice(DeferredPropertiesImageSource):
+class FileImageSlice(ImageSlice):
     """
     A image slice from an image stack. These must be implemented for specific formats. The
     implementor must either call _set_props during initialization or implement a non-trivial
     _get_props function (the trivial one would be def _get_props(self): pass).
     """
     __metaclass__ = ABCMeta
-    
-    def __init__(self, stack, z):
-        self._stack = stack
-        self._z = z
+    def __init__(self, stack, z): super(FileImageSlice, self).__init__(stack, z)
 
-    @property
-    def stack(self): return self._stack
-    @property
-    def z(self): return self._z
-
-    @property
-    def data(self):
-        if not self._stack._cache_size: return self._get_data()
-        if not self._stack._cache_it(self._x): self._cache = self._get_data()
-        return self._cache # the cache is full on un-writeable copies already, so no .copy()
-
-    @data.setter
+    @ImageSlice.data.setter
     def data(self, im):
         self._cache_data(self._set_data(ImageSource.as_image_source(im)))
 
@@ -550,14 +410,6 @@ class ImageSlice(DeferredPropertiesImageSource):
                 im.flags.writeable = False
             self._cache = im
         self._stack._update_homogeneous_set(self._z, im.shape, im.dtype)
-
-    @abstractmethod
-    def _get_data(self):
-        """
-        Internal function for getting image data. Must return an ndarray with shape and dtype of
-        this slice (which should be a standardized type).
-        """
-        pass
     
     @abstractmethod
     def _set_data(self, im):
@@ -565,7 +417,7 @@ class ImageSlice(DeferredPropertiesImageSource):
         Internal function for setting image data. The image is an ImageSource object. If the image
         data is not acceptable (for example, the shape or dtype is not acceptable for this format)
         then an exception should be thrown. In the case of an exception, it must be thrown before
-        any changes are made to this ImageSlice properties or the data on disk.
+        any changes are made to this FileImageSlice properties or the data on disk.
 
         This method can optionally copy any metadata it is aware of from the image to this slice. 
 
@@ -577,7 +429,7 @@ class ImageSlice(DeferredPropertiesImageSource):
         """Update this slice when the Z value changes. By default this just sets the z value."""
         self._z = z
 
-class ImageStackHeader(DictionaryWrapperWithAttr):
+class FileImageStackHeader(DictionaryWrapperWithAttr):
     """
     The header of an image stack. This is primarily a dictionary with built-in checking of names and
     values based on the image stack type. In general this provides image-format specific information

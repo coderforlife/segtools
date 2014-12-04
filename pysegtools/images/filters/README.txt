@@ -1,0 +1,3 @@
+This folder contains the various filters known to the image library. These are dynamically loaded
+by the image library. To implement a new filter you need to create a new Python file, import ....
+and then implement that class.

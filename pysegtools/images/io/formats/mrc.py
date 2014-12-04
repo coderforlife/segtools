@@ -4,7 +4,7 @@ from numpy import empty, int16, int32, float32
 from ....general.datawrapper import ListWrapper, ReadOnlyListWrapper
 from ....general.enum import Enum, Flags
 from ...types import *
-from .._stack import HomogeneousImageStack, ImageSlice, ImageStackHeader, Field, FixedField, MatchQuality
+from .._stack import HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader, Field, FixedField, MatchQuality
 from .._util import copy_data, openfile, imread_raw, imsave_raw
 
 __all__ = ['MRC']
@@ -36,7 +36,7 @@ class MRCEndian(int32, Enum):
 
 # TODO: support mapc/mapr/maps = 2,1,3 using Fortran-ordered arrays?
 
-class MRC(HomogeneousImageStack):
+class MRC(HomogeneousFileImageStack):
     """  
     Represents an MRC image. Supports all features of the "IMOD" variant of MRC files.
     """
@@ -97,8 +97,13 @@ class MRC(HomogeneousImageStack):
         else: return MatchQuality.Unlikely
 
     @classmethod
-    def _description(cls): return "MRC"
-        
+    def _format_name(cls): return "MRC"
+    @classmethod
+    def _description(cls):
+        return """MRC file are common 3D images used by the program IMOD.
+
+This format supports grayscale (8-bit signed/unsigned int, 16-bit signed/unsigned big/small-endian int, 32-bit float) RGB (24-bit), and complex (2x 16-bit int signed big/small-endian, 2x 32-bit float) types."""
+
     def __init__(self, h, f, readonly=False):
         self._file = f
         self._off = HDR_LEN + LBL_LEN * LBL_COUNT + h.next
@@ -132,7 +137,7 @@ class MRC(HomogeneousImageStack):
         self._file.seek(self._off)
         return imread_raw(self._file, (self._d,)+self._shape, self._dtype, 'C')
 
-class MRCSlice(ImageSlice):
+class MRCSlice(FileImageSlice):
     def __init__(self, stack, header, z):
         super(MRCSlice, self).__init__(stack, z)
         self._set_props(header._dtype, header.nx, header.ny)
@@ -157,7 +162,7 @@ def _f(cast): return Field(cast, False, False)
 def _f_ro(cast): return Field(cast, True, False)
 def _f_fix(cast, value): return FixedField(cast, value, False)
 
-class MRCHeader(ImageStackHeader):
+class MRCHeader(FileImageStackHeader):
     __format_new = '10i6f3i3fiih30xhh20xii6h6f3f2ifi' # needs endian byte before using
     __format_old = '<10i6f3i3fiih30xhh20xii6h6f6h3fi' # always little endian
 

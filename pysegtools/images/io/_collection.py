@@ -1,12 +1,12 @@
 from collections import Iterable
 import os
 
-from _stack import ImageStack, ImageSlice, ImageStackHeader, Field, NumericField
+from _stack import FileImageStack, FileImageSlice, FileImageStackHeader, Field, NumericField
 from _single import iminfo, imread, imsave
 
-__all__ = ['FileStack']
+__all__ = ['FileCollectionStack']
 
-class FileStack(ImageStack):
+class FileCollectionStack(FileImageStack):
     """
     An image stack that is composed of many 2D image files. It uses iminfo/imread/imsave from images
     so supports any of those file formats.
@@ -31,15 +31,15 @@ class FileStack(ImageStack):
 
         Note that "pattern" is not automatically used to find files to open, instead it is only used
         when appending new slices. If you wish to have all the files from a pattern, you can do:
-          ims = FileStack.open((pattern%(i*step+start) for i in xrange(existing_count)), pattern=pattern, start=start, step=step)
+          ims = FileCollectionStack.open((pattern%(i*step+start) for i in xrange(existing_count)), pattern=pattern, start=start, step=step)
         """
         if isinstance(files, basestring): files = [files]
         if not isinstance(files, Iterable): raise ValueError('files must be an iterable of filenames')
         files = [os.path.abspath(f) for f in files]
         num_files_found = next((i for i,f in enumerate(files) if not os.path.isfile(f)), len(files))
         if len(options) > 0: raise ValueError('unsupported options provided')
-        h = FileStackHeader(pattern, start, step, files)
-        return FileStack(h, files, files[:num_files_found], readonly)
+        h = FileCollectionStackHeader(pattern, start, step, files)
+        return FileCollectionStack(h, files, files[:num_files_found], readonly)
 
     @classmethod
     def create(cls, files, ims, pattern=None, start=0, step=1, **options):
@@ -59,13 +59,13 @@ class FileStack(ImageStack):
         if files != None and not isinstance(files, Iterable): raise ValueError('files must be an iterable of filenames')
         files = [] if files == None else [os.path.abspath(f) for f in files]
         if len(options) > 0: raise ValueError('unsupported options provided')
-        h = FileStackHeader(pattern, start, step)
-        s = FileStack(h, files, [], False)
+        h = FileCollectionStackHeader(pattern, start, step)
+        s = FileCollectionStack(h, files, [], False)
         s._insert(0, ims)
         return s
     
     def __init__(self, h, all_file_names, starting_files, readonly=False):
-        super(FileStack, self).__init__(h, [ImageFileSlice(self, f, z) for z, f in enumerate(starting_files)], readonly)
+        super(FileCollectionStack, self).__init__(h, [FileSlice(self, f, z) for z, f in enumerate(starting_files)], readonly)
         self._orig_files = all_file_names
 
     def __rename(self, slices, filenames):
@@ -94,7 +94,7 @@ class FileStack(ImageStack):
         filenames.reverse()
         self.__rename(reversed(self._slices[idx:self._d]), filenames)
         filenames.reverse()
-        self._insert_slices(idx, [ImageFileSlice(self, f, z+idx) for z, f in enumerate(filenames)])
+        self._insert_slices(idx, [FileSlice(self, f, z+idx) for z, f in enumerate(filenames)])
         for s, im in zip(self._slices[idx:end], ims):
             im = im.data
             imsave(s._filename, im)
@@ -110,9 +110,9 @@ class FileStack(ImageStack):
             self.__rename(self._slices[stop:], filenames)
             self._delete_slices(start, stop)
 
-class ImageFileSlice(ImageSlice):
+class FileSlice(FileImageSlice):
     def __init__(self, stack, filename, z):
-        super(ImageFileSlice, self).__init__(stack, z)
+        super(FileSlice, self).__init__(stack, z)
         self._filename = filename
     def _get_props(self):
         shape, dtype = iminfo(self._filename)
@@ -133,10 +133,11 @@ def cast_pattern(s):
     except: raise ValueError('pattern must have a single printf-style replacement option similar to %d')
     return s
 
-class FileStackHeader(ImageStackHeader):
+class FileCollectionStackHeader(FileImageStackHeader):
     """
-    Header for a image file stack. The only fields are a tuple of the files being used. If there is a
-    pattern for files to load, it along with the starting and step values are also available.
+    Header for a image file collectionstack. The only fields are a tuple of the files being used. If
+    there is a pattern for files to load, it along with the starting and step values are also
+    available.
     """
     __fields_raw = {
         'files':  Field(tuple, True, False),
@@ -151,7 +152,7 @@ class FileStackHeader(ImageStackHeader):
     _fields = None
     _data = None
     def __init__(self, pattern, start, step, files=()):
-        self._fields = FileStackHeader.__fields_raw.copy()
+        self._fields = FileCollectionStackHeader.__fields_raw.copy()
         self._data = {} if pattern == None else {'pattern':pattern,'start':start,'step':step}
         self._data['files'] = tuple(files)
         self._check()

@@ -20,7 +20,10 @@ def help_msg(err = 0, msg = None):
     from .general.utils import get_terminal_width
     w = max(get_terminal_width()-1, 24)
     tw = TextWrapper(width = w, subsequent_indent = ' '*18)
-    if msg != None: print >> stderr, fill(msg, w)+'\n'
+    if msg != None:
+        print >> stderr, fill(msg, w)+'\n'
+        print '-' * w
+        print
     print fill("Image Stack Reader and Converter Tool", w)
     print ""
     print tw.fill("%s [args] -i input [[filters] -o [-a] output]" % basename(argv[0]))
@@ -43,15 +46,17 @@ def help_adv(topic):
     from sys import exit
     from textwrap import fill, TextWrapper
     from .general.utils import get_terminal_width
-    from .images.io import ImageStack
-    # TODO: from .images import imfilter_util
+    from .images.io import FileImageStack
+    from .images import FilteredImageStack
+    
     w = max(get_terminal_width()-1, 24)
     tw = TextWrapper(width = w, subsequent_indent = ' '*18)
     lst_itm = TextWrapper(width = w, initial_indent = ' * ', subsequent_indent = ' '*3)
-    formats = {f.lower():f for f in ImageStack.supported_list()}
-    filters = []
+    topic_lower = topic.lower()
+    formats = {f.lower():f for f in FileImageStack.formats()}
+    filters = {f.lower():f for f in FilteredImageStack.filter_names()}
     
-    if topic in ("input", "output"):
+    if topic_lower in ("input", "output", "formats"):
         print "===== Input and Output Stack Specifications and Formats ====="       
         print fill("The input and output stacks can either be a single 3D image file or a collection of 2D image files.", w)
         print ""
@@ -68,15 +73,25 @@ def help_adv(topic):
         print "     [ dir/*.png ]"
         print ""
         print "* Number ranges are specified as one of <start>-<stop>, <start>-<stop>@<step>, <start>, or <start>@<step> where start and stop are non-negative integers and step is a positive integer. A missing stop value means go till the end and step defaults to 1."
-    elif topic == "filters":
+    elif topic_lower == "filters":
         print "===== Filters ====="
-        # TODO
-    elif topic.lower() in formats:
-        print "===== Format: %s =====" % formats[topic]
-        # TODO
-    elif topic in filters:
-        print "===== Filter: %s =====" % topic
-        # TODO
+        print fill("The filters applied to the images can change the shape and type of the data along with the image content itself. You may need to use some filters just to get the data into a format that the output image stack can handle.")
+        print fill("The support filters are:")
+        for l in filters.itervalues(): print lst_itm.fill(l)
+        print fill("To lookup more information about a specific filter, do --help {filter}, for example --help \"Median Blur\".")
+        print fill("Most have arguments that you can supply after the filter name and some arguments are even required. To specify arguments after the filter name seperated by spaces either listing out the values in order they are specified or giving the argument name, an equal sign, and then the value (allowing you to skip optional arguments). Some examples:")
+        print fill("--median-blur 3")
+        print fill("--median-blur size=3")
+        print fill("-G sigma=1.5")
+    elif topic_lower in formats:
+        print "===== Format: %s =====" % formats[topic_lower]
+        desc = FileImageStack.description(topic_lower)
+        if desc is None: desc = "Sorry, no description is currently available for this format."
+        for l in desc.splitlines(): print fill(l, w)
+    elif topic_lower in filters:
+        print "===== Filter: %s =====" % filters[topic_lower]
+        print FilteredImageStack.description(topic_lower, w) or "Sorry, no description is currently available for this filter."
+    else: help_msg(2, "Help topic not found.") 
     exit(0)
 
 def get_opts(s):
@@ -89,9 +104,10 @@ def get_input(args, readonly=True):
     textual version. The args have already been "pre-parsed" in that the [] argument is removed,
     and if not a list only the filename is given.
     """
-    from .images.io import ImageStack
+    from .images.io import FileImageStack
     from glob import iglob
     from os.path import isfile
+    # TODO: check readonly=False use... especially file list which may now support it
     if isinstance(args, list):
         if not readonly: help_msg(2, "You cannot append to an image stack that is a fixed list of files, you must use a numeric pattern instead.")
         files = []
@@ -99,14 +115,14 @@ def get_input(args, readonly=True):
             if not isfile(i): help_msg(3, "File '%s' does not exist." % i)
             files.append(i)
         name = " ".join(files)
-        try: return ImageStack.open(files, readonly), name
+        try: return FileImageStack.open(files, readonly), name
         except Exception as e: help_msg(2, "Failed to open image-stack '"+name+"': "+str(e))
     else: #isinstance(args, basestring)
         name = args
         m = numeric_pattern.search(name)
         if m == None:
             name, options = get_opts(name)
-            try: return ImageStack.open(name, readonly, **options), name
+            try: return FileImageStack.open(name, readonly, **options), name
             except Exception as e: raise; help_msg(2, "Failed to open image-stack '"+name+"': "+str(e))
         g = m.groups()
         before, digits, after = g[:3]
@@ -129,7 +145,7 @@ def get_input(args, readonly=True):
             options['pattern'] = before+("%%0%dd"%len(digits))+after
             options['start'] = start
             options['step'] = step
-        try: return ImageStack.open([f for i,f in files], readonly, **options), name
+        try: return FileImageStack.open([f for i,f in files], readonly, **options), name
         except Exception as e: help_msg(2, "Failed to open image-stack '"+name+"': "+str(e))
         
 def get_output(args, ims, append):
@@ -140,7 +156,7 @@ def get_output(args, ims, append):
     """
     import os.path
     from .general.utils import make_dir
-    from .images.io import ImageStack
+    from .images.io import FileImageStack
     if args == None: return None, None
     elif append:
         return get_input(args, False)
@@ -149,14 +165,14 @@ def get_output(args, ims, append):
         if len(files) != len(ims): help_msg(2, "When using a list of filenames for the output stack it must have exactly one filename for each slice in the input-stack.")
         if any(not make_dir(os.path.dirname(f)) for f in files if os.path.dirname(f) != ''): help_msg(2, "Failed to create new image-stack because the file directories could not be created.")
         name =  " ".join(files)
-        try: return ImageStack.create(files, ims), name
+        try: return FileImageStack.create(files, ims), name
         except Exception as e: raise; help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
     else: #isinstance(args, basestring)
         name = args
         m = numeric_pattern.search(name)
         if m == None:
             name, options = get_opts(name)
-            try: return ImageStack.create(name, ims, **options), name
+            try: return FileImageStack.create(name, ims, **options), name
             except Exception as e: raise; help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
         g = m.groups()
         before, digits, after = g[:3]
@@ -167,7 +183,7 @@ def get_output(args, ims, append):
         if stop != None and (stop-start)//step != len(ims): help_msg(2, "When using numerical pattern with a range it must cover the exact number of slices in the input stack (easiest to just leave off the upper bound).")
         files = [before + str(i*step+start).zfill(ndigits) + after for i in xrange(len(ims))]
         if any(not make_dir(os.path.dirname(f)) for f in files if os.path.dirname(f) != ''): help_msg(2, "Failed to create new image-stack because the file directories could not be created.")
-        try: return ImageStack.create(files, ims, pattern=before+("%%0%dd"%ndigits)+after, start=start, step=step), name
+        try: return FileImageStack.create(files, ims, pattern=before+("%%0%dd"%ndigits)+after, start=start, step=step), name
         except Exception as e: raise; help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
 
 def split_args(args):
@@ -201,7 +217,7 @@ def main():
     from glob import iglob
     import shlex
     
-    from .images import dtype2desc # TODO: imfilter_util
+    from .images import FilteredImageStack, dtype2desc
     
     ##### Parse Arguments #####
     # Seperate out the arguments into 4 sections:
@@ -279,7 +295,7 @@ def main():
     
 
     # Filters
-    filter_args = split_args(filter_args)
+    filters = [FilteredImageStack.parse_cmd_line(f) for f in split_args(filter_args)]
 
 
     ##### Open Input Stack #####
@@ -288,6 +304,7 @@ def main():
     if verbose:
         print "----------------------------------------"
         print "Input Image Stack: %s" % in_name
+# TODO: update for new system
 #        print "Dimensions (WxHxD): %d x %d x %d" % (in_stack.w, in_stack.h, in_stack.d)
 #        print "Data Type:   %s" % dtype2desc(in_stack.dtype)
 #        sec_bytes = in_stack.w * in_stack.h * in_stack.dtype.itemsize
@@ -307,8 +324,9 @@ def main():
 
     
     ##### Process Filters #####
-    # TODO
-
+    for flt,args,kwargs in filters:
+        ims = FilteredImageStack.create(ims, flt, *args, **kwargs)
+        if verbose: print str(ims) or "<filter without description>"
 
     ##### Save Output Stack #####
     out_stack, out_name = get_output(output_args, ims, append)
@@ -316,6 +334,7 @@ def main():
     
     if verbose:
         print "----------------------------------------"
+# TODO: update for new system
         print "Output Image Stack: %s" % out_name
         if append: print "Appending data to output instead of overwriting"
         print "Dimensions (WxHxD): %d x %d x %d" % (out_stack.w, out_stack.h, len(in_stack))
