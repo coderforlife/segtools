@@ -203,7 +203,7 @@ class FilterOption:
     @property
     def has_no_default(self): return self._def is NoDefault
     @property
-    def full_desc(self): return self.description+("" if self.has_no_default else "(default: "+str(self.default)+")")
+    def full_desc(self): return self.description+("" if self.has_no_default else " (default: "+str(self.default)+")")
     def cast(self, x): return self._cast(x)
 
     @staticmethod

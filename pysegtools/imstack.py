@@ -76,9 +76,11 @@ def help_adv(topic):
     elif topic_lower == "filters":
         print "===== Filters ====="
         print fill("The filters applied to the images can change the shape and type of the data along with the image content itself. You may need to use some filters just to get the data into a format that the output image stack can handle.")
+        print ""
         print fill("The support filters are:")
         for l in filters.itervalues(): print lst_itm.fill(l)
         print fill("To lookup more information about a specific filter, do --help {filter}, for example --help \"Median Blur\".")
+        print ""
         print fill("Most have arguments that you can supply after the filter name and some arguments are even required. To specify arguments after the filter name seperated by spaces either listing out the values in order they are specified or giving the argument name, an equal sign, and then the value (allowing you to skip optional arguments). Some examples:")
         print fill("--median-blur 3")
         print fill("--median-blur size=3")
