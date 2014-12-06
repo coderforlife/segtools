@@ -6,7 +6,7 @@ from types import im_standardize_dtype
 from numbers import Integral, Real, Complex
 from _util import dtype_cast
 
-__all__ = ['get_color']
+__all__ = ['get_color','color_help']
 
 _colors = {
     # shades of gray (single float)
@@ -158,6 +158,32 @@ _colors = {
     'yellowgreen':          (0.604, 0.804, 0.196),
     }
 
+def color_help(width = None):
+    from textwrap import fill, TextWrapper
+    tw = TextWrapper(width=width, initial_indent=' * ', subsequent_indent='   ')
+    s = fill("Many filters take a color as an argument. Below are the supported values for the various image format types.", width)+"\n\n"
+    s += fill("General rules for color values: All values are case-insensitive. Color names are space/hyphen-insensitive, and grays can be written as greys.", width)+"\n"
+    s += "\n"+fill("1-Bit Images: (g1)", width)+"\n"
+    s += tw.fill('on:  1, white, w, true, t')+"\n"
+    s += tw.fill('off: 0, black, k, false, f')+"\n"
+    s += "\n"+fill("Single-Channel Integer Images: (g# or gs#)", width)+"\n"
+    s += tw.fill('floating-point value from 0.0 to 1.0 that will be scaled (you must include the period)')+"\n"
+    s += tw.fill('integer value')+"\n"
+    s += tw.fill('a hex value that starts with #')+"\n"
+    s += tw.fill('grayscale color names (black, k, dim gray, gray, dark gray, silver, light gray, gainsboro, white smoke, white, w)')+"\n"
+    s += "\n"+fill("Single-Channel Floating-Point Images: (gf#)", width)+"\n"
+    s += tw.fill('floating-point or integer value')+"\n"
+    s += tw.fill('grayscale color names (black, k, dim gray, gray, dark gray, silver, light gray, gainsboro, white smoke, white, w)')+"\n"
+    s += "\n"+fill("Complex Images: (cf# or cs#)", width)+"\n"
+    s += tw.fill('floating-point, integer, or complex value (e.g. \'2.5+3.5j\')')+"\n"
+    s += "\n"+fill("Color Images: (rgb24 or rgba32)", width)+"\n"
+    s += tw.fill('floating-point value from 0.0 to 1.0 that will be scaled (you must include the period, used for each channel except alpha which is opaque)')+"\n"
+    s += tw.fill('integer value (used for each channel except alpha which is opaque)')+"\n"
+    s += tw.fill('a comma or space seperated list of 3 or 4 floats/ints as above - if alpha is skipped it is made opaque')+"\n"
+    s += tw.fill('a hex value that starts with # that represents all channels together')+"\n"
+    s += tw.fill('any Matplotlib single-letter or HTML color names or \'transparent\' if alpha is supported')
+    return s
+
 def _color_name_strip(x): return x.strip().replace(' ', '').replace('-', '')
 
 def _get_bit_color(x):
@@ -290,10 +316,10 @@ def get_color(x, im):
             float from 0.0 to 1.0 (scaled to range of underlying integer type and used for each channel except alpha which is opaque)
             int from min to max of underlying integer type (used for each channel accept except which is opaque)
             string representing either of the above (if you want float 0.0 or 1.0 you must include the period)
-            iterable of the above with a number of elements for each channel (except can be skipped, in which case it is made opaque)
-            string with floats or ints seperated by commas or spaces, one for each channel (except can be skipped, in which case it is made opaque)
+            iterable of the above with a number of elements for each channel (except alpha can be skipped, in which case it is made opaque)
+            string with floats or ints seperated by commas or spaces, one for each channel (except alpha can be skipped, in which case it is made opaque)
             string that starts with '#' that is a hex string (converted to integer, represents all channels)
-            string [basic] HTML color names, Matplotlib single-letter color names, the string 'transparent' if alpha is supported
+            string HTML color names, Matplotlib single-letter color names, the string 'transparent' if alpha is supported
     """
     from numpy import void
     from collections import Iterable

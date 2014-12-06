@@ -162,7 +162,7 @@ def dtype2desc(dtype):
     elif dtype == IM_BIT:    return 'g1'
     elif dtype == IM_INT8:   return 'gs8'
     elif dtype == IM_UINT8:  return 'g8'
-    elif dtype.kind == 'c':  return 'cf%s%d' % (dtype.byteorder, dtype.itemsize * 8)
+    elif dtype.kind == 'c':  return 'cf%d'   % (dtype.itemsize * 8)
     elif dtype.kind == 'f':  return 'gf%s%d' % (dtype.byteorder, dtype.itemsize * 8)
     elif dtype.kind == 'u':  return 'g%s%d'  % (dtype.byteorder, dtype.itemsize * 8)
     elif dtype.kind == 'i':  return 'gs%s%d' % (dtype.byteorder, dtype.itemsize * 8)

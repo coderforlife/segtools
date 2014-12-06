@@ -56,8 +56,12 @@ def help_adv(topic):
     formats = {f.lower():f for f in FileImageStack.formats()}
     filters = {f.lower():f for f in FilteredImageStack.filter_names()}
     
-    if topic_lower in ("input", "output", "formats"):
-        print "===== Input and Output Stack Specifications and Formats ====="       
+    if topic_lower in ("color", "colors"):
+        from .images.colors import color_help
+        print "===== Colors ====="
+        print color_help(w)
+    elif topic_lower in ("input", "output", "formats"):
+        print "===== Input and Output Stack Specifications and Formats ====="
         print fill("The input and output stacks can either be a single 3D image file or a collection of 2D image files.", w)
         print ""
         print fill("For image formats that support 3D images simply give the filename after -i or -o. The supported formats for this are:", w)

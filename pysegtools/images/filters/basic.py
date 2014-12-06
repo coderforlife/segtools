@@ -123,7 +123,7 @@ class FlipImageStack(UnchangingFilteredImageStack):
         elif dir in ('x','y'):
             from numpy import flipud, fliplr
             self._flip = flipud if dir == 'y' else fliplr
-            slcs = [FlipFilterImageSlice(im,self,z) for z,im in enumerate(ims)]
+            slcs = FlipFilterImageSlice
         else: raise ValueError()
         super(FlipImageStack, self).__init__(ims, slcs)
         

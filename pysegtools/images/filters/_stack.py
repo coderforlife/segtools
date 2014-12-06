@@ -206,6 +206,22 @@ class FilterOption:
     def full_desc(self): return self.description+("" if self.has_no_default else " (default: "+str(self.default)+")")
     def cast(self, x): return self._cast(x)
 
+
+    # Various casting functions
+    @staticmethod
+    def cast_or(*casts):
+        def _cast_or(x):
+            for c in casts:
+                try: return c(x)
+                except TypeError, ValueError: continue
+            raise ValueError
+        return _cast_or
+    @staticmethod
+    def cast_check(pred):
+        def _cast_check(x):
+            if not pred(x): raise ValueError
+            return x
+        return _cast_check
     @staticmethod
     def cast_from_dict(d):
         def _cast_from_dict(x):
@@ -233,3 +249,13 @@ class FilterOption:
             if isnan(x) or not pred(x): raise ValueError
             return x
         return _cast_float
+    @staticmethod
+    def cast_writable_file():
+        pass # TODO
+    @staticmethod
+    def cast_readable_file():
+        pass # TODO
+    @staticmethod
+    def cast_color():
+        pass # TODO
+
