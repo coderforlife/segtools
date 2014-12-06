@@ -5,7 +5,7 @@ from numbers import Integral
 from _stack import UnchangingFilteredImageStack, UnchangingFilteredImageSlice, FilterOption as Opt
 from ..types import im_standardize_dtype, im_raw_dtype, IM_COLOR_TYPES, IM_RANGED_TYPES
 
-__all__ = ['gaussian_blur','mean_blur','median_blur']
+__all__ = ['gaussian_blur','mean_blur','median_blur','flip']
 
 def _filter(im, flt):
     im = im_standardize_dtype(im)
@@ -34,15 +34,26 @@ def median_blur(im, size=3):
     from scipy.ndimage.filters import median_filter
     return _filter(im, partial(median_blur, size=size))
 
-class BasicFilterImageStack(UnchangingFilteredImageStack):
+def flip(im, direction='v'):
+    """
+    Flips an image either vertically (default) or horizontally (by giving an 'h'). The returned
+    value is a view - not a copy.
+    """
+    from numpy import flipud, fliplr
+    if direction not in ('v', 'h'): raise ValueError('Unsupported direction')
+    return (flipud if direction == 'v' else fliplr)(im_standardize_dtype(im))
+
+
+
+class BlurFilterImageStack(UnchangingFilteredImageStack):
     def __init__(self, ims, flt):
-        super(BasicFilterImageStack, self).__init__(ims, BasicFilterImageSlice)
+        super(BasicFilterImageStack, self).__init__(ims, BlurFilterImageSlice)
         self._filter = flt
 
-class BasicFilterImageSlice(UnchangingFilteredImageSlice):
+class BlurFilterImageSlice(UnchangingFilteredImageSlice):
     def _get_data(self): return _filter(self._input.data, self._stack._filter)
 
-class GaussianBlurImageStack(BasicFilterImageStack):
+class GaussianBlurImageStack(BlurFilterImageStack):
     @classmethod
     def _name(cls): return 'Gaussian Blur'
     @classmethod
@@ -59,7 +70,7 @@ class GaussianBlurImageStack(BasicFilterImageStack):
         self._sigma = sigma
         super(GaussianBlurImageStack, self).__init__(ims, partial(gaussian_filter, sigma=sigma))
 
-class MeanBlurImageStack(BasicFilterImageStack):
+class MeanBlurImageStack(BlurFilterImageStack):
     @classmethod
     def _name(cls): return 'Mean Blur'
     @classmethod
@@ -76,7 +87,7 @@ class MeanBlurImageStack(BasicFilterImageStack):
         self._size = size
         super(MeanBlurImageStack, self).__init__(ims, partial(uniform_filter, size=size))
 
-class MedianBlurImageStack(BasicFilterImageStack):
+class MedianBlurImageStack(BlurFilterImageStack):
     @classmethod
     def _name(cls): return 'Median Blur'
     @classmethod
@@ -92,3 +103,32 @@ class MedianBlurImageStack(BasicFilterImageStack):
         from scipy.ndimage.filters import median_filter
         self._size = size
         super(MeanBlurImageStack, self).__init__(ims, partial(median_filter, size=size))
+
+class FlipImageStack(UnchangingFilteredImageStack):
+    @classmethod
+    def _name(cls): return 'Flip'
+    @classmethod
+    def _desc(cls): return 'Flips the images in the image stack, either in the x, y, and z directions.'
+    @classmethod
+    def _flags(cls): return ('f', 'flip')
+    @classmethod
+    def _opts(cls): return (Opt('dir', 'The direction of the flip: x (left-to-right), y (top-to-bottom), or z (first-to-last)', Opt.cast_from_list(('x','y','z')), 'y'),)
+    @classmethod
+    def _supported(cls, dtype): return True
+    def __str__(self): return 'Flip with dir=%s'%self._dir
+    def __init__(self, ims, dir='y'):
+        self._dir = dir
+        if dir == 'z':
+            slcs = [DoNothingFilterImageSlice(im,self,z) for z,im in enumerate(reversed(ims))]
+        elif dir in ('x','y'):
+            from numpy import flipud, fliplr
+            self._flip = flipud if dir == 'y' else fliplr
+            slcs = [FlipFilterImageSlice(im,self,z) for z,im in enumerate(ims)]
+        else: raise ValueError()
+        super(FlipImageStack, self).__init__(ims, slcs)
+        
+class DoNothingFilterImageSlice(UnchangingFilteredImageSlice):
+    def _get_data(self): return self._input.data
+    
+class FlipFilterImageSlice(UnchangingFilteredImageSlice):
+    def _get_data(self): return self._stack._flip(self._input.data)
