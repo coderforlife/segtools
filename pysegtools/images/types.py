@@ -1,11 +1,12 @@
-from numpy import dtype, iinfo, bool_, int8,uint8,int16,int32,int64, uint16,uint32,uint64, float32,float64, complex64,complex128
+from numpy import dtype, iinfo, bool_, int8, int16,int32,int64, uint8,uint16,uint32,uint64, float32,float64, complex64,complex128
 from sys import byteorder
 
 __all__ = [
     'im_standardize_dtype','imstack_standardize_dtype','im_raw_dtype',
     'get_im_min_max','dtype2desc','get_dtype_endian',
-    #'make_rgb24_color','make_rgba32_color',
-    'IM_INT_TYPES','IM_FLOAT_TYPES','IM_COMPLEX_TYPES','IM_COLOR_TYPES','IM_COLOR_ALPHA_TYPES','IM_RANGED_TYPES','IM_ALL_TYPES',
+    'IM_UINT_TYPES','IM_SINT_TYPES','IM_INT_TYPES','IM_FLOAT_TYPES','IM_RANGED_TYPES', # single channel
+    'IM_COMPLEX_TYPES','IM_COLOR_TYPES','IM_COLOR_ALPHA_TYPES', # multi-channel
+    'IM_ALL_TYPES',
     'IM_BIT','IM_INT8','IM_UINT8','IM_RGB24','IM_RGB24_RAW','IM_RGBA32','IM_RGBA32_RAW',
     ]
 
@@ -123,8 +124,9 @@ def im_raw_dtype(im):
 ##    raise TypeError('Cannot change image type to supported format')
 
 ##### Group Image Types #####
-IM_INT_TYPES     = (IM_INT8,  IM_INT16,  IM_INT16_BE,  IM_INT32,  IM_INT32_BE,  IM_INT32,  IM_INT32_BE,
-                    IM_UINT8, IM_UINT16, IM_UINT16_BE, IM_UINT32, IM_UINT32_BE, IM_UINT64, IM_UINT64_BE)
+IM_UINT_TYPES    = (IM_UINT8, IM_UINT16, IM_UINT16_BE, IM_UINT32, IM_UINT32_BE, IM_UINT64, IM_UINT64_BE)
+IM_SINT_TYPES    = (IM_INT8,  IM_INT16,  IM_INT16_BE,  IM_INT32,  IM_UINT32_BE, IM_INT64,  IM_INT64_BE)
+IM_INT_TYPES     = IM_SINT_TYPES + IM_UINT_TYPES
 IM_FLOAT_TYPES   = (IM_FLOAT32, IM_FLOAT64, IM_FLOAT32_BE, IM_FLOAT64_BE)
 IM_COMPLEX_TYPES = (IM_COMPLEX64, IM_COMPLEX64_BE, IM_COMPLEX128, IM_COMPLEX128_BE, IM_INT16_2, IM_INT16_2_BE, IM_INT16_2_RAW, IM_INT16_2_RAW_BE)
 IM_COLOR_TYPES   = (IM_RGB24, IM_RGB24_RAW, IM_RGBA32, IM_RGBA32_RAW)
