@@ -63,6 +63,6 @@ def _bool(x):
     return bool(x)
 def dtype_cast(x, dtype):
     """Casts a value using a dtype specification."""
-    a = array([x], dtype.base)
+    a = numpy.array([x], dtype.base)
     if a.shape[1:] != dtype.shape: raise ValueError('Invalid value "' + v + '" for tag "' + k_ + '"')
     return a[0] if a.ndim == 1 else tuple(a[0])

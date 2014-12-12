@@ -2,11 +2,12 @@
 
 from numpy import void
 
-from types import im_standardize_dtype
+from types import im_standardize_dtype, get_im_min_max
+from types import IM_BIT, IM_INT_TYPES, IM_FLOAT_TYPES, IM_COMPLEX_TYPES, IM_COLOR_ALPHA_TYPES
 from numbers import Integral, Real, Complex
 from _util import dtype_cast
 
-__all__ = ['get_color','color_help']
+__all__ = ['get_color','is_color','color_help']
 
 _colors = {
     # shades of gray (single float)
@@ -186,6 +187,31 @@ def color_help(width = None):
 
 def _color_name_strip(x): return x.strip().replace(' ', '').replace('-', '')
 
+def _no_throw(f,x):
+    try: f(x); return True
+    except: return False
+
+def _is_color_channel(x):
+    from numpy import bool_
+    if isinstance(x, basestring):
+        x = x.strip().lower()
+        return x in ('true', 'false', 't', 'f') or _no_throw(complex,x) or _no_throw(long,x) or _no_throw(float,x)
+    return isinstance(x, (bool, bool_, Real, complex))
+    
+def is_color(x):
+    """
+    Checks if a value represents a color for any image type. This may mean that is_color(x) works
+    but get_color(x, im) fails for the same value x because im does not support the color value x.
+    """
+    from collections import Iterable
+    if _is_color_channel(x): return True
+    if isinstance(x, basestring):
+        x = x.strip().lower()
+        if _color_name_strip(x) in _colors: return True
+        if len(x) > 1 and x[0] == '#': return _no_throw(lambda:long(x[1:], 16))
+        x = x.split(',' if ',' in x else None)
+    return isinstance(x, Iterable) and all(_is_color_channel(c) for c in x)
+
 def _get_bit_color(x):
     from numpy import bool_
     if isinstance(x, (bool, bool_)): return bool_(x)
@@ -215,74 +241,6 @@ def _get_color(x, dtype):
     if dtype is IM_INT_TYPES: return _get_int_color(x, dtype)
     if dtype is IM_FLOAT_TYPES: return dtype_cast(x, dtype)
     raise ValueError()
-
-##def is_color(x, im = None):
-##    """
-##    Checks if a value is a color. If an image is not given then it is checked if the value is
-##    acceptable as a color for any image type. If an image is given it is checked if the value is
-##    acceptable for that specific image type. See get_color for details on "acceptable" colors.
-##    """
-##    from numpy import void
-##    from collections import Iterable
-##    im = im_standardize_dtype(im)
-##
-##    # Basic conversion
-##    if isinstance(x, basestring):
-##        cn = _color_name_strip(x)
-##        if cn in _colors: x = _colors[cn]
-##    elif isinstance(x, Iterable):
-##        x = tuple(x)
-##        if len(x) == 1: x = x[0]
-##    elif im is not None and im.dtype.type != void and isinstance(x, im.dtype.type): return True
-##
-##    # 
-##    if im is None:
-##        if isinstance(x, basestring):
-##            x = x.strip()
-##            try: x = long(x)
-##            except ValueError:
-##                try: x = float(x)
-##                except ValueError: return False
-##    else:
-##        im = im_standardize_dtype(im)
-##        if im.dtype is IM_BIT:
-##            return isinstance(x, (bool, bool_)) or (isinstance(x, Real) and x in (1, 0)) or (isinstance(x, basestring) and x.strip().lower() in ('1', 'true',  't', '0', 'false', 'f'))
-##        elif im.dtype in IM_INT_TYPES:
-##            if isinstance(x, basestring):
-##                x = x.strip()
-##                if len(x) > 1 and x[0] == '#': x = int(x[1:], 16)
-##            mn, mx = get_im_min_max(dtype)
-##            if isinstance(x, basestring):
-##                x = x.strip()
-##                try: x = long(x)
-##                except ValueError:
-##                    try: x = float(x)
-##                    except ValueError: return False
-##            return (isinstance(x, Integral) and x >= mn and x <= mx) or
-##                (isinstance(x, Real) and x >= 0.0 and x <= 1.0)
-##        elif im.dtype in IM_FLOAT_TYPES:
-##            if isinstance(x, basestring):
-##                try: x = float(x.strip())
-##                except ValueError: return False
-##            return isinstance(x, Real)
-##        elif im.dtype in IM_COMPLEX_TYPES:
-##            ...
-##            if isinstance(x, tuple) and len(x) == 2: x = complex(x[0], x[1])
-##            elif isinstance(x, basestring): x = complex(x.strip())
-##            return dtype_cast(x, im.dtype)
-##        else: # colored types
-##            l = len(im.dtype)
-##            if isinstance(x, basestring):
-##                x = x.strip()
-##                if len(x) > 1 and x[0] == '#':
-##                    n = im.dtype[0].itemsize * 2
-##                    x = tuple(int(x[i:i+n], 16) for i in xrange(1, len(x), n))
-##                elif ',' in x: x = tuple(x.split(','))
-##                else:          x = tuple(x.split())
-##            if ~isinstance(x, tuple): x = (x,)
-##            if len(x) == 1: x = x*((l-1) if im.dtype in IM_COLOR_ALPHA_TYPES else l)
-##            if im.dtype in IM_COLOR_ALPHA_TYPES and len(x) == l-1: x += (1.0,)
-##            if len(x) == l: return tuple(_get_color(v, im.dtype[i]) for i,v in enumerate(x))
 
 def get_color(x, im):
     """
@@ -352,9 +310,8 @@ def get_color(x, im):
             if len(x) > 1 and x[0] == '#':
                 n = im.dtype[0].itemsize * 2
                 x = tuple(long(x[i:i+n], 16) for i in xrange(1, len(x), n))
-            elif ',' in x: x = tuple(x.split(','))
-            else:          x = tuple(x.split())
-        if ~isinstance(x, tuple): x = (x,)
+            else: x = tuple(x.split(',' if ',' in x else None))
+        if not isinstance(x, tuple): x = (x,)
         if len(x) == 1: x *= (l-1) if im.dtype in IM_COLOR_ALPHA_TYPES else l
         if im.dtype in IM_COLOR_ALPHA_TYPES and len(x) == l-1: x += (1.0,)
         if len(x) == l: return tuple(_get_color(v, im.dtype[i]) for i,v in enumerate(x))

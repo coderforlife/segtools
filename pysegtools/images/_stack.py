@@ -5,7 +5,7 @@ from itertools import islice
 from numbers import Integral
 
 from ..general.enum import Flags
-from .types import imstack_standardize_dtype
+from .types import imstack_standardize_dtype, dtype2desc
 from .source import ImageSource, DeferredPropertiesImageSource
 
 __all__ = ["ImageStack", "HomogeneousImageStack", "ImageSlice", "Homogeneous"]
@@ -60,6 +60,33 @@ class ImageStack(object):
     @property
     def d(self): return self._d
     def __len__(self): return self._d
+    def __str__(self):
+        """Gets a basic representation of this class as a string."""
+        if self._d == 0: return "(no slices)"
+        h,s,d = self._get_homogeneous_info()
+        if h == Homogeneous.Both: return "%dx%dx%d %s" % (s[1], s[0], self._d, dtype2desc(d))
+        line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s"
+        return "\n".join(line%(z,im.w,im.h,dtype2desc(im.dtype)) for z,im in enumerate(self._slices))
+    def print_detailed_info(self):
+        h,s,d = self._get_homogeneous_info()
+        total_bytes = 0
+        if self._d == 0:
+            print "Slices:      0"
+        elif h == Homogeneous.Both:
+            print "Dimensions:  %d x %d x %d (WxHxD)" % (s[1], s[0], self._d)
+            print "Data Type:   %s" % dtype2desc(d)
+            sec_bytes = s[1] * s[0] * d.itemsize
+            print "Bytes/Slice: %d" % sec_bytes
+            total_bytes = self._d * sec_bytes
+        else:
+            print "Slices:      %d" % (self._d)
+            line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s  %d bytes"
+            for z,im in enumerate(self._slices):
+                sec_bytes = im.w * im.h * im.dtype.itemsize
+                print line % (z, im.w, im.h, dtype2desc(im.dtype), sec_bytes)
+                total_bytes += sec_bytes
+        print "Total Bytes: %d" % (self._d * sec_bytes)
+        print "Handler:     %s" % type(self).__name__
 
     # Homogeneous interface
     def _get_homogeneous_info(self):
@@ -176,9 +203,17 @@ class HomogeneousImageStack(ImageStack):
         self._slc_bytes = w * h * dtype.itemsize
         self._homogeneous = Homogeneous.Both
 
+    def __str__(self): return "%dx%dx%d %s" % (self._w, self._h, self._d, dtype2desc(self._dtype))
+    def print_detailed_info(self):
+        print "Dimensions:  %d x %d x %d (WxHxD)" % (self._w, self._h, self._d)
+        print "Data Type:   %s" % dtype2desc(self._dtype)
+        sec_bytes = self._w * self._h * self._dtype.itemsize
+        print "Bytes/Slice: %d" % sec_bytes
+        print "Total Bytes: %d" % (self._d * sec_bytes)
+        print "Handler:     %s" % type(self).__name__
+
     def _get_homogeneous_info(self): return Homogeneous.Both, self._shape, self._dtype
     def _update_homogeneous_set(self, z, shape, dtype): pass
-
     @property
     def is_homogeneous(self): return True
 

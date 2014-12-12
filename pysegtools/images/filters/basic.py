@@ -64,7 +64,7 @@ class GaussianBlurImageStack(BlurFilterImageStack):
     def _opts(cls): return (Opt('sigma', 'The amount of blurring as a positive floating-point number', Opt.cast_float(lambda x:x>0)),)
     @classmethod
     def _supported(cls, dtype): return dtype in IM_COLOR_TYPES+IM_RANGED_TYPES
-    def __str__(self): return 'Gaussian blur with sigma=%f'%self._sigma
+    def description(self): return 'Gaussian blur with sigma=%f'%self._sigma
     def __init__(self, ims, sigma=1.0):
         from scipy.ndimage.filters import gaussian_filter
         self._sigma = sigma
@@ -81,7 +81,7 @@ class MeanBlurImageStack(BlurFilterImageStack):
     def _opts(cls): return (Opt('size', 'The amount of blurring as an integer >=2', Opt.cast_int(lambda x:x>1)),)
     @classmethod
     def _supported(cls, dtype): return dtype in IM_COLOR_TYPES+IM_RANGED_TYPES
-    def __str__(self): return 'mean blur with size=%d'%self._size
+    def description(self): return 'mean blur with size=%d'%self._size
     def __init__(self, ims, size=3):
         from scipy.ndimage.filters import uniform_filter
         self._size = size
@@ -98,7 +98,7 @@ class MedianBlurImageStack(BlurFilterImageStack):
     def _opts(cls): return (Opt('size', 'The amount of blurring as an integer >=2', Opt.cast_int(lambda x:x>1)),)
     @classmethod
     def _supported(cls, dtype): return dtype in IM_COLOR_TYPES+IM_RANGED_TYPES
-    def __str__(self): return 'median blur with size=%d'%self._size
+    def description(self): return 'median blur with size=%d'%self._size
     def __init__(self, ims, size=3):
         from scipy.ndimage.filters import median_filter
         self._size = size
@@ -112,10 +112,10 @@ class FlipImageStack(UnchangingFilteredImageStack):
     @classmethod
     def _flags(cls): return ('f', 'flip')
     @classmethod
-    def _opts(cls): return (Opt('dir', 'The direction of the flip: x (left-to-right), y (top-to-bottom), or z (first-to-last)', Opt.cast_from_list(('x','y','z')), 'y'),)
+    def _opts(cls): return (Opt('dir', 'The direction of the flip: x (left-to-right), y (top-to-bottom), or z (first-to-last)', Opt.cast_in('x','y','z'), 'y'),)
     @classmethod
     def _supported(cls, dtype): return True
-    def __str__(self): return 'Flip with dir=%s'%self._dir
+    def description(self): return 'flip with dir=%s'%self._dir
     def __init__(self, ims, dir='y'):
         self._dir = dir
         if dir == 'z':

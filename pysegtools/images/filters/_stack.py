@@ -63,13 +63,13 @@ class FilteredImageStack(ImageStack):
         npos = next((i for i,x in enumerate(cmd) if '=' in x), len(cmd)) # number of positional arguments
         if any('=' not in x for x in cmd[npos:]): raise ValueError("cannot include non-named arguments after named arguments (ones that have '=' in them)")
         try: args = [opt.cast(val) for opt,val in zip(opts[:npos], cmd)]
-        except: raise ValueError("argument '%s' of '%s' filter does not support value '%s'" % (opt.name, flt, val))
+        except (ValueError, TypeError): raise ValueError("argument '%s' of '%s' filter does not support value '%s'" % (opt.name, flt, val))
 
         # Named arguments
         opts = {opt.name:opt for opt in opts[npos:]} # remove the positional arguments
         try: kwargs = {key:opts.pop(key).cast(val) for key,val in (arg.split('=',1) for arg in cmd[npos:])}
         except KeyError: raise ValueError("invalid named argument '%s' of '%s' filter" % (key, flt))
-        except ValueError, TypeError: raise ValueError("argument '%s' of '%s' filter does not support value '%s'" % (opt.name, flt, val))
+        except (ValueError, TypeError): raise ValueError("argument '%s' of '%s' filter does not support value '%s'" % (opt.name, flt, val))
 
         # Default Checks
         opts = [opt for opt in opts.itervalues() if opt.name not in kwargs] # remove the keyword arguments
@@ -86,6 +86,12 @@ class FilteredImageStack(ImageStack):
             n = cls._name()
             if n is not None: names.append(n)
         return names
+    
+    @classmethod
+    def flag2name(cls, flt):
+        """Gets a fitler name from a flag"""
+        fcls = cls._get_filter_class(flt)
+        return None if fcls is None else fcls._name()
     
     @classmethod
     def description(cls, name, width=None):
@@ -157,13 +163,16 @@ class FilteredImageStack(ImageStack):
         """Returns true if the given dtype is supported as an input image data type"""
         return False
     @abstractmethod
-    def __str__(self):
-        """Returns a short description of the filter given the arguments supplied to"""
+    def description(self):
+        """Returns a short description of the filter after it is insantiated with its properties"""
         return None
     def __init__(self, ims, slices, *args, **kwargs):
         if isinstance(slices, type): slices = [slices(im,self,z,*args,**kwargs) for z,im in enumerate(ims)]
         super(FilteredImageStack, self).__init__(slices)
         self._ims = ImageStack.as_image_stack(ims)
+    def print_detailed_info(self):
+        print "Filter:      " + self.description()
+        super(FilteredImageStack, self).print_detailed_info()
 
 class FilteredImageSlice(ImageSlice):
     def __init__(self, image, stack, z):
@@ -213,7 +222,7 @@ class FilterOption:
         def _cast_or(x):
             for c in casts:
                 try: return c(x)
-                except TypeError, ValueError: continue
+                except (ValueError, TypeError): pass
             raise ValueError
         return _cast_or
     @staticmethod
@@ -223,17 +232,23 @@ class FilterOption:
             return x
         return _cast_check
     @staticmethod
-    def cast_from_dict(d):
-        def _cast_from_dict(x):
+    def cast_equal(val):
+        def _cast_equal(x):
+            if x!=val: raise ValueError
+            return x
+        return _cast_equal
+    @staticmethod
+    def cast_lookup(d):
+        def _cast_lookup(x):
             try: return d[x]
             except KeyError: raise ValueError
-        return _cast_from_dict
+        return _cast_lookup
     @staticmethod
-    def cast_from_list(l):
-        def _cast_from_list(x):
+    def cast_in(*l):
+        def _cast_in_list(x):
             if x in l: return x
             raise ValueError
-        return _cast_from_list
+        return _cast_in_list
     @staticmethod
     def cast_int(pred=lambda x:True):
         def _cast_int(x):
@@ -251,11 +266,36 @@ class FilterOption:
         return _cast_float
     @staticmethod
     def cast_writable_file():
-        pass # TODO
+        """
+        A cast that does some simple checks to see if the file is really not writable. No guarntees
+        that it isn't actually writable, but should catch some problems. Also improves the results
+        of cast_readable_file.
+        """
+        import os
+        def _cast_writable_file(x):
+            if x == '': raise ValueError
+            x = os.path.abspath(x)
+            if os.path.exists(x):
+                if os.path.isdir(x) or not os.access(x, os.W_OK): raise ValueError
+            elif not os.access(os.path.dirname(x), os.W_OK|os.X_OK): raise ValueError
+            _files_to_be_written.append(x)
+            return x
+        return _cast_writable_file
     @staticmethod
     def cast_readable_file():
-        pass # TODO
-    @staticmethod
-    def cast_color():
-        pass # TODO
+        """
+        A cast that does some simple checks to see if the file is really not readable. No guarntees
+        that it isn't actually readable, but should catch some problems. The file should already
+        exist or be a file that will be written by cast_writable_file().
+        """
+        import os
+        def _cast_readable_file(x):
+            if x == '': raise ValueError
+            x = os.path.abspath(x)
+            if not os.path.exists(x):
+                if x not in _files_to_be_written: raise ValueError
+            elif not (os.path.isfile(x) and os.access(x, os.R_OK)): raise ValueError
+            return x
+        return _cast_readable_file
 
+_files_to_be_written = [] # used by FilterOption.cast_writable_file and FilterOption.cast_readable_file

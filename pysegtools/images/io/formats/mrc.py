@@ -83,7 +83,7 @@ class MRC(HomogeneousFileImageStack):
         if len(options) > 0: raise ValueError('The MRC ImageStack does not support any additional configuration')
         if len(ims) == 0: raise ValueError('The MRC ImageStack requires at least one input image slice to be created')
         shape, dtype = ims[0].shape, ims[0].dtype
-        if any(shape != im.shape or dtype != im.dtype for im in ims[1:]): raise ValueError('ims')
+        if any(shape != im.shape or dtype != im.dtype for im in ims[1:]): raise ValueError('MRC files require all slices to be the same data type and size')
         h = MRCHeader()
         s = MRC(h, h._create(f, shape, dtype), False)
         s._insert(0, ims)
@@ -94,7 +94,7 @@ class MRC(HomogeneousFileImageStack):
         if len(opts) != 0: return MatchQuality.NotAtAll
         if ext in ('mrc',): return MatchQuality.Definitely
         elif ext in ('st','ali','preali','rec'): return MatchQuality.Likely
-        else: return MatchQuality.Unlikely
+        else: return MatchQuality.NotAtAll # although other extensions are used, we don't want something like "PNG" to make it here
 
     @classmethod
     def _format_name(cls): return "MRC"
@@ -102,7 +102,7 @@ class MRC(HomogeneousFileImageStack):
     def _description(cls):
         return """MRC file are common 3D images used by the program IMOD.
 
-This format supports grayscale (8-bit signed/unsigned int, 16-bit signed/unsigned big/small-endian int, 32-bit float) RGB (24-bit), and complex (2x 16-bit int signed big/small-endian, 2x 32-bit float) types."""
+This format supports grayscale (8-bit signed/unsigned int, 16-bit signed/unsigned big/small-endian int, 32-bit float) RGB (24-bit), and complex (2x 16-bit int signed big/small-endian, 2x 32-bit float) types. All slices are required to be the same image type and shape."""
 
     def __init__(self, h, f, readonly=False):
         self._file = f
@@ -121,7 +121,7 @@ This format supports grayscale (8-bit signed/unsigned int, 16-bit signed/unsigne
         file_remove_ranges(self._file, [(self._get_off(start), self._get_off(stop)) for start,stop in idx])
         for start,stop in idx: self._delete_slices(start, stop)
     def _insert(self, idx, ims):
-        if any(self._shape != im.shape or self._dtype != im.dtype for im in ims): raise ValueError('im')
+        if any(self._shape != im.shape or self._dtype != im.dtype for im in ims): raise ValueError('MRC files require all slices to be the same data type and size')
         end = idx + len(ims)
         if idx != self._d: copy_data(self._file, self._get_off(idx), self._get_off(end))
         else:              self._file.truncate(self._get_off(end))
@@ -151,7 +151,7 @@ class MRCSlice(FileImageSlice):
         self._file.seek(self._off) # TODO: don't seek if it won't change position?
         return imread_raw(self._file, self._shape, self._dtype, 'C')
     def _set_data(self, im):
-        if self._shape != im.shape or self._dtype != im.dtype: raise ValueError('im')
+        if self._shape != im.shape or self._dtype != im.dtype: raise ValueError('MRC files require all slices to be the same data type and size')
         self._file.seek(self._off) # TODO: don't seek if it won't change position?
         im = im.data
         imsave_raw(self._file, im)

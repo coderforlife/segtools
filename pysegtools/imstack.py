@@ -26,20 +26,16 @@ def help_msg(err = 0, msg = None):
         print
     print fill("Image Stack Reader and Converter Tool", w)
     print ""
-    print tw.fill("%s [args] -i input [[filters] -o [-a] output]" % basename(argv[0]))
+    print tw.fill("%s [args] -i input [filters] [-o [-a] output]" % basename(argv[0]))
     print tw.fill("  -h  --help [x]  Display this help or information about a filter or format")
-    print tw.fill("  -v  --verbose   Display all information about image stack(s)")
+    print tw.fill("  -v  --verbose   Display all information about image stacks and filters")
     print tw.fill("  -a  --append    Append data to the output-stack instead of creating a new output-stack, single-file output stacks must exist")
     print ""
     print fill("You may provide any arguments via a file using @argfile which will read that file in as POSIX-style command arguments (including supporting # for comments).", w)
     print ""
-    print fill("For more information on the input and output arguemnts, see --help input or --help output. For a list of available filters see --help filters.", w)
+    print fill("For more information on the input and output arguments, see --help input or --help output. For a list of available filters see --help filters.", w)
     print ""
-    print fill("===== Identify Usage =====", w)
-    print fill("If output is not provided then information about the input stack is printed out.", w)
-    print ""
-    print fill("===== Convert Usage =====", w)
-    print fill("Convert the input to the output possibly running it through image filters.", w)
+    print fill("If output is not provided then basic information about the input stack (after being possibly run through filters) is printed out.", w)
     exit(err)
 
 def help_adv(topic):
@@ -54,7 +50,7 @@ def help_adv(topic):
     lst_itm = TextWrapper(width = w, initial_indent = ' * ', subsequent_indent = ' '*3)
     topic_lower = topic.lower()
     formats = {f.lower():f for f in FileImageStack.formats()}
-    filters = {f.lower():f for f in FilteredImageStack.filter_names()}
+    filter_name = FilteredImageStack.flag2name(topic_lower)
     
     if topic_lower in ("color", "colors"):
         from .images.colors import color_help
@@ -82,7 +78,7 @@ def help_adv(topic):
         print fill("The filters applied to the images can change the shape and type of the data along with the image content itself. You may need to use some filters just to get the data into a format that the output image stack can handle.")
         print ""
         print fill("The support filters are:")
-        for l in filters.itervalues(): print lst_itm.fill(l)
+        for l in FilteredImageStack.filter_names(): print lst_itm.fill(l)
         print fill("To lookup more information about a specific filter, do --help {filter}, for example --help \"Median Blur\".")
         print ""
         print fill("Most have arguments that you can supply after the filter name and some arguments are even required. To specify arguments after the filter name seperated by spaces either listing out the values in order they are specified or giving the argument name, an equal sign, and then the value (allowing you to skip optional arguments). Some examples:")
@@ -94,9 +90,9 @@ def help_adv(topic):
         desc = FileImageStack.description(topic_lower)
         if desc is None: desc = "Sorry, no description is currently available for this format."
         for l in desc.splitlines(): print fill(l, w)
-    elif topic_lower in filters:
-        print "===== Filter: %s =====" % filters[topic_lower]
-        print FilteredImageStack.description(topic_lower, w) or "Sorry, no description is currently available for this filter."
+    elif filter_name is not None:
+        print "===== Filter: %s =====" % filter_name
+        print FilteredImageStack.description(filter_name, w) or "Sorry, no description is currently available for this filter."
     else: help_msg(2, "Help topic not found.") 
     exit(0)
 
@@ -129,7 +125,7 @@ def get_input(args, readonly=True):
         if m == None:
             name, options = get_opts(name)
             try: return FileImageStack.open(name, readonly, **options), name
-            except Exception as e: raise; help_msg(2, "Failed to open image-stack '"+name+"': "+str(e))
+            except Exception as e: help_msg(2, "Failed to open image-stack '"+name+"': "+str(e))
         g = m.groups()
         before, digits, after = g[:3]
         start = int(g[3] or 0)
@@ -172,14 +168,14 @@ def get_output(args, ims, append):
         if any(not make_dir(os.path.dirname(f)) for f in files if os.path.dirname(f) != ''): help_msg(2, "Failed to create new image-stack because the file directories could not be created.")
         name =  " ".join(files)
         try: return FileImageStack.create(files, ims), name
-        except Exception as e: raise; help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
+        except Exception as e: help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
     else: #isinstance(args, basestring)
         name = args
         m = numeric_pattern.search(name)
         if m == None:
             name, options = get_opts(name)
             try: return FileImageStack.create(name, ims, **options), name
-            except Exception as e: raise; help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
+            except Exception as e: help_msg(2, "Failed to create new image-stack '"+name+"': "+str(e))
         g = m.groups()
         before, digits, after = g[:3]
         ndigits = len(digits)
@@ -278,8 +274,6 @@ def main():
         else: output_args = output_args[0]
     except ValueError:
         output_args = None
-        if len(filter_args) > 0: help_msg(2, "Filters cannot be used unless outputting to a file.")
-
 
     # General arguments
     general_args = split_args(general_args)
@@ -297,7 +291,6 @@ def main():
     if verbose and len(verbose_args[0]) > 1: help_msg(2, "-v/--verbose does not take any values")
 
     if len(general_args) > 0: help_msg(2, "Unknown general arguments provided: " + ", ".join(a[0] for a in general_args))
-    
 
     # Filters
     filters = [FilteredImageStack.parse_cmd_line(f) for f in split_args(filter_args)]
@@ -311,15 +304,15 @@ def main():
         print "Input Image Stack: %s" % in_name
         ims.print_detailed_info()
         print "----------------------------------------"
-        if output_args == None: exit(0)
-    elif output_args == None:
-        print str(ims)
-        exit(0)
     
     ##### Process Filters #####
     for flt,args,kwargs in filters:
         ims = FilteredImageStack.create(ims, flt, *args, **kwargs)
-        if verbose: print str(ims) or "<filter without description>"
+        if verbose: print ims.print_detailed_info()
+    if output_args is None:
+        for im in ims: im.data # force all filters to execute
+        if not verbose: print str(ims)
+        exit(0)
 
     ##### Save Output Stack #####
     ims, out_name = get_output(output_args, ims, append)

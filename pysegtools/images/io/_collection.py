@@ -84,6 +84,12 @@ class FileCollectionStack(FileImageStack):
     def _insert(self, idx, ims):
         # Note: the renaming may run into problems on Windows because if the file exists the rename
         # will fail. This only affects insert and only the first len(ims) renames.
+        if self._d == 0 and len(ims) > 1:
+            # due to the way _update_homogeneous_set is implemented, we need to insert the first
+            # image by itself first when we are inserting into an emtpy collection
+            self._insert(0, ims[:1])
+            idx = 1
+            ims = ims[1:]
         end = self._d+len(ims)
         filenames = self._orig_files[self._d:end]
         if len(filenames) < len(ims):

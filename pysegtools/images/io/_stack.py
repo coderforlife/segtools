@@ -54,7 +54,7 @@ class FileImageStack(ImageStack):
                 with open(filename, 'r') as f: mq = cls._openable(f, **options)
                 if mq > highest_mq: highest_cls, highest_mq = cls, mq
                 if mq == MatchQuality.Definitely: break
-            if highest_mq == MatchQuality.NotAtAll: raise ValueError
+            if highest_mq == MatchQuality.NotAtAll: raise ValueError('Unknown file format')
             return highest_cls.open(filename, readonly, **options)
         elif isinstance(filename, Iterable):
             from _collection import FileCollectionStack
@@ -83,7 +83,7 @@ class FileImageStack(ImageStack):
                 mq = cls._creatable(filename, ext, **options)
                 if mq > highest_mq: highest_cls, highest_mq = cls, mq
                 if mq == MatchQuality.Definitely: break
-            if highest_mq == MatchQuality.NotAtAll: raise ValueError
+            if highest_mq == MatchQuality.NotAtAll: raise ValueError('Unknown file extension')
             return highest_cls.create(filename, ims, **options)
         elif filename == None or isinstance(filename, Iterable):
             from _collection import FileCollectionStack
@@ -159,33 +159,8 @@ class FileImageStack(ImageStack):
     def readonly(self): return self._readonly
     @property
     def header(self): return self._header
-    def __str__(self):
-        """Gets a basic representation of this class as a string."""
-        if self._d == 0: return "(no slices)"
-        h,s,d = self._get_homogeneous_info()
-        if h == Homogeneous.Both: return "%dx%dx%d %s" % (s[1], s[0], self._d, dtype2desc(d))
-        line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s"
-        return "\n".join(line%(z,im.w,im.h,dtype2desc(im.dtype)) for z,im in enumerate(self._slices))
     def print_detailed_info(self):
-        h,s,d = self._get_homogeneous_info()
-        total_bytes = 0
-        if self._d == 0:
-            print "Slices:      0"
-        elif h == Homogeneous.Both:
-            print "Dimensions:  %d x %d x %d (WxHxD)" % (s[1], s[0], self._d)
-            print "Data Type:   %s" % dtype2desc(d)
-            sec_bytes = s[1] * s[0] * d.itemsize
-            print "Bytes/Slice: %d" % sec_bytes
-            total_bytes = self._d * sec_bytes
-        else:
-            print "Slices:      %d" % (self._d)
-            line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s  %d bytes"
-            for z,im in enumerate(self._slices):
-                sec_bytes = im.w * im.h * im.dtype.itemsize
-                print line % (z, im.w, im.h, dtype2desc(im.dtype), sec_bytes)
-                total_bytes += sec_bytes
-        print "Total Bytes: %d" % (self._d * sec_bytes)
-        print "Handler:     %s" % type(self).__name__
+        super(FileImageStack, self).print_detailed_info()
         if len(self.header) == 0: print "No header information"
         else:
             print "Header:"
@@ -406,14 +381,8 @@ class HomogeneousFileImageStack(HomogeneousImageStack, FileImageStack):
     def __init__(self, header, slices, w, h, dtype, readonly=False):
         FileImageStack.__init__(self, header, slices, readonly)
         HomogeneousImageStack._init_props(self, w, h, dtype)
-    def __str__(self): return "%dx%dx%d %s" % (self._w, self._h, self._d, dtype2desc(self._dtype))
     def print_detailed_info(self):
-        print "Dimensions:  %d x %d x %d (WxHxD)" % (self._w, self._h, self._d)
-        print "Data Type:   %s" % dtype2desc(self._dtype)
-        sec_bytes = self._w * self._h * self._dtype.itemsize
-        print "Bytes/Slice: %d" % sec_bytes
-        print "Total Bytes: %d" % (self._d * sec_bytes)
-        print "Handler:     %s" % type(self).__name__
+        super(HomogeneousFileImageStack, self).print_detailed_info()
         if len(self.header) == 0: print "No header information"
         else:
             print "Header:"
