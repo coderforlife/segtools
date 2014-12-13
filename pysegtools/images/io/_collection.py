@@ -3,6 +3,7 @@ import os
 
 from _stack import FileImageStack, FileImageSlice, FileImageStackHeader, Field, NumericField
 from _single import iminfo, imread, imsave
+from ..types import get_im_dtype
 
 __all__ = ['FileCollectionStack']
 
@@ -125,12 +126,12 @@ class FileSlice(FileImageSlice):
         self._set_props(dtype, shape)
     def _get_data(self):
         im = imread(self._filename)
-        self._set_props(im.dtype, im.shape)
+        self._set_props(get_im_dtype(im), im.shape[:2])
         return im
     def _set_data(self, im):
         im = im.data
         imsave(self._filename, im)
-        self._set_props(im.dtype, im.shape)
+        self._set_props(get_im_dtype(im), im.shape[:2])
         return im
 
 def cast_pattern(s):

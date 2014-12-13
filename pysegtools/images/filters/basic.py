@@ -3,21 +3,19 @@ from functools import partial
 from numbers import Integral
 
 from _stack import UnchangingFilteredImageStack, UnchangingFilteredImageSlice, FilterOption as Opt
-from ..types import im_standardize_dtype, im_raw_dtype, IM_COLOR_TYPES, IM_RANGED_TYPES
+from ..types import check_image
 
 __all__ = ['gaussian_blur','mean_blur','median_blur','flip']
 
 def _filter(im, flt):
-    im = im_standardize_dtype(im)
-    if im.dtype in IM_COLOR_TYPES: # Multi-channel images
+    check_image(im)
+    if im.ndim == 3: # Multi-channel images
         from numpy import empty
-        im = im_raw_dtype(im)
         out = empty(im.shape, dtype=im.dtype)
         for i in xrange(im.shape[2]): flt(im[:,:,i], output=out[:,:,i])
-        return im_standardize_dtype(out)
-    elif im.dtype in IM_RANGED_TYPES: # Single-channel images
+        return out
+    else: # Single-channel images
         return flt(im)
-    else: raise ValueError('Unsupported image type')
 
 def gaussian_blur(im, sigma=1.0):
     """Blur an image using a Gaussian filter. Works on color types by blurring each channel seperately."""
@@ -41,7 +39,7 @@ def flip(im, direction='v'):
     """
     from numpy import flipud, fliplr
     if direction not in ('v', 'h'): raise ValueError('Unsupported direction')
-    return (flipud if direction == 'v' else fliplr)(im_standardize_dtype(im))
+    return (flipud if direction == 'v' else fliplr)(im)
 
 
 

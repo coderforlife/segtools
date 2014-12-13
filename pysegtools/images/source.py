@@ -1,15 +1,17 @@
 from abc import ABCMeta, abstractproperty, abstractmethod
 from collections import Sequence
 from numpy import ndarray
-from .types import im_standardize_dtype
+from .types import check_image, get_im_dtype
 
 __all__ = ['ImageSource', 'ArrayImageSource', 'DeferredPropertiesImageSource']
 
 class ImageSource(object):
     """
     A class that represents a source of image data. This is used when we want to not load or compute
-    the actual image data until it is actually needed. The dtype should be a standardized type. In
-    general accessing data should not cache the results unless otherwise specified.
+    the actual image data until it is actually needed. The dtype should be that which is returned by
+    create_im_dtype/get_im_dtype - a dtype that has the base type and possibly a number of channels.
+    The shape should be (height,width) only. In general accessing data should not cache the results
+    unless otherwise specified.
     """
     __metaclass__ = ABCMeta
     @abstractproperty
@@ -35,15 +37,15 @@ class ImageSource(object):
 
 class ArrayImageSource(ImageSource):
     """A simple image source that is backed by an ndarray."""
-    def __init__(self, im): self._im = im_standardize_dtype(im)
+    def __init__(self, im): check_image(im); self._im = im
     @property
     def w(self): return self._im.shape[1]
     @property
     def h(self): return self._im.shape[0]
     @property
-    def dtype(self): return self._im.dtype
+    def dtype(self): return get_im_dtype(self._im)
     @property
-    def shape(self): return self._im.shape
+    def shape(self): return self._im.shape[:2]
     @property
     def data(self): return self._im
 

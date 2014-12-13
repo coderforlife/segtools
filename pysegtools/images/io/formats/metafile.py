@@ -1,14 +1,14 @@
 from collections import Iterable, Sequence
 from itertools import product
 from functools import partial
-from numpy import array, empty
+from numpy import array, empty, uint8, int8, uint16, int16, uint32, int32, uint64, int64, float32, float64
 import re, os
 
 from ....general.gzip import GzipFile
 from ....general.enum import Enum
-from ..._util import prod, dtype_cast, itr2str, splitstr, get_list, _bool
+from ..._util import prod, itr2str, splitstr, get_list, _bool
 
-from ...types import *
+from ...types import create_im_dtype, im_decomplexify
 from .._single import iminfo, imread, imsave
 from .._stack import FileImageStack, FileImageStackHeader, Field, FixedField
 from .._util import openfile, get_file_size, copy_data, imread_raw, imsave_raw, imread_ascii_raw, imsave_ascii_raw
@@ -17,24 +17,21 @@ __all__ = ['iminfo_mha', 'iminfo_mhd', 'imread_mha', 'imread_mhd', 'imsave_mha',
  # TODO: 'Metafile'
 
 dtype2met = {
-    # handle these specially
-    #IM_RGB24  : 'MET_UCHAR_ARRAY',
-    #IM_RGBA32 : 'MET_UCHAR_ARRAY',
-    IM_UINT8  : 'MET_UCHAR',
-    IM_INT8   : 'MET_CHAR',
-    IM_INT16  : 'MET_SHORT',      IM_INT16_BE  : 'MET_SHORT',
-    IM_UINT16 : 'MET_USHORT',     IM_UINT16_BE : 'MET_USHORT',
-    IM_INT32  : 'MET_INT',        IM_INT32_BE  : 'MET_INT',
-    IM_UINT32 : 'MET_UINT',       IM_UINT32_BE : 'MET_UINT',
-    IM_INT64  : 'MET_LONG_LONG',  IM_INT64_BE  : 'MET_LONG_LONG',
-    IM_UINT64 : 'MET_ULONG_LONG', IM_UINT64_BE : 'MET_ULONG_LONG',
-    IM_FLOAT32 : 'MET_FLOAT',
-    IM_FLOAT64 : 'MET_DOUBLE',
+    uint8  : 'MET_UCHAR',
+    int8   : 'MET_CHAR',
+    uint16 : 'MET_USHORT',
+    int16  : 'MET_SHORT',
+    uint32 : 'MET_UINT',
+    int32  : 'MET_INT',
+    uint64 : 'MET_ULONG_LONG',
+    int64  : 'MET_LONG_LONG',
+    float32 : 'MET_FLOAT',
+    float64 : 'MET_DOUBLE',
 }
 met2dtype = { v:k for k,v in dtype2met.iteritems() }
-met2dtype['MET_LONG']  = IM_INT32  # synonyms
-met2dtype['MET_ULONG'] = IM_UINT32
-# Note: MET_*_ARRAY is equivilient to MET_*, we standardize while reading the header
+met2dtype['MET_LONG']  = int32  # synonyms
+met2dtype['MET_ULONG'] = uint32
+# Note: MET_*_ARRAY is equivilient to MET_*, we standardize to ARRAY being when with multi-channel images
 
 req_keys = ('ObjectType','NDims','DimSize','ElementType','ElementDataFile')
 synonyms = {
@@ -115,15 +112,15 @@ def read_mha_header(f):
         datafile = parse_pattern(re_search.last_match, shape[-1])
     
     # Check/Parse Element Type Header Keys
+    endian = _bool(h.get('BinaryDataByteOrderMSB', False))
     etype = h['ElementType']
-    if etype.endswith('_ARRAY'): etype = etype[:-6]
     echns = int(h.get('ElementNumberOfChannels', 1))
-    endian = '>' if _bool(h.get('BinaryDataByteOrderMSB', False)) else '<'
-    if echns == 4 and etype == 'MET_UCHAR': dtype = IM_RGBA32; h['ElementType'] = 'MET_UCHAR_ARRAY'
-    if echns == 3 and etype == 'MET_UCHAR': dtype = IM_RGB24; h['ElementType'] = 'MET_UCHAR_ARRAY'
-    elif echns == 1 and etype in met2dtype: dtype = met2dtype[etype].newbyteorder(endian); h['ElementType'] = etype
-    else: raise ValueError('MHA/MHD file image type not supported')
-    
+    if etype.endswith('_ARRAY'): etype = etype[:-6]
+    h['ElementType'] = etype + ('_ARRAY' if echns > 1 else '')
+    if etype not in met2dtype or echns < 1: raise ValueError('MHA/MHD file image type not supported')
+    dtype = met2dtype[etype]
+    dtype = create_im_dtype(dtype, endian, echns)
+
     return h, dtype, datafile, headersize
 
 def iminfo_mha(filename):
@@ -135,9 +132,7 @@ def iminfo_mhd(filename):
     """
     with openfile(filename, 'rb') as f:
         h, dtype, datafile, headersize = read_mha_header(f)
-    shape = splitstr(h['DimSize'], int)
-    shape.reverse()
-    return shape, dtype
+    return tuple(reversed(splitstr(h['DimSize'], int))), dtype
 iminfo.register('.mha', iminfo_mha)
 iminfo.register('.mhd', iminfo_mhd)
 
@@ -157,7 +152,6 @@ def imread_mhd(filename):
     Unsupported features:
         Non-image files
         HeaderSize of -1 when data is ASCII or data is compressed without knowing the compressed data size
-        Many image data formats
         Many fields are simply ignored (e.g. TransformationMatrix) but they are returned
     """
     # Read/Check/Parse Header
@@ -206,7 +200,7 @@ imread.register('.mhd', lambda filename: imread_mhd(filename)[1])
 def imsave_mha(filename, im, CompressedData=False, BinaryData=True, **tags):
     """Save an image as an MHA image (data embeded in the metadata file). See imsave_mhd for more information."""
     imsave_mhd(filename, im, 'LOCAL', CompressedData, BinaryData, **tags)
-def imsave_mhd(filename, im, datafile=None, CompressedData=False, BinaryData=True, **tags):
+def imsave_mhd(filename, im, datafile=None, CompressedData=False, BinaryData=True, ElementNumberOfChannels=None, **tags):
     """
     Save an image as an MHD image.
     
@@ -227,7 +221,6 @@ def imsave_mhd(filename, im, datafile=None, CompressedData=False, BinaryData=Tru
     be copied for each dimension.
 
     Currently many features of MHA/MHD files are not supported, including:
-        Not all data types are understood
         Cannot output data listed datafiles that don't contain exactly 1 less dimension than the overall number of dimensions
         Cannot save non-image objects
         Cannot create a datafile with a non-MHA/MHD header (HeaderSize) (partially allowed in the Metafile ImageStack)
@@ -236,16 +229,34 @@ def imsave_mhd(filename, im, datafile=None, CompressedData=False, BinaryData=Tru
 
     from sys import byteorder
 
-    # TODO: the line below is the only reason this function only works on 2D images
-    # If it was "smarter" then this could work on any dimensional data
-    im = im_standardize_dtype(im.dtype)
+    # Figure out the data type
+    was_complex = im.dtype.kind == 'c'
+    im = im_decomplexify(im) # we support complex numbers only by breaking them into a 2-channel image
+    if im.dtype.type not in dtype2met: raise ValueError('Format of image is not supported')
+    
+    # Figure out the dimensions
+    if im.ndims > 2: im = im.squeeze(2)
+    echans, shape = 1, list(im.shape)
+    if 'ElementNumberOfChannels' in tags:
+        echans = tag['ElementNumberOfChannels']
+        if echans == '*': echans = im.shape[-1]
+        elif echans is not None: echans = int(echans)
+    elif was_complex:
+        echans = 2
+    elif len(shape) in (3,4) and shape[-1] in (3,4) and im.dtype.type == uint8:
+        echans = shape[-1]
+    if echans != 1:
+        if echans != im.shape[-1]: raise ValueError('If ElementNumberOfChannels is provided it must be None, *, 1, or the number of elements in the last dimension of the image')
+        del shape[-1]
+    ndims = len(shape)
+    shape.reverse()
+
+    # Figure out how we are saving
     BinaryData = _bool(BinaryData)
     CompressedData = _bool(CompressedData)
     if not BinaryData and CompressedData: raise ValueError('Cannot compress non-binary data')
 
-    ndims = im.ndim
-    shape = list(im.shape)
-    shape.reverse()
+    # Figure out where we will be saving data to
     filename = os.path.realpath(filename.strip())
     directory = os.path.dirname(filename)
     if datafile == None:
@@ -260,7 +271,7 @@ def imsave_mhd(filename, im, datafile=None, CompressedData=False, BinaryData=Tru
         if datafile in ('LOCAL', 'Local', 'local'):
             elem_data_file = datafile = 'LOCAL'
         elif re_search(file_pattern, datafile):
-            p = parse_pattern(re_search.last_match, shape[-1])
+            p = parse_pattern(re_search.last_match, im.shape[0])
             elem_data_file = itr2str(p)
             datafile = [os.path.realpath(os.path.join(directory,p[0]%i)) for i in xrange(p[1],p[2]+1,p[3])]
             datafile_list = []
@@ -269,14 +280,14 @@ def imsave_mhd(filename, im, datafile=None, CompressedData=False, BinaryData=Tru
         else:
             elem_data_file = os.path.relpath(datafile, directory)
     elif isinstance(datafile, Sequence) and re_search(file_pattern, itr2str(datafile)):
-        p = parse_pattern(re_search.last_match, shape[-1])
+        p = parse_pattern(re_search.last_match, im.shape[0])
         elem_data_file = itr2str(p)
         datafile = [os.path.realpath(os.path.join(directory,p[0]%i)) for i in xrange(p[1],p[2]+1,p[3])]
         datafile_list = []
     elif isinstance(datafile, Iterable):
         datafile = [os.path.realpath(os.path.join(directory, x)) for x in datafile]
         datafile_list = [os.path.relpath(x, directory) for x in datafile]
-        if len(datafile) != shape[-1]: raise ValueError('When using list datafiles there must be one file for each entry in the highest dimension')
+        if len(datafile) != im.shape[0]: raise ValueError('When using list datafiles there must be one file for each entry in the highest dimension')
         elem_data_file = 'LIST'
 
     # Setup tags that we compute from the image or other given options
@@ -288,19 +299,18 @@ def imsave_mhd(filename, im, datafile=None, CompressedData=False, BinaryData=Tru
         ('BinaryDataByteOrderMSB', str(im.dtype.byteorder == '>' or im.dtype.byteorder == '=' and byteorder != 'little')),
         ('CompressedData', str(CompressedData)),
         ]
-    if im.dtype == IM_RGB24 or im.dtype == IM_RGBA32:
-        alltags.append(('ElementType', 'MET_UCHAR_ARRAY'))
-        alltags.append(('ElementNumberOfChannels', '3' if im.dtype == IM_RGB24 else '4'))
+    if echans != 1:
+        alltags.append(('ElementType', dtype2met[im.dtype]+'_ARRAY'))
+        alltags.append(('ElementNumberOfChannels', str(echans)))
     else:
-        if im.dtype not in dtype2met: raise ValueError('Format of image is not supported')
         alltags.append(('ElementType', dtype2met[im.dtype]))
     alltags_dict = dict(alltags)
     alltags_dict['ElementDataFile'] = elem_data_file
 
     # These tags are not allowed in the extra tags as they are either implied from the image data or have required values
-    not_allowed = req_keys + ('ObjectSubType', 'ElementNumberOfChannels', 'HeaderSize', # used to specify how data is stored, int >= -1 with -1 as special
+    not_allowed = req_keys + ('ObjectSubType', 'HeaderSize',  # used to specify how data is stored, int >= -1 with -1 as special
                    'CompressedData', 'CompressedDataSize',
-                   'BinaryData', 'BinaryDataByteOrderMSB', 'ElementByteOrderMSB')
+                   'BinaryData', 'BinaryDataByteOrderMSB', 'ElementNumberOfChannels', 'ElementByteOrderMSB')
     string    = ('Name', 'Comment', 'TransformType', 'AcquisitionDate')
     enums     = {'Modality':METModality, 'DistanceUnits':METDistanceUnits}
     ints      = ('ID', 'ParentID', 'ElementNBits')
@@ -325,7 +335,7 @@ def imsave_mhd(filename, im, datafile=None, CompressedData=False, BinaryData=Tru
         elif k in enums:        v = enums[k](v).name
         elif k in ints:         v = str(int(v))
         elif k in floats:       v = str(float(v))
-        elif k in sames:        v = dtype_cast(v,im.dtype.base); v = itr2str(v) if isinstance(v, Iterable) else v
+        elif k in sames:        v = itr2str(get_list(v, echans, im.dtype.type)) if echans != 1 else str(im.dtype.type(v))
         elif k in n_floats:     v = itr2str(get_list(v, ndims, float))
         elif k in n2_floats:    v = itr2str(get_list(v, (ndims, ndims), float))
         elif k == 'Color':      v = itr2str(get_list(v, 4, float))
@@ -339,6 +349,7 @@ def imsave_mhd(filename, im, datafile=None, CompressedData=False, BinaryData=Tru
         if len([1 for n in name_set if n in tags]) > 1: raise ValueError('There can only be one tag from the set '+(', '.join(only_one)))
     alltags.extend(tags.iteritems())
 
+    # Save data
     if datafile == 'LOCAL':
         hdr = ''.join((name+' = '+value+'\n') for name, value in alltags)
         if CompressedData: hdr += 'CompressedDataSize = '; cds_off = len(hdr); hdr += '0              \n'

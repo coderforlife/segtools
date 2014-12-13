@@ -1,7 +1,7 @@
-from numpy import complex64, complex128
+from numpy import bool_, int8,int16,int32,int64, uint8,uint16,uint32,uint64, float32,float64, complex64,complex128
 
 from .._single import iminfo, imread
-from ...types import *
+from ...types import is_image, create_im_dtype
 
 # TODO: doesn't handle endian-ness, unsure if anything needs to be done
 # TODO: support imsave and stacks
@@ -13,10 +13,10 @@ __all__ = ['iminfo_mat','imread_mat']
 
 # don't support: cell, struct, object, char, function, opaque, unknown
 mat_classes = {
-    'int8' :IM_INT8, 'int16' :IM_INT16, 'int32' :IM_INT32, 'int64' :IM_INT64,
-    'uint8':IM_UINT8,'uint16':IM_UINT16,'uint32':IM_UINT32,'uint64':IM_UINT64,
-    'single':IM_FLOAT32,'double':IM_FLOAT64,'sparse':IM_FLOAT64,'logical':IM_BIT,
-    }
+    'int8' :int8, 'int16' :int16, 'int32' :int32, 'int64' :int64,
+    'uint8':uint8,'uint16':uint16,'uint32':uint32,'uint64':uint64,
+    'single':float32,'double':float64,'sparse':float64,'logical':bool_,
+}
 
 def find_non_special(d, special = '__'):
     name = special
@@ -25,10 +25,10 @@ def find_non_special(d, special = '__'):
     else: raise KeyError() # no non-special variables
 
 def get_target_dtype(dtype, cls):
-    return (dtype(complex128) if dtype.itemsize == 16 else dtype(complex64)) if dtype != None and dtype.names == ('real','imag') else mat_classes.get(cls, None)
+    return dtype(complex128 if dtype.itemsize == 16 else complex64) if dtype != None and dtype.names == ('real','imag') else mat_classes.get(cls, None)
 
 def get_mat_entry_sp(filename, name = None, return_data = False):
-    from scipy.io import whosmat
+    from scipy.io import whosmat, loadmat
     keys = whosmat(file_name)
     if len(keys) == 0: raise KeyError()
     if name == None:
@@ -38,25 +38,24 @@ def get_mat_entry_sp(filename, name = None, return_data = False):
             if n == name: break
         else: raise KeyError()
     if return_data:
-        from scipy.io import loadmat
         data = loadmat(filename, variable_names = name, mat_dtype = True)[name]
-        if cls == 'logical' and data.dtype == IM_FLOAT64: data = data.astype(IM_BIT)
-        return (name, cls, data)
+        if cls == 'logical' and data.dtype.type == float64: data = data.astype(bool_)
+        return (name, data)
     else:
-        return (name, cls, shape, get_target_dtype(None, cls))
+        return (name, shape, get_target_dtype(None, cls))
 
 def get_mat_entry_h5py(f, name = None, return_data = False):
     from h5py import File as HDF5File
     with HDF5File(filename, 'r') as f: # IOError if it doesn't exist or is the wrong format
         x = find_non_special(f, special='#') if name == None else f[name]
-        name, cls, sparse = x.name.lstrip('/'), x.attrs['MATLAB_class'], x.attrs.get('MATLAB_sparse', None)
-        if sparse != None:
-            data = x.get('data', None)
+        name, cls, sparse = x.name.lstrip('/'), x.attrs['MATLAB_class'], x.attrs.get('MATLAB_sparse')
+        data = x.get('data')
+        if sparse is not None:
             shape = (sparse, x['jc'].shape[0] - 1)
-            dtype = get_target_dtype(data.dtype if data != None else None, cls)
+            dtype = get_target_dtype(data.dtype if data is not None else None, cls)
             if return_data:
                 from scipy.sparse import csc_matrix
-                if data != None:
+                if data is not None:
                     data = csc_matrix((x.value.view(dtype=dtype) if dtype != None else x.value, x['ir'].value, x['jc'].value), shape=shape)
                 else: # all values are zeros
                     data = csc_matrix(shape=shape, dtype=dtype)
@@ -68,8 +67,8 @@ def get_mat_entry_h5py(f, name = None, return_data = False):
         else:
             shape = x.shape[::-1]
             dtype = get_target_dtype(data.dtype, cls)
-            if return_data: data = x.value.T.view(dtype=dtype) if dtype != None else x.value.T
-    return (name, cls, data) if return_data else (name, cls, shape, dtype)
+            if return_data: data = x.value.T.view(dtype=dtype) if dtype is not None else x.value.T
+    return (name, data) if return_data else (name, shape, dtype)
 
 def iminfo_mat(filename, name = None):
     """
@@ -79,16 +78,13 @@ def iminfo_mat(filename, name = None):
     """
     try:
         # Try SciPy built-in first (doesn't work for v7.3+ files)
-        name, cls, shape, dtype = get_mat_entry_sp(filename, name, False) # TODO: does not detect complex matricies (limitation of whosmat)
+        name, shape, dtype = get_mat_entry_sp(filename, name, False) # TODO: does not detect complex matricies (limitation of whosmat)
     except NotImplementedError:
         # Try v7.3 file which is an HDF5 file, we have to use h5py for this
-        name, cls, shape, dtype = get_mat_entry_h5py(filename, name, False)
-    if len(shape) == 3 and dtype == IM_UINT8:
-        if   shape[2] == 4: return shape[:2], IM_RGBA32
-        elif shape[2] == 3: return shape[:2], IM_RGB24
-        else: raise ValueError('MAT file matrix has unsupported shape or data type for images')
-    elif len(shape) == 2 and cls in mat_classes: return shape, dtype
-    else: raise ValueError('MAT file matrix has unsupported shape or data type for images')
+        name, shape, dtype = get_mat_entry_h5py(filename, name, False)
+    shape = shape[:2] + [x for x in shape[2:] if x != 1] # squeeze high dimensions
+    if dtype is None or len(shape) not in (2,3) or len(shape) == 3 and dtype.kind == 'c': raise ValueError('MAT file matrix has unsupported shape or data type for images')
+    return tuple(shape[:2]), create_im_dtype(dtype, '=', shape[2] if len(shape) == 3 else 1)
 iminfo.register('.mat', iminfo_mat)
 
 def imread_mat(filename, name = None):
@@ -102,19 +98,15 @@ def imread_mat(filename, name = None):
         # Supports loading just the given variable name
         # Otherwise have to load all variables and skip special keys starting with "__" to find the variable to load
         # Loaded matrices are already arrays
-        name, cls, im = get_mat_entry_sp(filename, name, True)
+        name, im = get_mat_entry_sp(filename, name, True)
 
     except NotImplementedError:
         # Try v7.3 file which is an HDF5 file
         # We have to use h5py for this (or PyTables...)
         # Always loads entire metadata (not just specific variable) but none of the data
         # Data needs to be actually loaded (.value) and transposed (.T)
-        name, cls, im = get_mat_entry_h5py(filename, name, True)
+        name, im = get_mat_entry_h5py(filename, name, True)
 
-    if len(im.shape) == 3 and im.dtype == IM_UINT8:
-        if   im.shape[2] == 4: return im.view(dtype=IM_RGBA32)
-        elif im.shape[2] == 3: return im.view(dtype=IM_RGB24)
-        else: raise ValueError('MAT file matrix has unsupported shape or data type for images')
-    elif len(im.shape) == 2 and cls in mat_classes: return im
-    else: raise ValueError('MAT file matrix has unsupported shape or data type for images')
+    if not is_image(im): raise ValueError('MAT file matrix has unsupported shape or data type for images')
+    return im
 imread.register('.mat', imread_mat)

@@ -114,17 +114,6 @@ def imread_ascii_raw(f, shape, dtype, order='C'):
     the values. The shape, dtype, and order are that of the image. The shape does not include the
     dtype shape.
     """
-    
-    # textual array loading do not support 'fancy' dtypes
-    view_dtype = None
-    if hasattr(dtype, 'fields') and dtype.fields:
-        dts = [dt for dt, i in dtype.fields.itervalues()]
-        if not all(dt == dts[0] for dt in dts[1:]): raise TypeError
-        view_dtype = dtype
-        sq_axis = len(shape)
-        shape += (len(dts),)
-        dtype = dts[0]
-    
     if isfileobj(f):
         if hasattr(dtype, 'shape') and dtype.shape:
             shape += dtype.shape
@@ -145,8 +134,7 @@ def imread_ascii_raw(f, shape, dtype, order='C'):
             sx = f.read(max((total-i)*2-1, 0))
             s += sx
         im_r[i:] = s.split()
-
-    return im.view(dtype=view_dtype).squeeze(axis=sq_axis) if view_dtype else im
+    return im
 
 def imskip_ascii_raw(f, shape, dtype):
     """
@@ -156,11 +144,6 @@ def imskip_ascii_raw(f, shape, dtype):
     """
     # Basically imread_ascii_raw with parts removed
     # TODO: is this really faster?
-    if hasattr(dtype, 'fields') and dtype.fields:
-        dts = [dt for dt, i in dtype.fields.itervalues()]
-        if not all(dt == dts[0] for dt in dts[1:]): raise TypeError
-        shape += (len(dts),)
-        dtype = dts[0]
     if isfileobj(f):
         if hasattr(dtype, 'shape') and dtype.shape:
             shape += dtype.shape

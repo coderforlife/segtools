@@ -1,9 +1,9 @@
 from collections import OrderedDict
-from numpy import empty, int16, int32, float32
+from numpy import empty, int8, uint8, int16, uint16, int32, float32, complex64
 
 from ....general.datawrapper import ListWrapper, ReadOnlyListWrapper
 from ....general.enum import Enum, Flags
-from ...types import *
+from ...types import create_im_dtype, get_im_dtype_and_nchan, get_dtype_endian
 from .._stack import HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader, Field, FixedField, MatchQuality
 from .._util import copy_data, openfile, imread_raw, imsave_raw
 
@@ -33,6 +33,20 @@ class MRCEndian(int32, Enum):
     LittleAlt = 0x00000044
     Big       = 0x00001717
     BigAlt    = 0x00000017
+
+__dtype2mode = {
+    1:{uint8:MRCMode.Byte,int8:MRCMode.Byte,int16:MRCMode.Short,float32:MRCMode.Float,complex64:MRCMode.Float2,uint16:MRCMode.UShort},
+    2:{int16:MRCMode.Short2,float32:MRCMode.Float2},
+    3:{uint8:MRCMode.Byte3},
+}
+__mode2dtype = { # MRCMode.Byte handled special
+    MRCMode.Short:  (int16,1),
+    MRCMode.Float:  (float32,1),
+    MRCMode.Short2: (int16,2),
+    MRCMode.Float2: (complex64,1),
+    MRCMode.UShort: (uint16,1),
+    MRCMode.Byte3:  (uint8,3),
+}
 
 # TODO: support mapc/mapr/maps = 2,1,3 using Fortran-ordered arrays?
 
@@ -265,14 +279,9 @@ class MRCHeader(FileImageStackHeader):
                 self._old_next = next
 
             # Determine data type
-            if   mode == MRCMode.Byte:   self._dtype = IM_INT8 if h['imodStamp'] == IMOD and MRCFlags.SignedByte in h['imodFlags'] else IM_UINT8
-            elif mode == MRCMode.Short:  self._dtype = IM_INT16.newbyteorder(endian)
-            elif mode == MRCMode.Float:  self._dtype = IM_FLOAT32.newbyteorder(endian)
-            elif mode == MRCMode.Short2: self._dtype = IM_INT16_2.newbyteorder(endian)
-            elif mode == MRCMode.Float2: self._dtype = IM_COMPLEX64.newbyteorder(endian)
-            elif mode == MRCMode.UShort: self._dtype = IM_UINT16.newbyteorder(endian)
-            elif mode == MRCMode.Byte3:  self._dtype = IM_RGB24
-            else:                        raise ValueError('MRC file is invalid (mode is %d)' % mode)
+            if   mode in (MRCMode.Byte, MRCMode._Byte):         self._dtype = create_im_dtype(int8 if h['imodStamp'] == IMOD and MRCFlags.SignedByte in h['imodFlags'] else uint8)
+            elif mode in __mode2dtype: dt = __mode2dtype[mode]; self._dtype = create_im_dtype(dt[0], endian, dt[1])
+            else:                      raise ValueError('MRC file is invalid (mode is %d)' % mode)
             return f
 
         except: f.close(); raise
@@ -280,19 +289,11 @@ class MRCHeader(FileImageStackHeader):
     def _create(self, f, shape, dtype):
         ### Creating a new file ###
         # Get the mode
-        if   dtype == IM_RGB24_RAW:      dtype = IM_RGB24
-        elif dtype == IM_INT16_2_RAW:    dtype = IM_INT16_2
-        elif dtype == IM_INT16_2_RAW_BE: dtype = IM_INT16_2_BE
-        if   dtype == IM_UINT8     or dtype == IM_INT8:         mode = MRCMode.Byte
-        elif dtype == IM_INT16     or dtype == IM_INT16_BE:     mode = MRCMode.Short
-        elif dtype == IM_FLOAT32   or dtype == IM_FLOAT32_BE:   mode = MRCMode.Float
-        elif dtype == IM_INT16_2   or dtype == IM_INT16_2_BE:   mode = MRCMode.Short2
-        elif dtype == IM_COMPLEX64 or dtype == IM_COMPLEX64_BE: mode = MRCMode.Float2
-        elif dtype == IM_UINT16    or dtype == IM_UINT16_BE:    mode = MRCMode.UShort
-        elif dtype == IM_RGB24     or dtype == IM_RGB24_RAW:    mode = MRCMode.Byte3
-        else: raise ValueError('dtype not supported')
         self._dtype = dtype
-        endian = get_dtype_endian(dtype)
+        dt, nchan = get_im_dtype_and_nchan(dtype)
+        mode = __dtype2mode.get(nchan, {}).get(dt.type, None)
+        if mode is None: raise ValueError('dtype not supported')
+        endian = get_dtype_endian(dt)
 
         # Create the header and write it
         ny, nx = shape
@@ -307,7 +308,7 @@ class MRCHeader(FileImageStackHeader):
             ('alpha',90.0), ('beta',90.0), ('gamma',90.0), ('mapc',1), ('mapr',2), ('maps',3),
             ('amin',0.0), ('amax',0.0), ('amean',0.0),
             ('ispf',0), ('next',0), ('creatid',0), ('nint',0), ('nreal',0),
-            ('imodStamp',IMOD), ('imodFlags',MRCFlags.SignedByte if dtype == IM_INT8 else MRCFlags(0)),
+            ('imodStamp',IMOD), ('imodFlags',MRCFlags.SignedByte if dt.type == int8 else MRCFlags(0)),
             ('idtype',0), ('lens',0), ('nd1',0), ('nd2',0), ('vd1',0), ('vd2',0),
             ('tiltangles0',0.0), ('tiltangles1',0.0), ('tiltangles2',0.0), ('tiltangles3',0.0), ('tiltangles4',0.0), ('tiltangles5',0.0),
             ('xorg',0.0), ('yorg',0.0), ('zorg',0.0),

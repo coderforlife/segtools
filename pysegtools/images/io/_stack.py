@@ -6,7 +6,7 @@ from itertools import repeat
 from numpy import ndarray, ceil
 
 from .._stack import ImageStack, HomogeneousImageStack, ImageSlice, Homogeneous
-from ..types import im_standardize_dtype, dtype2desc
+from ..types import is_image, get_im_dtype
 from ..source import ImageSource
 from ...general.datawrapper import DictionaryWrapperWithAttr
 from ...general.enum import Enum
@@ -312,10 +312,8 @@ class FileImageStack(ImageStack):
         if isinstance(im, ImageSource):
             self.append(im)
         elif isinstance(im, ndarray):
-            im = im_standardize_dtype(im)
-            if   im.ndim == 2: self.append(im)
-            elif im.ndim == 3: self.extend(im)
-            else: raise ValueError()
+            if is_image(im): self.append(im)
+            else: self.extend(im)
         else: self.extend(im)
     def insert(self, i, im):
         """Insert a single slice, writing it to disk."""
@@ -410,7 +408,7 @@ class FileImageSlice(ImageSlice):
                 im = im.copy()
                 im.flags.writeable = False
             self._cache = im
-        self._stack._update_homogeneous_set(self._z, im.shape, im.dtype)
+        self._stack._update_homogeneous_set(self._z, im.shape[:2], get_im_dtype(im))
     
     @abstractmethod
     def _set_data(self, im):

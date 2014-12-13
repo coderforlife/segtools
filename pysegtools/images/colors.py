@@ -1,15 +1,13 @@
 """A library for colors."""
 
-from numpy import void
-
-from types import im_standardize_dtype, get_im_min_max
-from types import IM_BIT, IM_INT_TYPES, IM_FLOAT_TYPES, IM_COMPLEX_TYPES, IM_COLOR_ALPHA_TYPES
+from types import get_im_dtype_and_nchan, get_im_min_max
 from numbers import Integral, Real, Complex
-from _util import dtype_cast
+from collections import Iterable
+from numpy import array, bool_
 
 __all__ = ['get_color','is_color','color_help']
 
-_colors = {
+__colors = {
     # shades of gray (single float)
     'black':      0.000, 'k':         0.000,
     'dimgray':    0.412, 'dimgrey':   0.412,
@@ -164,38 +162,41 @@ def color_help(width = None):
     tw = TextWrapper(width=width, initial_indent=' * ', subsequent_indent='   ')
     s = fill("Many filters take a color as an argument. Below are the supported values for the various image format types.", width)+"\n\n"
     s += fill("General rules for color values: All values are case-insensitive. Color names are space/hyphen-insensitive, and grays can be written as greys.", width)+"\n"
-    s += "\n"+fill("1-Bit Images: (g1)", width)+"\n"
+    s += "\n"+fill("1-Bit Images: (U1)", width)+"\n"
     s += tw.fill('on:  1, white, w, true, t')+"\n"
     s += tw.fill('off: 0, black, k, false, f')+"\n"
-    s += "\n"+fill("Single-Channel Integer Images: (g# or gs#)", width)+"\n"
+    s += "\n"+fill("Single-Channel Integer Images: (U# or I#)", width)+"\n"
     s += tw.fill('floating-point value from 0.0 to 1.0 that will be scaled (you must include the period)')+"\n"
     s += tw.fill('integer value')+"\n"
     s += tw.fill('a hex value that starts with #')+"\n"
     s += tw.fill('grayscale color names (black, k, dim gray, gray, dark gray, silver, light gray, gainsboro, white smoke, white, w)')+"\n"
-    s += "\n"+fill("Single-Channel Floating-Point Images: (gf#)", width)+"\n"
+    s += "\n"+fill("Single-Channel Floating-Point Images: (F#)", width)+"\n"
     s += tw.fill('floating-point or integer value')+"\n"
     s += tw.fill('grayscale color names (black, k, dim gray, gray, dark gray, silver, light gray, gainsboro, white smoke, white, w)')+"\n"
-    s += "\n"+fill("Complex Images: (cf# or cs#)", width)+"\n"
+    s += "\n"+fill("Complex Images: (C#)", width)+"\n"
     s += tw.fill('floating-point, integer, or complex value (e.g. \'2.5+3.5j\')')+"\n"
-    s += "\n"+fill("Color Images: (rgb24 or rgba32)", width)+"\n"
-    s += tw.fill('floating-point value from 0.0 to 1.0 that will be scaled (you must include the period, used for each channel except alpha which is opaque)')+"\n"
-    s += tw.fill('integer value (used for each channel except alpha which is opaque)')+"\n"
-    s += tw.fill('a comma or space seperated list of 3 or 4 floats/ints as above - if alpha is skipped it is made opaque')+"\n"
+    s += "\n"+fill("Multi-Channel Images: (#x...)", width)+"\n"
+    s += tw.fill('a single value supported by the base type, repeated for each channel')+"\n"
+    s += tw.fill('a comma or space seperated list of supported values of the base type (except color names)')+"\n"
+    s += tw.fill('for integral base types, a hex value that starts with # that represents all channels together')+"\n"
+    s += "\n"+fill("Color Images: (RGB# or RGBA#) [note: alpha is opaque if not explicit]", width)+"\n"
+    s += tw.fill('floating-point value from 0.0 to 1.0 that will be scaled (you must include the period, used for each channel)')+"\n"
+    s += tw.fill('integer value (used for each channel)')+"\n"
+    s += tw.fill('a comma or space seperated list of 3 or 4 floats/ints as above')+"\n"
     s += tw.fill('a hex value that starts with # that represents all channels together')+"\n"
     s += tw.fill('any Matplotlib single-letter or HTML color names or \'transparent\' if alpha is supported')
     return s
 
-def _color_name_strip(x): return x.strip().replace(' ', '').replace('-', '')
+def __color_name_strip(x): return x.replace(' ', '').replace('-', '')
 
-def _no_throw(f,x):
+def __no_throw(f,x):
     try: f(x); return True
     except: return False
 
-def _is_color_channel(x):
-    from numpy import bool_
+def __is_color_channel(x):
     if isinstance(x, basestring):
         x = x.strip().lower()
-        return x in ('true', 'false', 't', 'f') or _no_throw(complex,x) or _no_throw(long,x) or _no_throw(float,x)
+        return x in ('true', 'false', 't', 'f') or __no_throw(complex,x) or __no_throw(long,x) or __no_throw(float,x)
     return isinstance(x, (bool, bool_, Real, complex))
     
 def is_color(x):
@@ -207,70 +208,74 @@ def is_color(x):
     if _is_color_channel(x): return True
     if isinstance(x, basestring):
         x = x.strip().lower()
-        if _color_name_strip(x) in _colors: return True
-        if len(x) > 1 and x[0] == '#': return _no_throw(lambda:long(x[1:], 16))
+        if __color_name_strip(x) in __colors: return True
+        if len(x) > 1 and x[0] == '#': return __no_throw(lambda:long(x[1:], 16))
         x = x.split(',' if ',' in x else None)
-    return isinstance(x, Iterable) and all(_is_color_channel(c) for c in x)
+    return isinstance(x, Iterable) and all(__is_color_channel(c) for c in x)
 
-def _get_bit_color(x):
-    from numpy import bool_
+def __get_bit_color(x):
     if isinstance(x, (bool, bool_)): return bool_(x)
     if isinstance(x, Real):
-        if x == 1: return True
-        if x == 0: return False
+        if x == 1: return bool_(True)
+        if x == 0: return bool_(False)
     elif isinstance(x, basestring):
-        x = x.strip().lower()
-        if x in ('1', 'true',  't'): return True
-        if x in ('0', 'false', 'f'): return False
+        if x in ('1', 'true',  't'): return bool_(True)
+        if x in ('0', 'false', 'f'): return bool_(False)
     raise ValueError()
-    
-def _get_int_color(x, dtype):
-    mn, mx = get_im_min_max(dtype)
+
+def __get_int_color(x, dt):
+    mn, mx = get_im_min_max(dt)
     if isinstance(x, basestring):
-        x = x.strip()
-        try: x = long(x)
+        try: x = dt.type(x)
         except ValueError: x = float(x)
     if isinstance(x, Integral):
-        if x >= mn  and x <= mx:  return dtype_cast(x, dtype)
+        if x >= mn  and x <= mx:  return dt.type(x)
     elif isinstance(x, Real):
-        if x >= 0.0 and x <= 1.0: return dtype_cast(round(x*(mx-mn)+mn), dtype)
+        if x >= 0.0 and x <= 1.0: return dt.type(round(x*(mx-mn)+mn))
     raise ValueError()
 
-def _get_color(x, dtype):
-    if dtype is IM_BIT: return _get_bit_color(x)
-    if dtype is IM_INT_TYPES: return _get_int_color(x, dtype)
-    if dtype is IM_FLOAT_TYPES: return dtype_cast(x, dtype)
+def __get_color_channel(x, dt):
+    if isinstance(x, dt.type): return x
+    if dt.kind == 'b':  return __get_bit_color(x)
+    if dt.kind in 'ui': return __get_int_color(x, dt)
+    if dt.kind in 'fc': return dt.type(x)
     raise ValueError()
 
-def get_color(x, im):
+def get_color(x, im_or_dtype):
     """
-    Gets a color from a value. The color returned is appropiate for the standardized form of the
-    given image. Each image type supports and handles values differently.
+    Gets a color from a value. The color returned is appropiate for the given image / dtype. Each
+    image type supports and handles values differently. The return value is either a NumPy scalar
+    for single-channel images or a NumPy array for multi-channel images.
 
     Acceptable values:
-        IM_BIT:
+        1-bit / bool:
             bool
             float or int that is either 0 or 1
             string that is one of '0', '1', 'true', 'false', 't', 'f', 'black', 'white', 'k', 'w' (case-insensitive)
             iterable of single value of one of the above
-        IM_INT_TYPES:
+        Integral:
             float from 0.0 to 1.0 (scaled to range of integer type)
             int from min to max of integer type
             string representing either of the above (if you want float 0.0 or 1.0 you must include the period)
             iterable of single value of one of the above
             string that starts with '#' that is a hex string (converted to integer, must be in range of integer type)
             string color names: 'black', 'k', 'dimgray', 'gray', 'darkgray', 'silver', 'lightgray', 'gainsboro', 'whitesmoke', 'white', 'w', (case-insensitive, space/hyphen-insensitive, grays as grey)
-        IM_FLOAT_TYPES:
+        Floating-Point:
             float or int from min to max of floating-point type
             string representing the above
             string color names: 'black', 'k', 'dimgray', 'gray', 'darkgray', 'silver', 'lightgray', 'gainsboro', 'whitesmoke', 'white', 'w', (case-insensitive, space/hyphen-insensitive, grays as grey)
             iterable of single value of one of the above
-        IM_COMPLEX_TYPES:
+        Complex:
             float, int, or complex (float and int assume an imaginary part of 0)
-            string representation of the above (complex uses 'j' for imaginary post-fix)
+            string representation of the above (complex uses 'j' for imaginary post-fix, cannot have spaces)
             iterable of single value of one of the above
             iterable of two floats/ints taken as real and imaginary parts
-        IM_COLOR_TYPES:
+        Multi-Channel:
+            a single value supported by the base type, repeated for each channel
+            an iterable of values supported by the base type, except color names (must have one value per channel)
+            a comma-seperated string of values supported by the base type (must have one value per channel)
+            for integral base types, a hex string that starts with '#' and has all channels together
+        Color Types:
             float from 0.0 to 1.0 (scaled to range of underlying integer type and used for each channel except alpha which is opaque)
             int from min to max of underlying integer type (used for each channel accept except which is opaque)
             string representing either of the above (if you want float 0.0 or 1.0 you must include the period)
@@ -279,39 +284,37 @@ def get_color(x, im):
             string that starts with '#' that is a hex string (converted to integer, represents all channels)
             string HTML color names, Matplotlib single-letter color names, the string 'transparent' if alpha is supported
     """
-    from numpy import void
-    from collections import Iterable
-    im = im_standardize_dtype(im)
+    dt, nchan = get_im_dtype_and_nchan(im_or_dtype)
 
-    # Basic conversion
+    # Basic conversion, mainly string conversion
+    # At the end of this block we have always have a tuple
     if isinstance(x, basestring):
-        x = x.strip()
-        cn = _color_name_strip(x)
-        if cn in _colors: x = _colors[cn]
-    elif isinstance(x, Iterable):
-        x = tuple(x)
-        if len(x) == 1: x = x[0]
-    elif im.dtype.type != void and isinstance(x, im.dtype.type): return x
+        x = x.strip().lower()
+        cn = __color_name_strip(x)
+        if cn in __colors: x = __colors[cn]
+        elif len(x) > 1 and x[0] == '#':
+            if dt.kind not in 'ui': raise ValueError()
+            nhex = dt.itemsize*2
+            x = tuple(long(x[i:i+nhex],16) for i in xrange(1, len(x), nhex))
+        else:
+            x = tuple((x.strip() for x in x.split(',')) if ',' in x else x.split())
+    elif isinstance(x, Iterable): x = tuple(x)
+    if not isinstance(x, tuple):  x = (x,)
 
-    # Specialized conversions
-    if im.dtype is IM_BIT: return _get_bit_color(x)
-    elif im.dtype in IM_INT_TYPES:
-        if isinstance(x, basestring) and len(x) > 1 and x[0] == '#': x = long(x[1:], 16)
-        return _get_int_color(x, im.dtype)
-    elif im.dtype in IM_FLOAT_TYPES: return dtype_cast(x, im.dtype)
-    elif im.dtype in IM_COMPLEX_TYPES:
-        # TODO: this is likely very broken (e.g. complex is not of the complex128 resolution, what if we have an integer-based complex number like INT16_2?)
-        if isinstance(x, tuple) and len(x) == 2: x = complex(x[0], x[1])
-        elif isinstance(x, basestring): x = complex(x)
-        return dtype_cast(x, im.dtype)
-    else: # colored types
-        l = len(im.dtype)
-        if isinstance(x, basestring):
-            if len(x) > 1 and x[0] == '#':
-                n = im.dtype[0].itemsize * 2
-                x = tuple(long(x[i:i+n], 16) for i in xrange(1, len(x), n))
-            else: x = tuple(x.split(',' if ',' in x else None))
-        if not isinstance(x, tuple): x = (x,)
-        if len(x) == 1: x *= (l-1) if im.dtype in IM_COLOR_ALPHA_TYPES else l
-        if im.dtype in IM_COLOR_ALPHA_TYPES and len(x) == l-1: x += (1.0,)
-        if len(x) == l: return tuple(_get_color(v, im.dtype[i]) for i,v in enumerate(x))
+    # Multi-Channel handling
+    # At the end of this block the tuple has 1 value per channel, but that value is not converted
+    if nchan == 1 and dt.kind == 'c' and isinstance(x, tuple) and len(x) == 2: # Complex is really 2-channel even though it is kind of 1-channel...
+        x = complex(x[0], x[1]) # TODO
+    elif nchan == 4 and dt.kind == 'u': # RGBA
+        if len(x) == 1: x *= 3      # don't fill in alpha channel
+        if len(x) == 3: x += (1.0,) # set alpha channel to opaque
+    elif len(x) == 1: x *= nchan
+    if len(x) != nchan: raise ValueError()
+    
+    # Convert channels
+    # At the of this block the tuple has 1 properly converted value per channel
+    # Note: because NumPy scalars cannot have endian-ness the values might be the wrong endian
+    x = tuple(__get_color_channel(c) for c in x)
+
+    # Make scalar/array of color
+    return x[0] if nchan == 1 else array(x, dtype=dt)

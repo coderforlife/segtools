@@ -5,7 +5,7 @@ from itertools import islice
 from numbers import Integral
 
 from ..general.enum import Flags
-from .types import imstack_standardize_dtype, dtype2desc
+from .types import is_image, check_image, get_im_dtype, im_dtype_desc
 from .source import ImageSource, DeferredPropertiesImageSource
 
 __all__ = ["ImageStack", "HomogeneousImageStack", "ImageSlice", "Homogeneous"]
@@ -44,8 +44,8 @@ class ImageStack(object):
         if isinstance(ims, ImageStack): return ims
         dtype, check = None, True
         if isinstance(ims, ndarray):
-            try: return ImageStackArray(imstack_standardize_dtype(ims)) # 3D ndarray
-            except ValueError: return ImageStackCollection((ims,))      # single 2D ndarry
+            if is_image(ims): return ImageStackCollection((ims,))      # single slice
+            else:             return ImageStackArray(ims)              # multi-slice
         elif isinstance(ims, ImageSource): return ImageStackCollection((ims,)) # single ImageSource
         elif isinstance(ims, Iterable):    return ImageStackCollection(ims)    # iterable of (presumably) ImageSources/ndarrays
         else: raise ValueError()
@@ -64,9 +64,9 @@ class ImageStack(object):
         """Gets a basic representation of this class as a string."""
         if self._d == 0: return "(no slices)"
         h,s,d = self._get_homogeneous_info()
-        if h == Homogeneous.Both: return "%dx%dx%d %s" % (s[1], s[0], self._d, dtype2desc(d))
+        if h == Homogeneous.Both: return "%dx%dx%d %s" % (s[1], s[0], self._d, im_dtype_desc(d))
         line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s"
-        return "\n".join(line%(z,im.w,im.h,dtype2desc(im.dtype)) for z,im in enumerate(self._slices))
+        return "\n".join(line%(z,im.w,im.h,im_dtype_desc(im)) for z,im in enumerate(self._slices))
     def print_detailed_info(self):
         h,s,d = self._get_homogeneous_info()
         total_bytes = 0
@@ -74,7 +74,7 @@ class ImageStack(object):
             print "Slices:      0"
         elif h == Homogeneous.Both:
             print "Dimensions:  %d x %d x %d (WxHxD)" % (s[1], s[0], self._d)
-            print "Data Type:   %s" % dtype2desc(d)
+            print "Data Type:   %s" % im_dtype_desc(d)
             sec_bytes = s[1] * s[0] * d.itemsize
             print "Bytes/Slice: %d" % sec_bytes
             total_bytes = self._d * sec_bytes
@@ -83,7 +83,7 @@ class ImageStack(object):
             line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s  %d bytes"
             for z,im in enumerate(self._slices):
                 sec_bytes = im.w * im.h * im.dtype.itemsize
-                print line % (z, im.w, im.h, dtype2desc(im.dtype), sec_bytes)
+                print line % (z, im.w, im.h, im_dtype_desc(im), sec_bytes)
                 total_bytes += sec_bytes
         print "Total Bytes: %d" % (self._d * sec_bytes)
         print "Handler:     %s" % type(self).__name__
@@ -206,7 +206,7 @@ class HomogeneousImageStack(ImageStack):
     def __str__(self): return "%dx%dx%d %s" % (self._w, self._h, self._d, dtype2desc(self._dtype))
     def print_detailed_info(self):
         print "Dimensions:  %d x %d x %d (WxHxD)" % (self._w, self._h, self._d)
-        print "Data Type:   %s" % dtype2desc(self._dtype)
+        print "Data Type:   %s" % im_dtype_desc(self._dtype)
         sec_bytes = self._w * self._h * self._dtype.itemsize
         print "Bytes/Slice: %d" % sec_bytes
         print "Total Bytes: %d" % (self._d * sec_bytes)
@@ -272,9 +272,12 @@ class ImageStackArray(HomogeneousImageStack):
     edited.
     """
     def __init__(self, arr):
-        self._arr = imstack_standardize_dtype(arr)
-        s = self._arr.shape
-        super(ImageStackArray, self).__init__([ImageSliceFromArray(self, z) for z in xrange(s[2])], s[1], s[0], self._arr.dtype)
+        if arr.ndim not in (3,4): raise ValueError()
+        sh, dt = self._arr.shape, get_im_dtype(self._arr)
+        if sh[0] == 0: check_image(empty(sh[1:], dtype=dt))
+        else: check_image(arr[0,...])
+        self._arr = arr
+        super(ImageStackArray, self).__init__([ImageSliceFromArray(self, z) for z in xrange(sh[0])], sh[2], sh[1], dt)
     @ImageStack.cache_size.setter
     def cache_size(self, value): pass # prevent actual caching - all in memory
     @property
@@ -282,9 +285,9 @@ class ImageStackArray(HomogeneousImageStack):
 class ImageSliceFromArray(ImageSlice):
     def __init__(self, stack, z):
         super(ImageSliceFromArray, self).__init__(stack, z)
-        self._set_props(stack._arr.dtype, stack._arr.shape[:2])
+        self._set_props(get_im_dtype(stack._arr), stack._arr.shape[1:3])
     def _get_props(self): pass
-    def _get_data(self): return self._stack._arr[:,:,self._z]
+    def _get_data(self): return self._stack._arr[self._z,:,:,...]
 
 class ImageStackCollection(ImageStack):
     """ImageStack that wraps a collection of ImageSources."""
@@ -295,5 +298,5 @@ class ImageSliceFromCollection(ImageSlice):
     def __init__(self, stack, z, im):
         super(ImageSliceFromCollection, self).__init__(stack, z)
         self._im = im
-    def _get_props(self): self._set_props(self._im.dtype, self._im.shape)
+    def _get_props(self): self._set_props(get_im_dtype(self._im), self._im.shape[:2])
     def _get_data(self): return self._im.data
