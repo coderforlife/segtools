@@ -8,6 +8,7 @@ from numpy import ndarray, ceil
 from .._stack import ImageStack, HomogeneousImageStack, ImageSlice, Homogeneous
 from ..types import is_image, get_im_dtype
 from ..source import ImageSource
+from ...imstack import Help
 from ...general.datawrapper import DictionaryWrapperWithAttr
 from ...general.enum import Enum
 
@@ -25,6 +26,14 @@ class MatchQuality(int, Enum):
     Likely = 75
     Definitely = 100
 
+class _FileImageStackMeta(ABCMeta):
+    """The meta-class for file image stacks, which extends ABCMeta and calls Help.register if applicable"""
+    def __new__(cls, clsname, bases, dct):
+        c = super(_FileImageStackMeta, cls).__new__(cls, clsname, bases, dct)
+        n = c.name()
+        if n is not None: Help.register((n,c.__name__), c.print_help)
+        return c
+
 class FileImageStack(ImageStack):
     """
     A stack of 2D image slices on disk. This is either backed by a file format that already has
@@ -39,7 +48,7 @@ class FileImageStack(ImageStack):
     the save() function to force all data including the header to be saved.
     """
     
-    __metaclass__ = ABCMeta
+    __metaclass__ = _FileImageStackMeta
     
     @classmethod
     def open(cls, filename, readonly=False, **options):
@@ -91,21 +100,13 @@ class FileImageStack(ImageStack):
         else: raise ValueError()
 
     @classmethod
-    def formats(cls):
+    def formats(cls, read=True):
         formats = []
         for cls in cls._get_all_subclasses():
-            f = cls._format_name()
-            if f is not None: formats.append(f)
+            f = cls.name()
+            if f is not None and (read and cls._can_read or not read and cls._can_write):
+                formats.append(f)
         return formats
-
-    @classmethod
-    def description(cls, name):
-        name = name.lower()
-        for cls in cls._get_all_subclasses():
-            f = cls._format_name()
-            if f != None and f.lower() == name:
-                return cls._description()
-        return None
 
     @classmethod
     def _openable(cls, f, **opts):
@@ -134,14 +135,20 @@ class FileImageStack(ImageStack):
         return MatchQuality.NotAtAll
     
     @classmethod
-    def _format_name(cls):
+    def _can_read(cls): return True
+    
+    @classmethod
+    def _can_write(cls): return True
+
+    @classmethod
+    def name(cls):
         """Return the name of this image stack handler to be displayed in help outputs."""
         return None
     
     @classmethod
-    def _description(cls):
-        """Return the long description of this image stack handler to be displayed in help outputs."""
-        return None
+    def print_help(cls, width):
+        """Prints the help page of this image stack handler."""
+        pass
     
     def __init__(self, header, slices, readonly=False):
         super(FileImageStack, self).__init__(slices)
@@ -374,8 +381,6 @@ class HomogeneousFileImageStack(HomogeneousImageStack, FileImageStack):
     """
     An file-based image stack where every slice has the same shape and data type.
     """
-    __metaclass__ = ABCMeta
-
     def __init__(self, header, slices, w, h, dtype, readonly=False):
         FileImageStack.__init__(self, header, slices, readonly)
         HomogeneousImageStack._init_props(self, w, h, dtype)
@@ -392,7 +397,6 @@ class FileImageSlice(ImageSlice):
     implementor must either call _set_props during initialization or implement a non-trivial
     _get_props function (the trivial one would be def _get_props(self): pass).
     """
-    __metaclass__ = ABCMeta
     def __init__(self, stack, z): super(FileImageSlice, self).__init__(stack, z)
 
     @ImageSlice.data.setter
@@ -600,5 +604,6 @@ class NumericField(Field):
         if self.min != None and v < self.min or self.max != None and v > self.max: raise ValueError('value not in range')
         return v
 
-# Import additional formats
+# Import formats and commands
 import formats
+import _commands

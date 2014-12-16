@@ -100,8 +100,7 @@ def im_dtype_desc(im_or_dtype):
     dt, nchan = get_im_dtype_and_nchan(im_or_dtype)
     kind, bits = dt.kind, dt.itemsize*8
     be = '-BE' if get_dtype_endian(dtype)=='>' else ''
-    if im.ndim == 3 and nchan in (3,4) and kind == 'u':
-        return ('RGBA%d%s' if nchan == 4 else 'RGB%d%s')%(bits*nchan, be)
+    if nchan in (3,4) and kind == 'u': return ('RGBA%d%s' if nchan == 4 else 'RGB%d%s')%(bits*nchan, be)
     if   kind == 'b': base = 'U1'
     elif kind == 'u': base = 'U%d%s' % (bits, be)
     elif kind == 'i': base = 'I%d%s' % (bits, be)

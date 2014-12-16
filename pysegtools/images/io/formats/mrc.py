@@ -111,12 +111,20 @@ class MRC(HomogeneousFileImageStack):
         else: return MatchQuality.NotAtAll # although other extensions are used, we don't want something like "PNG" to make it here
 
     @classmethod
-    def _format_name(cls): return "MRC"
+    def name(cls): return "MRC"
     @classmethod
-    def _description(cls):
-        return """MRC file are common 3D images used by the program IMOD.
+    def print_help(cls, width):
+        from ....imstack import Help
+        p = Help(width)
+        p.title("MRC")
+        p.text("""MRC file are common 3D images used by the program IMOD.
 
-This format supports grayscale (8-bit signed/unsigned int, 16-bit signed/unsigned big/small-endian int, 32-bit float) RGB (24-bit), and complex (2x 16-bit int signed big/small-endian, 2x 32-bit float) types. All slices are required to be the same image type and shape."""
+Limitations: all slices are required to be the same image type and shape.
+
+Supported image types:""")
+        p.list("grayscale (8-bit signed/unsigned int, 16-bit signed/unsigned big/small-endian int, 32-bit float)",
+               "RGB (24-bit)",
+               "complex (2x 16-bit int signed big/small-endian, 2x 32-bit float)")
 
     def __init__(self, h, f, readonly=False):
         self._file = f

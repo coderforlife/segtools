@@ -1,6 +1,6 @@
 """Filtered Image Stack Classes."""
 
-from abc import ABCMeta, abstractmethod
+from abc import abstractmethod
 
 from ..source import ImageSource
 from .._stack import ImageStack, ImageSlice
@@ -14,8 +14,6 @@ _filter_flags = {}
 def _get_filter_class(nf): return _filter_flags.get(nf, None) or _filter_names.get(nf.lower(), None)
 
 class FilteredImageStack(ImageStack):
-    __metaclass__ = ABCMeta
-
     @classmethod
     def _get_filter_class(cls, name_or_flag):
         fcls = _get_filter_class(name_or_flag)

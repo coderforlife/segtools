@@ -5,7 +5,9 @@ from numbers import Integral, Real, Complex
 from collections import Iterable
 from numpy import array, bool_
 
-__all__ = ['get_color','is_color','color_help']
+from ..imstack import Help
+
+__all__ = ['get_color','is_color']
 
 __colors = {
     # shades of gray (single float)
@@ -157,35 +159,47 @@ __colors = {
     'yellowgreen':          (0.604, 0.804, 0.196),
     }
 
-def color_help(width = None):
-    from textwrap import fill, TextWrapper
-    tw = TextWrapper(width=width, initial_indent=' * ', subsequent_indent='   ')
-    s = fill("Many filters take a color as an argument. Below are the supported values for the various image format types.", width)+"\n\n"
-    s += fill("General rules for color values: All values are case-insensitive. Color names are space/hyphen-insensitive, and grays can be written as greys.", width)+"\n"
-    s += "\n"+fill("1-Bit Images: (U1)", width)+"\n"
-    s += tw.fill('on:  1, white, w, true, t')+"\n"
-    s += tw.fill('off: 0, black, k, false, f')+"\n"
-    s += "\n"+fill("Single-Channel Integer Images: (U# or I#)", width)+"\n"
-    s += tw.fill('floating-point value from 0.0 to 1.0 that will be scaled (you must include the period)')+"\n"
-    s += tw.fill('integer value')+"\n"
-    s += tw.fill('a hex value that starts with #')+"\n"
-    s += tw.fill('grayscale color names (black, k, dim gray, gray, dark gray, silver, light gray, gainsboro, white smoke, white, w)')+"\n"
-    s += "\n"+fill("Single-Channel Floating-Point Images: (F#)", width)+"\n"
-    s += tw.fill('floating-point or integer value')+"\n"
-    s += tw.fill('grayscale color names (black, k, dim gray, gray, dark gray, silver, light gray, gainsboro, white smoke, white, w)')+"\n"
-    s += "\n"+fill("Complex Images: (C#)", width)+"\n"
-    s += tw.fill('floating-point, integer, or complex value (e.g. \'2.5+3.5j\')')+"\n"
-    s += "\n"+fill("Multi-Channel Images: (#x...)", width)+"\n"
-    s += tw.fill('a single value supported by the base type, repeated for each channel')+"\n"
-    s += tw.fill('a comma or space seperated list of supported values of the base type (except color names)')+"\n"
-    s += tw.fill('for integral base types, a hex value that starts with # that represents all channels together')+"\n"
-    s += "\n"+fill("Color Images: (RGB# or RGBA#) [note: alpha is opaque if not explicit]", width)+"\n"
-    s += tw.fill('floating-point value from 0.0 to 1.0 that will be scaled (you must include the period, used for each channel)')+"\n"
-    s += tw.fill('integer value (used for each channel)')+"\n"
-    s += tw.fill('a comma or space seperated list of 3 or 4 floats/ints as above')+"\n"
-    s += tw.fill('a hex value that starts with # that represents all channels together')+"\n"
-    s += tw.fill('any Matplotlib single-letter or HTML color names or \'transparent\' if alpha is supported')
-    return s
+def __color_help(width):
+    p = Help(width)
+    p.title("Colors")
+    p.text("""
+Many filters take a color as an argument. Below are the supported values for the various image
+format types.
+
+General rules for color values:""")
+    p.list("all values are case-insensitive",
+           "color names are space/hyphen-insensitive",
+           "grays can be written as greys")
+    print ""
+    p.text("1-Bit Images: (U1)")
+    p.list("on:  1, white, w, true, t",
+           "off: 0, black, k, false, f")
+    print ""
+    p.text("Single-Channel Integer Images: (U# or I#)")
+    p.list("floating-point value from 0.0 to 1.0 that will be scaled (you must include the period)",
+           "integer value",
+           "a hex value that starts with #",
+           "grayscale color names (black, k, dim gray, gray, dark gray, silver, light gray, gainsboro, white smoke, white, w)")
+    print ""
+    p.text("Single-Channel Floating-Point Images: (F#)")
+    p.list("floating-point or integer value",
+           "grayscale color names (black, k, dim gray, gray, dark gray, silver, light gray, gainsboro, white smoke, white, w)")
+    print ""
+    p.text("Complex Images: (C#)")
+    p.list("floating-point, integer, or complex value (e.g. \'2.5+3.5j\')")
+    print ""
+    p.text("Multi-Channel Images: (#x...)")
+    p.list("a single value supported by the base type, repeated for each channel",
+           "a comma or space seperated list of supported values of the base type (except color names)",
+           "for integral base types, a hex value that starts with # that represents all channels together")
+    print ""
+    p.text("Color Images: (RGB# or RGBA#) [note: alpha is opaque if not explicit]")
+    p.list("floating-point value from 0.0 to 1.0 that will be scaled (you must include the period, used for each channel)",
+           "integer value (used for each channel)",
+           "a comma or space seperated list of 3 or 4 floats/ints as above",
+           "a hex value that starts with # that represents all channels together",
+           "any Matplotlib single-letter or HTML color names or \'transparent\' if alpha is supported")
+Help.register(('color', 'colors', 'colour', 'colours'), __color_help)
 
 def __color_name_strip(x): return x.replace(' ', '').replace('-', '')
 

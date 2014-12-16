@@ -38,6 +38,7 @@ class FileCollectionStack(FileImageStack):
         if not isinstance(files, Iterable): raise ValueError('files must be an iterable of filenames')
         files = [os.path.abspath(f) for f in files]
         num_files_found = next((i for i,f in enumerate(files) if not os.path.isfile(f)), len(files))
+        if readonly and num_files_found != len(files): raise ValueError('opening file collection as readonly requires all files to already exist')
         if len(options) > 0: raise ValueError('unsupported options provided')
         h = FileCollectionStackHeader(pattern, start, step, files)
         return FileCollectionStack(h, files, files[:num_files_found], readonly)

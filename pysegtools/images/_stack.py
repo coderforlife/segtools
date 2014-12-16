@@ -64,12 +64,13 @@ class ImageStack(object):
         """Gets a basic representation of this class as a string."""
         if self._d == 0: return "(no slices)"
         h,s,d = self._get_homogeneous_info()
-        if h == Homogeneous.Both: return "%dx%dx%d %s" % (s[1], s[0], self._d, im_dtype_desc(d))
-        line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s"
-        return "\n".join(line%(z,im.w,im.h,im_dtype_desc(im)) for z,im in enumerate(self._slices))
+        if h == Homogeneous.Both: return "%s: %dx%dx%d %s" % (type(self).__name__, s[1], s[0], self._d, im_dtype_desc(d))
+        line = "%0"+str(len(str(self._d-1)))+"%dx%d %s "
+        return type(self).__name__+": "+", ".join(line%(z,im.w,im.h,im_dtype_desc(im)) for z,im in enumerate(self._slices))
     def print_detailed_info(self):
         h,s,d = self._get_homogeneous_info()
         total_bytes = 0
+        print "Handler:     %s" % type(self).__name__
         if self._d == 0:
             print "Slices:      0"
         elif h == Homogeneous.Both:
@@ -86,7 +87,6 @@ class ImageStack(object):
                 print line % (z, im.w, im.h, im_dtype_desc(im), sec_bytes)
                 total_bytes += sec_bytes
         print "Total Bytes: %d" % (self._d * sec_bytes)
-        print "Handler:     %s" % type(self).__name__
 
     # Homogeneous interface
     def _get_homogeneous_info(self):
@@ -188,8 +188,6 @@ class HomogeneousImageStack(ImageStack):
     of the homogeneous properties and adds the stack property. It also adds some protected
     properties for convience in deriving classes.
     """
-    __metaclass__ = ABCMeta
-
     def __init__(self, slices, w, h, dtype):
         super(HomogeneousImageStack, self).__init__(slices)
         self._init_props(w, h, dtype)
@@ -203,14 +201,14 @@ class HomogeneousImageStack(ImageStack):
         self._slc_bytes = w * h * dtype.itemsize
         self._homogeneous = Homogeneous.Both
 
-    def __str__(self): return "%dx%dx%d %s" % (self._w, self._h, self._d, dtype2desc(self._dtype))
+    def __str__(self): return "%s: %dx%dx%d %s" % (type(self).__name__, self._w, self._h, self._d, im_dtype_desc(self._dtype))
     def print_detailed_info(self):
+        print "Handler:     %s" % type(self).__name__
         print "Dimensions:  %d x %d x %d (WxHxD)" % (self._w, self._h, self._d)
         print "Data Type:   %s" % im_dtype_desc(self._dtype)
         sec_bytes = self._w * self._h * self._dtype.itemsize
         print "Bytes/Slice: %d" % sec_bytes
         print "Total Bytes: %d" % (self._d * sec_bytes)
-        print "Handler:     %s" % type(self).__name__
 
     def _get_homogeneous_info(self): return Homogeneous.Both, self._shape, self._dtype
     def _update_homogeneous_set(self, z, shape, dtype): pass
