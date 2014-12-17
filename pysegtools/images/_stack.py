@@ -67,7 +67,7 @@ class ImageStack(object):
         if h == Homogeneous.Both: return "%s: %dx%dx%d %s" % (type(self).__name__, s[1], s[0], self._d, im_dtype_desc(d))
         line = "%0"+str(len(str(self._d-1)))+"%dx%d %s "
         return type(self).__name__+": "+", ".join(line%(z,im.w,im.h,im_dtype_desc(im)) for z,im in enumerate(self._slices))
-    def print_detailed_info(self):
+    def print_detailed_info(self, width=None): # TODO: use width
         h,s,d = self._get_homogeneous_info()
         total_bytes = 0
         print "Handler:     %s" % type(self).__name__
@@ -202,7 +202,7 @@ class HomogeneousImageStack(ImageStack):
         self._homogeneous = Homogeneous.Both
 
     def __str__(self): return "%s: %dx%dx%d %s" % (type(self).__name__, self._w, self._h, self._d, im_dtype_desc(self._dtype))
-    def print_detailed_info(self):
+    def print_detailed_info(self, width=None): # TODO: use width
         print "Handler:     %s" % type(self).__name__
         print "Dimensions:  %d x %d x %d (WxHxD)" % (self._w, self._h, self._d)
         print "Data Type:   %s" % im_dtype_desc(self._dtype)

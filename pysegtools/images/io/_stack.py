@@ -166,7 +166,7 @@ class FileImageStack(ImageStack):
     def readonly(self): return self._readonly
     @property
     def header(self): return self._header
-    def print_detailed_info(self):
+    def print_detailed_info(self, width=None): # TODO: use width
         super(FileImageStack, self).print_detailed_info()
         if len(self.header) == 0: print "No header information"
         else:
@@ -384,7 +384,7 @@ class HomogeneousFileImageStack(HomogeneousImageStack, FileImageStack):
     def __init__(self, header, slices, w, h, dtype, readonly=False):
         FileImageStack.__init__(self, header, slices, readonly)
         HomogeneousImageStack._init_props(self, w, h, dtype)
-    def print_detailed_info(self):
+    def print_detailed_info(self, width=None): # TODO: use width
         super(HomogeneousFileImageStack, self).print_detailed_info()
         if len(self.header) == 0: print "No header information"
         else:

@@ -1,6 +1,6 @@
-"""Here are the "built-in" commands for imstack: select and remove"""
+"""Here are the "built-in" commands for imstack: select, remove, and info"""
 
-from imstack import Command, Help
+from imstack import Command, CommandEasy, Opt, Help
 
 class SelectCommand(Command):
     @classmethod
@@ -113,3 +113,26 @@ Examples:""")
         super(RemoveCommand, stack).__init__(args, stack)
         self._inds = list(sorted(set(self._inds)))
     def execute(self, stack): stack.remove(self._inds)
+
+class InfoCommand(CommandEasy):
+    @classmethod
+    def name(cls): return 'info'
+    @classmethod
+    def flags(cls): return ('i', 'info')
+    @classmethod
+    def _title(cls): return "Image Stack Information"
+    @classmethod
+    def _desc(cls): return "Print out the currently list of available image stacks, going from least-recent to most-recent (and next to be used)."
+    @classmethod
+    def _opts(cls): return (Opt('detailed','if true then print out much more detailed information about the stacks',Opt.cast_bool(),False),)
+    def __str__(self): return "Detailed Information" if self._detailed else "Information"
+    def execute(self, stack):
+        n = len(stack)
+        print ("There are %d image stacks available"%n) if n!=1 else "There is 1 image stack available"
+        if self._detailed:
+            for i,ims in enumerate(stack):
+                print "Stack %d"%(n-i-1)
+                Help.print_stack(ims, True)
+        else:
+            s = "%0"+str(len(str(n-1)))+"d: %s"
+            for i,ims in enumerate(stack): print s%((n-i-1),ims)

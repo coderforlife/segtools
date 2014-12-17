@@ -12,11 +12,19 @@ __all__ = ["main","Help","Opt","Command","CommandEasy"]
 from abc import ABCMeta, abstractmethod
 from numbers import Integral
 from collections import Sequence
+
 from textwrap import TextWrapper
 from .general.utils import get_terminal_width
 out_width = max(get_terminal_width()-1,24)
 fill = TextWrapper(width=out_width).fill
 stack_status_fill = TextWrapper(width=out_width,subsequent_indent=2).fill
+
+from .general.enum import Enum
+class Verbosity(int,Enum):
+    No = 0
+    Min = 1
+    Max = 2
+verbosity = Verbosity.No
 
 class Stack:
     """
@@ -24,41 +32,40 @@ class Stack:
     only ever need pop and push, and possible len(...) and empty. The select and remove functions'
     are meant for the internal "select" and "remove" commands.
     """
-    def __init__(self, verbose=False):
-        self._stack = []
-        self._verbose = verbose
+    def __init__(self): self._stack = []
     @property
-    def empty(self): return len(self._stack) == 0
+    def empty(self): return len(self) == 0
     def __len__(self): return len(self._stack)
     def pop(self):
         if len(self._stack) == 0: raise ValueError('No image stack to consume')
         ims = self._stack.pop()
-        if self._verbose: print stack_status_fill("- Consuming image stack '%s'"%ims)
+        if verbosity >= Verbosity.Min: print stack_status_fill("- Consuming image stack '%s'"%ims)
         return ims
     def push(self, ims):
         from .images import ImageStack
         if not isinstance(ims, ImageStack): raise ValueError('Illegal call to Stack.push')
-        if self._verbose:
+        if verbosity >= Verbosity.Min:
             print stack_status_fill("+ Produced image stack '%s'"%ims)
-            ims.print_detailed_info()
-            print "-"*out_width
+            Help.print_stack(ims)
         self._stack.append(ims)
     def _inv_inds(self, inds):
-        inds,l = [(-i-1) for i in inds], len(self._stack) # TODO: resolve negative values
-        if any(not (-l<=i<l) for i in inds): raise ValueError('No image stack #%d', i)
+        n = len(self)
+        inds = [(n-i-1) if i>=0 else (-i-1) for i in inds]
+        if any(not (0<=i<n) for i in inds): raise ValueError('No image stack #%d', i)
         return inds
     def select(self, inds):
         inds = self._inv_inds(inds)
         ims = [self._stack[i] for i in inds]
-        if self._verbose:
+        if verbosity >= Verbosity.Min:
             for i in ims: print stack_status_fill("* Moving image stack '%s' to top"%i)
         for i in sorted(set(inds), reverse=True): del self._stack[i]
         self._stack.extend(ims)
     def remove(self, inds):
-        inds = list(sorted(set(self._inv_inds(inds)), reverse=True))
-        if self._verbose:
+        inds = sorted(set(self._inv_inds(inds)), reverse=True)
+        if verbosity >= Verbosity.Min:
             for i in inds: print stack_status_fill("* Removing image stack '%s'"%self._stack[i])
         for i in inds: del self._stack[i]
+    def __iter__(self): return iter(self._stack)
         
 class PseudoStack(Stack):
     """
@@ -66,18 +73,12 @@ class PseudoStack(Stack):
     doesn't accept or return them). However it does record the number of items on the stack and
     checks to make sure the stack is never under-flowed.
     """
-    def __init__(self, verbose=False): self._stack_count = 0
-    @property
-    def empty(self): return self._stack_count == 0
+    def __init__(self): self._stack_count = 0
     def __len__(self): return self._stack_count
     def pop(self):
         if self._stack_count == 0: raise ValueError('No image stack to consume', i)
         self._stack_count -= 1
     def push(self, ims=None): self._stack_count += 1
-    def _inv_inds(self, inds):
-        inds,l = [(-i-1) for i in inds], self._stack_count # TODO: resolve negative values
-        if any(not (-l<=i<l) for i in inds): raise ValueError('No image stack #%d', i)
-        return inds
     def select(self, inds):
         inds = self._inv_inds(inds)
         self._stack_count += len(inds) - len(set(inds))
@@ -119,7 +120,7 @@ class Args:
         elif isinstance(key, Sequence) and len(key) == 2 and isinstance(key[0], Integral) and isinstance(key[1], basestring):
             pos, name = key
             possed, named = pos < len(self._args), name in self._kwargs
-            if possed != named: return pos, self._args[possed] if possed else name, self._kwargs[name]
+            if possed != named: return (pos, self._args[pos]) if possed else (name, self._kwargs[name])
             if possed and named: raise ValueError('Argument "%s" was provided as both a positional and named argument' % name)
             return None, name
         return None, key
@@ -153,7 +154,7 @@ class Args:
         return [o.default if key is None else o.cast(val) for key,val,o in self.__get_all(*opts)]
     def get_all_kw(self, *opts):
         """Like get_all except it returns a dictionary of name:value pairs."""
-        return {o.name:(o.default if key is None else o.cast(val)) for key,val in self.__get_all(*opts)}
+        return {o.name:(o.default if key is None else o.cast(val)) for key,val,o in self.__get_all(*opts)}
     def __contains__(self, key): return self.__get(key)[0] is not None
     def has_key(self, key): return key in self
     def __len__(self): return len(self._args)+len(self._kwargs)
@@ -255,8 +256,10 @@ class Opt:
     def cast_lookup(d):
         """
         Casts the value by giving the value as a key to a dictionary. If it isn't a key, a
-        ValueError is raised.
+        ValueError is raised. This also automatically adds all values in the dictionary as keys of
+        the dictionary mapping to themselves.
         """
+        for v in d.values(): d[v] = v
         def _cast_lookup(x):
             try: return d[x]
             except KeyError: raise ValueError
@@ -271,6 +274,21 @@ class Opt:
             if x in l: return x
             raise ValueError
         return _cast_in_list
+    @staticmethod
+    def cast_bool():
+        """
+        Casts the value to a boolean, any of t, true, or 1 is True (case-insensitive) while any of
+        f, false, 0, or the empty string is False. Anything else raises a ValueError (except bool
+        objects which are returned as-is).
+        """
+        def _cast_bool(x):
+            if isinstance(x, bool): return x
+            x = x.strip().lower()
+            if x in ('t','false','1'):    return True
+            if x in ('f','false','0',''): return False
+            raise ValueError
+        return _cast_bool
+        
     @staticmethod
     def cast_int(pred=lambda x:True):
         """
@@ -468,7 +486,7 @@ class CommandEasy(Command):
         return None
     @classmethod
     def print_help(cls, width):
-        t, d, fs, os, c, p, ex, sa = (
+        t, d, fs, os, co, pr, ex, sa = (
             cls._title(), cls._desc(), cls.flags(), cls._opts(),
             cls._consumed(), cls._produced(), cls._examples(), cls._see_also())
         if fs is None or len(fs) == 0: return
@@ -476,19 +494,21 @@ class CommandEasy(Command):
         p.title(t)
         if d: p.text(d); print ""
         p.flags(fs)
+        print ""
         p.text("Command format:")
-        s = next(sorted(fs, key=len, reverse=True))
-        s = ('--' if len(flg) > 1 else '-')+s
-        if os: s += " " + (" ".join('['+o.name+']' if opt.has_default else o.name for o in os))
+        s = sorted(fs, key=len)[-1]
+        s = ('--' if len(s) > 1 else '-')+s
+        if os: s += " " + (" ".join('['+o.name+']' if o.has_default else o.name for o in os))
         p.cmds(s)
-        if os: print "\nOptions:"; p.opts(os)
-        if c or p: print ""; p.stack_changes(consumed=c, produced=p)
+        if os: print "\nOptions:"; p.opts(*os)
+        if co or pr: print ""; p.stack_changes(consumed=co, produced=pr)
         if ex: print ""; p.list(*ex)
         if sa: print ""; p.list(*sa)
     def __init__(self, args, stack):
-        for i in xrange(len(type(self)._consumed())): stack.pop()
-        for i in xrange(len(type(self)._produced())): stack.push()
-        self._vals = args.get_all_kw(type(self)._opts()).iteritems()
+        typ = type(self)
+        for i in xrange(len(typ._consumed())): stack.pop()
+        for i in xrange(len(typ._produced())): stack.push()
+        self._vals = args.get_all_kw(*typ._opts()).iteritems()
         for name,val in self._vals:
             setattr(self, '_'+name, val)
 
@@ -523,6 +543,12 @@ class Help:
                 for l in desc.splitlines(): print fill(l)
             else: content(out_width)
         exit(0)
+
+    @staticmethod
+    def print_stack(ims, always=False):
+        if not always and verbosity != Verbosity.Max: return
+        ims.print_detailed_info(out_width)
+        print "-"*out_width
     
     @staticmethod
     def __msg():
@@ -535,6 +561,7 @@ class Help:
         print fill("Basic arguments:")
         print f18("  -h  --help [x]  display help about a command, filter, or format (all other arguments will be ignored)")
         print f18("  -v  --verbose   display all information about processing of commands")
+        print f18("                  double -v/--verbose increases information output")
         print ""
         print fill("You may specify any set of commands and arguments via a file using @argfile which will read that file in as POSIX-style command arguments (including supporting # for comments).")
         print ""
@@ -620,20 +647,19 @@ def __topics_help(width):
     p.title("Topics / Commands")
     topics = {}
     for t,f in Help._topics.iteritems(): topics.setdefault(f,[]).append(t)
-    topics = [list(sorted(ts, key=len, reverse=True)) for f,ts in topics.iteritems()]
+    topics = [sorted(ts, key=len, reverse=True) for f,ts in topics.iteritems()]
     topics.sort(key=lambda l:l[0].lower())
     p.list(*[", ".join(ts) for ts in topics])
 Help.register(('topic','topics','commands'),__topics_help)
 
-__debug = False
 def __err_msg(msg, ex=None):
     from sys import stderr, exit
-    print >> stderr, fill(msg)+'\n'
-    print __debug
-    if ex is not None and __debug:
+    print >> stderr, fill(msg)
+    if ex is not None and verbosity >= Verbosity.Min:
         from sys import exc_info
         from traceback import print_exception
         typ, val, tb = exc_info()
+        print >> stderr, ""
         print_exception(type(ex), ex, tb if val is ex else None)
         del tb
     exit(1)
@@ -656,11 +682,9 @@ def __split_args(args):
         else:             out[-1].append(a)
     return out
 
-def main(debug=False):
+def main():
     from sys import argv
     import shlex
-    global __debug
-    __debug = debug
     
     ##### Parse Arguments #####
     args = argv[1:]
@@ -676,13 +700,13 @@ def main(debug=False):
     args = __split_args(args)
 
     # Basic arguments
-    verbose = False
+    global verbosity
     num_basic_args = 0
     for cmd in args:
         if cmd[0] in ('-v', '--verbose'):
-            if verbose: __err_msg("Can only be one -v/--verbose argument.")
+            if verbosity == Verbosity.Max: __err_msg("Too many -v/--verbose arguments.")
             if len(cmd) > 1: __err_msg("-v/--verbose does not take any values")
-            verbose = True
+            verbosity += 1
             num_basic_args += 1
         elif cmd[0] in ('-h', '--help'):
             if len(cmd) > 2: __err_msg("-h/--help can take at most more value")
@@ -693,22 +717,25 @@ def main(debug=False):
     if len(args) == 0: Help.show()
 
     # Parse all of the commands
-    stack = PseudoStack(verbose)
+    stack = PseudoStack()
     cmds = []
     for cmd_arg in args:
         try: cmds.append(Command.create(cmd_arg[0].lstrip('-'),Args(cmd_arg),stack))
         except Exception as ex: __err_msg('%s: %s'%(" ".join(cmd_arg),ex), ex)
 
     # Execute all of the commands
-    stack = Stack(verbose)
+    stack = Stack()
     for cmd in cmds:
-        if verbose:
-            print "="*50
+        if verbosity >= Verbosity.Min:
+            if verbosity == Verbosity.Max: print "="*out_width
             print "> %s"%cmd
         try: cmd.execute(stack)
         except Exception as ex: __err_msg('%s: %s'%(cmd,ex), ex)
 
-    # TODO: if there is something left in stack, output it?
+    # Output anything left in the stack
+    if verbosity >= Verbosity.Min:
+        if verbosity == Verbosity.Max: print "="*out_width
+        for ims in stack: print stack_status_fill("~ Unused image stack '%s'"%ims)
 
 import _imstack
 import images # make sure everything is loaded to get commands and help topics registered

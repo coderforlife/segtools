@@ -6,11 +6,9 @@ each slice. This module simply calls the main function from imstack, which is
 necessary to prevent double-import.
 """
 
-debug = True
-
 from .general.utils import check_reqs
 check_reqs()
 
 if __name__ == "__main__":
     from .imstack import main
-    main(debug)
+    main()

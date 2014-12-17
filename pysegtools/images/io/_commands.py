@@ -19,6 +19,11 @@ oStart = Opt('start','non-negative integer to start counting at',Opt.cast_int(la
 oStep = Opt('step','positive integer to count by',Opt.cast_int(lambda x:x>=1),1)
 oStop = Opt('stop','non-negative integer to stop counting at (it is included)',Opt.cast_or(Opt.cast_equal(None),Opt.cast_int(lambda x:x>=0)),None)
 
+def _pattern_desc(pattern,start,step,stop=None):
+    return "'%s' starting at %d%s%s"%(pattern,start,
+        ('and stepping by %d'%step) if step!=1 else '',
+        ('up to %d'%stop) if stop is not None else '')
+
 class LoadCommand(Command):
     @classmethod
     def name(cls): return 'load'
@@ -74,7 +79,7 @@ brackets.
 Examples:""")
         p.list("[ file1.png file2.png file3.png ]", "[ dir/*.png ]")
                         
-    def __str__(self): return "Loading from %s"%self._name # TODO: include pattern stuff?
+    def __str__(self): return "Loading from %s"%self._name
     def __init__(self, args, stack, appending=False):
         from os.path import abspath
         if len(args.positional) == 0: raise ValueError("No file given to load")
@@ -89,23 +94,35 @@ Examples:""")
             try: end = args.positional.index("]")
             except ValueError: raise ValueError("No terminating ']' in filename list")
             self._file = [abspath(f) for f in args[:end]]
-            self._name = " ".join(args[:end])
+            self._name = ("'"+("', '".join(args[:end]))+"'") if end else '<no files>'
             del args[:end+1]
             if len(args) > 0:
                 if not appending: raise ValueError("Loading from a file list does not support any extra options")
-                if (0,'pattern') not in args: raise ValueError("Appending to a file list does not support any extra options without pattern")
-                self._kwargs = args.get_all_kw(oPattern, oStart, oStep)
+                try:
+                    raw_pattern = args[(0,'pattern')]
+                    pattern,start,step = args.get_all(oPattern, oStart, oStep)
+                    self._kwargs = {'pattern':abspath(pattern),'start':start,'step':step}
+                    self._name = ((self._name+', then using ') if end else '')+_pattern_desc(raw_pattern,start+end,step)
+                except KeyError: raise ValueError("Appending to a file list does not support any extra options without pattern")
                 
         elif re_search(numeric_pattern, path): # Numeric Pattern
             before, digits, after = re_search.match.groups()
             start, step, stop = args.get_all(oStart, oStep, oStop)
             self._file = (before, after, start, step, stop)
+            self._name = _pattern_desc(self._name, start, step, stop)
             if appending: self._kwargs = {'pattern':before+("%%0%dd"%len(digits))+after,'start':start,'step':step}
                 
         else: # 3D Image File
             self._file   = path
-            self._args   = args.positional # arguments get passed straight to the image stack creator
+            self._args   = args.positional # arguments get passed straight to the iamge stack creator
             self._kwargs = args.named
+            self._name = "'%s'" % self._name
+            has_pos, has_named = len(args.positional)>0, len(args.named)>0
+            if has_pos or has_named:
+                self._name += " with options "
+                if has_pos: self._name += ", ".join(arg.positional)
+                if has_pos and has_named: self._name += ", "
+                if has_named: self._name += ", ".join("%s=%s"%(k,v) for k,v in arg.named.iteritems())
             
     def _get_files(self, appending=False):
         from glob import glob, iglob
@@ -200,7 +217,7 @@ definition of those options.
 
 Examples:""")
         p.list("-A [ file1.png file2.png file3.png ]")
-    def __str__(self): return "Appending to %s"%self._name # TODO: include pattern stuff?
+    def __str__(self): return "Appending to %s"%self._name
     def __init__(self, args, stack): super(AppendCommand, self).__init__(args, stack, True)
     def execute(self, stack):
         from os.path import dirname
@@ -210,8 +227,8 @@ Examples:""")
         ims = FileImageStack.open(files, False, *self._args, **self._kwargs)
         ims.extend(stack.pop())
         ims.save()
+        Help.print_stack(ims)
         ims.close()
-        # TODO: if verbose, output info about saved stack?
 
 
 class SaveCommand(Command):
@@ -268,7 +285,7 @@ remaining filenames. See above for the definition of those options.
 
 Examples:""")
         p.list("-S [ file1.png file2.png file3.png ]")
-    def __str__(self): return "Saving to %s"%self._name # TODO: include pattern stuff?
+    def __str__(self): return "Saving to %s"%self._name
 
     def __init__(self, args, stack):
         from os.path import abspath
@@ -284,23 +301,36 @@ Examples:""")
             try: end = args.positional.index("]")
             except ValueError: raise ValueError("No terminating ']' in filename list")
             self._file = [abspath(f) for f in args[:end]]
-            self._name = " ".join(args[:end])
+            self._name = ("'"+("', '".join(args[:end]))+"'") if end else '<no files>'
             del args[:end+1]
             if len(args) > 0:
-                if (0,'pattern') not in args: raise ValueError("Saving to a file list does not support any extra options without pattern")
-                self._kwargs = args.get_all_kw(oPattern, oStart, oStep)
+                try:
+                    raw_pattern = args[(0,'pattern')]
+                    pattern,start,step = args.get_all(oPattern, oStart, oStep)
+                    self._kwargs = {'pattern':abspath(pattern),'start':start,'step':step}
+                    self._name = ((self._name+', then using ') if end else '')+_pattern_desc(raw_pattern,start+end,step)
+                except KeyError: raise ValueError("Saving to a file list does not support any extra options without pattern")
 
         elif re_search(numeric_pattern, path): # Numeric Pattern
             before, digits, after = re_search.match.groups()
             pattern = before+("%%0%dd"%len(digits))+after
             start, step = args.get_all(oStart, oStep)
             self._file = (pattern, start, step)
+            self._name = _pattern_desc(self._name, start, step)
             self._kwargs = {'pattern':pattern,'start':start,'step':step}
                 
         else: # 3D Image File
             self._file   = path
-            self._args   = args.positional # arguments get passed straight to the image stack creator
+            self._args   = args.positional # arguments get passed straight to the iamge stack creator
             self._kwargs = args.named
+            self._name = "'%s'" % self._name
+            has_pos, has_named = len(args.positional)>0, len(args.named)>0
+            if has_pos or has_named:
+                self._name += " with options "
+                if has_pos: self._name += ", ".join(arg.positional)
+                if has_pos and has_named: self._name += ", "
+                if has_named: self._name += ", ".join("%s=%s"%(k,v) for k,v in arg.named.iteritems())
+
   
     def execute(self, stack):
         from os.path import dirname
@@ -313,6 +343,5 @@ Examples:""")
         if any(not make_dir(dirname(f)) for f in (files if isinstance(files, list) else [files])): raise ValueError("Failed to create ouput directories")
         ims = FileImageStack.create(files, ims, *self._args, **self._kwargs)
         ims.save()
+        Help.print_stack(ims)
         ims.close()
-        # TODO: if verbose, output info about saved stack?
-
