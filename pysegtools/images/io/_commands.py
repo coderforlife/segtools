@@ -53,7 +53,8 @@ Supported formats are:""")
         p.list(*FileImageStack.formats(True))
         p.text("""
 Some file formats support additional options which can be specified after the path. To get more
-information about a format and its options, use --help {format}, for example --help MRC.""")
+information about a format and its options, use --help {format}, for example --help MRC. All options
+to these files must be given as named options.""")
 
         p.subtitle("2D Image Files")
         p.text("""
@@ -81,7 +82,7 @@ Examples:""")
                         
     def __str__(self): return "Loading from %s"%self._name
     def __init__(self, args, stack, appending=False):
-        from os.path import abspath
+        from os.path import abspath, isfile
         if len(args.positional) == 0: raise ValueError("No file given to load")
         stack.pop() if appending else stack.push()
         self._name = args[0]
@@ -113,16 +114,15 @@ Examples:""")
             if appending: self._kwargs = {'pattern':before+("%%0%dd"%len(digits))+after,'start':start,'step':step}
                 
         else: # 3D Image File
+            if len(args.positional)>0: raise ValueError('You must provide all file-format options as named options.')
+            args = args.named
+            if isfile(path) and not FileImageStack.openable(path, not appending, **args):
+                # if the file does not yet exist, it may after some other operation, so only check if it exists now
+                raise ValueError("Unable to open '%s' with given options" % path)
             self._file   = path
-            self._args   = args.positional # arguments get passed straight to the iamge stack creator
-            self._kwargs = args.named
+            self._kwargs = args # arguments get passed straight to the iamge stack creator
             self._name = "'%s'" % self._name
-            has_pos, has_named = len(args.positional)>0, len(args.named)>0
-            if has_pos or has_named:
-                self._name += " with options "
-                if has_pos: self._name += ", ".join(arg.positional)
-                if has_pos and has_named: self._name += ", "
-                if has_named: self._name += ", ".join("%s=%s"%(k,v) for k,v in arg.named.iteritems())
+            if len(args)>0: self._name += " with options " + (", ".join("%s=%s"%(k,v) for k,v in arg.iteritems()))
             
     def _get_files(self, appending=False):
         from glob import glob, iglob
@@ -155,7 +155,7 @@ Examples:""")
         else: return self._file # 3D Image File
         
     def execute(self, stack):
-        stack.push(FileImageStack.open(self._get_files(), True, *self._args, **self._kwargs))
+        stack.push(FileImageStack.open(self._get_files(), True, **self._kwargs))
 
 
 class AppendCommand(LoadCommand):
@@ -187,7 +187,8 @@ Supported formats are:""")
         p.list(*FileImageStack.formats(False))
         p.text("""
 Some file formats support additional options which can be specified after the path. To get more
-information about a format and its options, use --help {format}, for example --help MRC.""")
+information about a format and its options, use --help {format}, for example --help MRC. All options
+to these files must be given as named options.""")
 
         p.subtitle("2D Image Files")
         p.text("""
@@ -224,7 +225,7 @@ Examples:""")
         from ...general.utils import make_dir
         files = self._get_files(True)
         if any(not make_dir(dirname(f)) for f in (files if isinstance(files, list) else [files])): raise ValueError("Failed to create output directories")
-        ims = FileImageStack.open(files, False, *self._args, **self._kwargs)
+        ims = FileImageStack.open(files, False, **self._kwargs)
         ims.extend(stack.pop())
         ims.save()
         Help.print_stack(ims)
@@ -260,7 +261,8 @@ Supported formats are:""")
         p.list(*FileImageStack.formats(False))
         p.text("""
 Some file formats support additional options which can be specified after the path. To get more
-information about a format and its options, use --help {format}, for example --help MRC.""")
+information about a format and its options, use --help {format}, for example --help MRC. All options
+to these files must be given as named options.""")
 
         p.subtitle("2D Image Files")
         p.text("""
@@ -292,7 +294,6 @@ Examples:""")
         if len(args.positional) == 0: raise ValueError("No file given to save to")
         stack.pop()
         self._name = args[0]
-        self._args = ()
         self._kwargs = {}
         del args[0]
         path = abspath(self._name)
@@ -320,17 +321,13 @@ Examples:""")
             self._kwargs = {'pattern':pattern,'start':start,'step':step}
                 
         else: # 3D Image File
+            if len(args.positional)>0: raise ValueError('You must provide all file-format options as named options.')
+            args = args.named
+            if not FileImageStack.creatable(path, **args): raise ValueError("Unable to create '%s' with given options" % path)
             self._file   = path
-            self._args   = args.positional # arguments get passed straight to the iamge stack creator
-            self._kwargs = args.named
+            self._kwargs = args # arguments get passed straight to the iamge stack creator
             self._name = "'%s'" % self._name
-            has_pos, has_named = len(args.positional)>0, len(args.named)>0
-            if has_pos or has_named:
-                self._name += " with options "
-                if has_pos: self._name += ", ".join(arg.positional)
-                if has_pos and has_named: self._name += ", "
-                if has_named: self._name += ", ".join("%s=%s"%(k,v) for k,v in arg.named.iteritems())
-
+            if len(args)>0: self._name += " with options " + (", ".join("%s=%s"%(k,v) for k,v in arg.iteritems()))
   
     def execute(self, stack):
         from os.path import dirname
@@ -341,7 +338,7 @@ Examples:""")
             pattern, start, step = self._file
             files = [pattern%(i*step+start) for i in xrange(len(ims))]
         if any(not make_dir(dirname(f)) for f in (files if isinstance(files, list) else [files])): raise ValueError("Failed to create ouput directories")
-        ims = FileImageStack.create(files, ims, *self._args, **self._kwargs)
+        ims = FileImageStack.create(files, ims, **self._kwargs)
         ims.save()
         Help.print_stack(ims)
         ims.close()

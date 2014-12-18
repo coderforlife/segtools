@@ -60,6 +60,7 @@ class FileImageStack(ImageStack):
         if isinstance(filename, basestring):
             highest_cls, highest_mq = None, MatchQuality.NotAtAll
             for cls in cls._get_all_subclasses():
+                if not cls._can_read() or not (readonly or cls._can_write()): continue
                 with open(filename, 'r') as f: mq = cls._openable(f, **options)
                 if mq > highest_mq: highest_cls, highest_mq = cls, mq
                 if mq == MatchQuality.Definitely: break
@@ -71,17 +72,36 @@ class FileImageStack(ImageStack):
         else: raise ValueError()
         
     @classmethod
+    def openable(cls, filename, readonly=False, **options):
+        """
+        Checks if an existing image-stack file or series of images as a stack can be opened with
+        the given arguments. If 'filename' is a string then it is treated as an existing file.
+        Otherwise it needs to be an iterable of file names. Extra options are only supported by
+        some file formats.
+        """
+        try:
+            if isinstance(filename, basestring):
+                for cls in cls._get_all_subclasses():
+                    with open(filename, 'r') as f:
+                        if cls._can_read() and (readonly or cls._can_write()) and cls._openable(f, **options) > MatchQuality.NotAtAll: return True
+            elif isinstance(filename, Iterable): return True
+        except: pass
+        return False
+        
+    @classmethod
     def create(cls, filename, ims, **options):
         """
         Creates an image-stack file or writes to a series of images as a stack. If 'filename' is a
         string then it is treated as a new file. Otherwise it needs to be an iterable of file names
         (even empty) or None in which case a collection of files are used to write to. Extra options
         are only supported by some file formats. When filenames is None or an empty iterable
-        then you need to give a "pattern" option with an extension and %d.
+        then you need to give a "pattern" option with an extension and %d in it.
 
         The new stack is created from the given iterable of ndarrays or ImageSources. While some
         formats can be created with no images given, many do require at least one image to be
-        created so that at least the dtype and shape is known.
+        created so that at least the dtype and shape is known. Some formats may only allow
+        homogeneous image stacks, however selection of a format is purely on file extension and
+        options given.
         """
         ims = [ImageSource.as_image_source(im) for im in ims]
         if isinstance(filename, basestring):
@@ -89,6 +109,7 @@ class FileImageStack(ImageStack):
             ext = splitext(filename)[1].lower().lstrip('.')
             highest_cls, highest_mq = None, MatchQuality.NotAtAll
             for cls in cls._get_all_subclasses():
+                if not cls._can_write(): continue
                 mq = cls._creatable(filename, ext, **options)
                 if mq > highest_mq: highest_cls, highest_mq = cls, mq
                 if mq == MatchQuality.Definitely: break
@@ -98,6 +119,24 @@ class FileImageStack(ImageStack):
             from _collection import FileCollectionStack
             return FileCollectionStack.create(filename, ims, **options)
         else: raise ValueError()
+        
+    @classmethod
+    def creatable(cls, filename, **options):
+        """
+        Checks if a filename can written to as a new image stack. The filename needs to either be a
+        string or an iterable of file names (even empty) or None. Extra options are only supported
+        by some file formats. When filenames is None or an empty iterable then you need to give a
+        "pattern" option with an extension and %d in it. 
+        """
+        try:
+            if isinstance(filename, basestring):
+                from os.path import splitext
+                ext = splitext(filename)[1].lower().lstrip('.')
+                return any(cls._can_write() and cls._creatable(filename, ext, **options)>MatchQuality.NotAtAll
+                           for cls in cls._get_all_subclasses())
+            elif filename == None or isinstance(filename, Iterable): return True
+        except: pass
+        return False
 
     @classmethod
     def formats(cls, read=True):
@@ -116,8 +155,8 @@ class FileImageStack(ImageStack):
         NotAtAll then the class must provide a static/class method like:
             `open(filename_or_file, readonly, **options)`
         Option keys are always strings, values can be either strings or other values (but strings
-        must be accepted for any value and you must convert). An exception should be thrown if
-        there any unknown option keys or option values cannot be used.
+        must be accepted for any value and you must convert, if possible). An exception should be
+        thrown if there any unknown option keys or option values cannot be used.
         """
         return MatchQuality.NotAtAll
 
@@ -129,8 +168,8 @@ class FileImageStack(ImageStack):
         NotAtAll then the class must provide a static/class method like:
             `create(filename, list_of_ImageSources, **options)`
         Option keys are always strings, values can be either strings or other values (but strings
-        must be accepted for any value and you must convert). An exception should be thrown if
-        there any unknown option keys or option values cannot be used.
+        must be accepted for any value and you must convert, if possible). An exception should be
+        thrown if there any unknown option keys or option values cannot be used.
         """
         return MatchQuality.NotAtAll
     
