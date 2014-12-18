@@ -150,6 +150,8 @@ class FileImageStack(ImageStack):
     @classmethod
     def _openable(cls, f, **opts):
         """
+        [To be implemented by format, default is nothing is openable]
+        
         Return how likely a readable file-like object is openable as a FileImageStack given the
         dictionary of options. Returns a MatchQuality rating. If this returns anything besides
         NotAtAll then the class must provide a static/class method like:
@@ -163,6 +165,8 @@ class FileImageStack(ImageStack):
     @classmethod
     def _creatable(cls, filename, ext, **opts):
         """
+        [To be implemented by format, default is nothing is creatable]
+
         Return how likely a filename/ext (without .) is creatable as a FileImageStack given the
         dictionary of options. Returns a MatchQuality rating. If this returns anything besides
         NotAtAll then the class must provide a static/class method like:
@@ -174,19 +178,31 @@ class FileImageStack(ImageStack):
         return MatchQuality.NotAtAll
     
     @classmethod
-    def _can_read(cls): return True
+    def _can_read(cls):
+        """[To be implemented by format, default is readable]"""
+        return True
     
     @classmethod
-    def _can_write(cls): return True
+    def _can_write(cls):
+        """[To be implemented by format, default is writable]"""
+        return True
 
     @classmethod
     def name(cls):
-        """Return the name of this image stack handler to be displayed in help outputs."""
+        """
+        [To be implemented by format, default causes the format to not be registered]
+        
+        Return the name of this image stack handler to be displayed in help outputs.
+        """
         return None
     
     @classmethod
     def print_help(cls, width):
-        """Prints the help page of this image stack handler."""
+        """
+        [To be implemented by format, default prints nothing]
+        
+        Prints the help page of this image stack handler.
+        """
         pass
     
     def __init__(self, header, slices, readonly=False):
