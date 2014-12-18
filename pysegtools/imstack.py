@@ -186,8 +186,7 @@ class Args:
     def values(self): return self._args + self._kwargs.values()
     def items(self):  return list(enumerate(self._args)) + self._kwargs.items()
 
-
-NoDefault = object()
+_NoDefault = object()
 class Opt:
     """
     An option for a command. The `name` is used to look for named arguments. The `desc` is for
@@ -199,7 +198,7 @@ class Opt:
     Also included in this class are various general casting functions. They all return the actual
     casting function, possibly customized for a particular purpose.
     """
-    def __init__(self, name, desc, cast, default = NoDefault):
+    def __init__(self, name, desc, cast, default = _NoDefault):
         self._name = name
         self._desc = desc
         self._cast = cast
@@ -210,12 +209,12 @@ class Opt:
     def description(self): return self._desc
     @property
     def default(self):
-        if self._def is NoDefault: raise ValueError('Value required for "%s"' % self._name)
+        if self._def is _NoDefault: raise ValueError('Value required for "%s"' % self._name)
         return self._def
     @property
-    def has_default(self): return self._def is not NoDefault
+    def has_default(self): return self._def is not _NoDefault
     @property
-    def full_desc(self): return self.description+("" if self._def is NoDefault else " (default: "+str(self.default)+")")
+    def full_desc(self): return self.description+("" if self._def is _NoDefault else " (default: "+str(self.default)+")")
     def cast(self, x): return self._cast(x)
 
     # Various casting functions
@@ -316,37 +315,34 @@ class Opt:
         return _cast_float
     @staticmethod
     def cast_writable_file():
-        # TODO: fix
         """
-        A cast that does some simple checks to see if the file is really not writable. No guarntees
-        that it isn't actually writable, but should catch some problems. Also improves the results
-        of cast_readable_file.
+        A cast that does some simple checks to see if the file is possibly writable. No guarantees
+        that it is writable but should catch some problems. If the file is supposed to be put in a
+        directory that currently does not exist, that directory is created.
         """
         import os
+        from ..general.utils import make_dir
         def _cast_writable_file(x):
             if x == '': raise ValueError
             x = os.path.abspath(x)
             if os.path.exists(x):
                 if os.path.isdir(x) or not os.access(x, os.W_OK): raise ValueError
-            elif not os.access(os.path.dirname(x), os.W_OK|os.X_OK): raise ValueError
-            _files_to_be_written.append(x)
+            else:
+                d = os.path.dirname(x)
+                if not make_dir(d) or not os.access(d, os.W_OK|os.X_OK): raise ValueError
             return x
         return _cast_writable_file
     @staticmethod
     def cast_readable_file():
-        # TODO: fix
         """
-        A cast that does some simple checks to see if the file is really not readable. No guarntees
-        that it isn't actually readable, but should catch some problems. The file should already
-        exist or be a file that will be written by cast_writable_file().
+        A cast that does some simple checks to see if the file is possibly readable. No guarantees
+        that it even exists (since another command may create it) but should catch some problems.
         """
         import os
         def _cast_readable_file(x):
             if x == '': raise ValueError
             x = os.path.abspath(x)
-            if not os.path.exists(x):
-                if x not in _files_to_be_written: raise ValueError
-            elif not (os.path.isfile(x) and os.access(x, os.R_OK)): raise ValueError
+            if os.path.exists(x) and (not os.path.isfile(x) or not os.access(x, os.R_OK)): raise ValueError
             return x
         return _cast_readable_file
 
