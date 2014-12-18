@@ -134,8 +134,8 @@ class Args:
         return default if key is None else val
     def __get_all(self, *opts):
         """
-        Get all arguments as an iterator of key,val pairs like __get would return. Performs numerous
-        checks on the options/arguments.
+        Get all arguments as an iterator of key,val pairs like __get would return along with the
+        option used to look them up. Performs numerous checks on the options/arguments.
         """
         if len(self._args)+len(self._kwargs) > len(opts): raise ValueError('Too many arguments given')
         names = [o.name for o in opts]
@@ -151,10 +151,12 @@ class Args:
         values in the same order requested. The values are casted. This assumes that all arguments
         should fit into one of the options and raises exceptions if there are extra values.
         """
-        return [o.default if key is None else o.cast(val) for key,val,o in self.__get_all(*opts)]
+        return get_all_kw(*opts).itervalues()
     def get_all_kw(self, *opts):
         """Like get_all except it returns a dictionary of name:value pairs."""
-        return {o.name:(o.default if key is None else o.cast(val)) for key,val,o in self.__get_all(*opts)}
+        try: return {o.name:(o.default if key is None else o.cast(val)) for key,val,o in self.__get_all(*opts)}
+        except (LookupError): raise ValueError("Value required for argument '%s'" % o.name)
+        except (ValueError, TypeError): raise ValueError("Argument '%s' does not support value '%s'" % (o.name, val))
     def __contains__(self, key): return self.__get(key)[0] is not None
     def has_key(self, key): return key in self
     def __len__(self): return len(self._args)+len(self._kwargs)
@@ -209,7 +211,8 @@ class Opt:
     def description(self): return self._desc
     @property
     def default(self):
-        if self._def is _NoDefault: raise ValueError('Value required for "%s"' % self._name)
+        """Get the default value for this option or raises a LookupError if there is no default."""
+        if self._def is _NoDefault: raise LookupError
         return self._def
     @property
     def has_default(self): return self._def is not _NoDefault
