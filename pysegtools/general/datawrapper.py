@@ -42,8 +42,21 @@ For list:
 
 """
 
+#pylint: disable=too-few-public-methods,too-many-ancestors,super-init-not-called
+
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+
+import collections
+from sys import maxsize
+from itertools import izip
+from numbers import Integral
 from abc import ABCMeta, abstractmethod
-from sys import maxint
+
+__all__ = ['DictionaryWrapper', 'DictionaryWrapperWithAttr', 'ReadOnlyDictionaryWrapper',
+           'ListWrapper', 'ReadOnlyListWrapper']
 
 _marker = object() # unique object for detecting if argument is passed
 
@@ -90,15 +103,14 @@ class DictionaryWrapper(dict):
         self[key] = default
         return default
     def update(self, *args, **kwargs):
-        if len(args) > 1: raise TypeError("update() takes at most 2 positional arguments ({} given)".format(len(args)+1))
-        other = args[0] if len(args) == 1 else ()
-        if isinstance(other, Mapping):
-            for key in other:        self[key] = other[key]
-        elif hasattr(other, "keys"):
-            for key in other.keys(): self[key] = other[key]
-        else:
-            for key, value in other: self[key] = value
-        for key, value in kwds.iteritems(): self[key] = value
+        if len(args) == 1:
+            other = args[0]
+            if isinstance(other, collections.Mapping):
+                try: other = other.iteritems()
+                except AttributeError: other = ((k,other[k]) for k in other)
+            for key, val in other: self[key] = val
+        elif len(args) != 0: raise TypeError("update expected at most 1 positional arguments, got {}".format(len(args)+1))
+        for key, val in kwargs.iteritems(): self[key] = val
 
     # Direct retrieval, iteration, and length
     def __getitem__(self, key): return self._data[key]
@@ -110,14 +122,14 @@ class DictionaryWrapper(dict):
 
     # Values, keys, and items
     def iterkeys(self):   return iter(self)
-    def itervalues(self): return self._data.itervalues()      # as derived:  (self[k] for k in self)
-    def iteritems(self):  return zip(self, self.itervalues()) # as derived:  ((k,self[k]) for k in self)
+    def itervalues(self): return self._data.itervalues()       # as derived:  (self[k] for k in self)
+    def iteritems(self):  return izip(self, self.itervalues()) # as derived:  ((k,self[k]) for k in self)
     def keys(self):   return list(self)
     def values(self): return list(self.itervalues())
-    def items(self):  return list(zip(self, self.itervalues()))
-    #TODO: def viewkeys(self): return self._data.viewkeys()
-    #TODO: def viewvalues(self): return self._data.viewvalues()
-    #TODO: def viewitems(self): return self._data.viewitems()
+    def items(self):  return zip(self, self.itervalues())
+    def viewkeys(self): return _DictViewKeys(self)
+    def viewvalues(self): return _DictViewValues(self)
+    def viewitems(self): return _DictViewItems(self)
 
     # Comparison operators
     def __eq__(self, other): return self._data == other
@@ -130,7 +142,68 @@ class DictionaryWrapper(dict):
 
     # Other
     def copy(self): return self._data.copy()
-    def __repr__(self): return '{' + (', '.join('%s: %s'%kv for kv in zip(self, self.itervalues()))) + '}'
+    def __repr__(self): return '{' + (', '.join('%s: %s'%kv for kv in izip(self, self.itervalues()))) + '}'
+
+class _DictView(object):
+    __metaclass__ = ABCMeta
+    def __init__(self, d): self._d = d
+    def __len__(self):  return len(self._d)
+    def __repr__(self): return "%s(%s)"%(type(self).__name__, repr(list(self)))
+    @abstractmethod
+    def __iter__(self): pass
+    @abstractmethod
+    def __contains__(self, item): pass
+
+class _DictViewSetLike(_DictView):
+    def __init__(self, d): super(_DictViewSetLike, self).__init__(d)
+    @abstractmethod
+    def __iter__(self): pass
+    @abstractmethod
+    def __contains__(self, item): pass
+    
+    @staticmethod
+    def __all_contained_in(a, b):
+        return all(x in b for x in a)
+    def __eq__(self, other):
+        if not isinstance(other, collections.Set): return NotImplemented
+        return len(self) == len(other) and _DictViewSetLike.__all_contained_in(self, other)
+    def __lt__(self, other):
+        if not isinstance(other, collections.Set): return NotImplemented
+        return len(self) < len(other) and _DictViewSetLike.__all_contained_in(self, other)
+    def __le__(self, other):
+        if not isinstance(other, collections.Set): return NotImplemented
+        return len(self) <= len(other) and _DictViewSetLike.__all_contained_in(self, other)
+    def __ne__(self, other): return not (self == other)
+    def __gt__(self, other): return not (self <= other)
+    def __ge__(self, other): return not (self < other)
+
+    @staticmethod
+    def __set_op(a, b, op):
+        s = set(a)
+        op(s, b)
+        return s
+    def __and__(self, other): return _DictViewSetLike.__set_op(self, other, set.intersection_update)
+    def __or__(self, other): return _DictViewSetLike.__set_op(self, other, set.update)
+    def __sub__(self, other): return _DictViewSetLike.__set_op(self, other, set.difference_update)
+    def __xor__(self, other): return _DictViewSetLike.__set_op(self, other, set.symmetric_difference_update)
+
+class _DictViewKeys(_DictViewSetLike, collections.KeysView):
+    def __init__(self, d): super(_DictViewKeys, self).__init__(d)
+    def __iter__(self): return self._d.iterkeys()
+    def __contains__(self, key): return key in self._d
+
+class _DictViewItems(_DictViewSetLike, collections.ItemsView):
+    def __init__(self, d): super(_DictViewItems, self).__init__(d)
+    def __iter__(self): return self._d.iteritems()
+    def __contains__(self, item):
+        if not isinstance(item, tuple) or len(item) != 2: return False
+        key,value = item
+        return key in self._d and self._d[key] == value
+
+class _DictViewValues(_DictView, collections.ValuesView):
+    def __init__(self, d): super(_DictViewValues, self).__init__(d)
+    def __iter__(self): return self._d.itervalues()
+    def __contains__(self, value): return any(x == value for x in self)
 
 class DictionaryWrapperWithAttr(DictionaryWrapper):
     """
@@ -139,6 +212,7 @@ class DictionaryWrapperWithAttr(DictionaryWrapper):
     exists as an instance attribute it will try to use it as a key of the dictionary (this can be
     circumvented using self.__dict__['attr'] = x the first time).
     """
+    _data = None
     def __init__(self, d): super(DictionaryWrapperWithAttr, self).__init__(d)
     def __setattr__(self, key, value):
         x = self
@@ -178,30 +252,34 @@ class ListWrapper(list):
     
     def __init__(self, l): self._data = l
 
+    # Slice functions are only defined to cover-up the ones defined in list
+    # They can be completely ignored
+    def __delslice__(self, i, j): del self[slice(i,j)]
+    def __setslice__(self, i, j, value): self[slice(i,j)] = value
+    def __getslice__(self, i, j): return self[slice(i,j)]
+    
     # Deleting functions
     def __delitem__(self, i): del self._data[i]
-    def __delslice__(self, i, j): del self[slice(i,j)]
     def remove(self, value):
         for i in xrange(len(self)):
-            if self[i] == value: del self[i]; return;
+            if self[i] == value: del self[i]; return
         raise ValueError('%s is not in list' % value)
     def pop(self, i=-1):
-        if not isinstance(i, (int, long)): raise TypeError('an integer is required')
+        if not isinstance(i, Integral): raise TypeError('an integer is required')
         x = self[i]
         del self[i]
         return x
 
     # Setting/inserting functions
     def __setitem__(self, i, value): self._data[i] = value
-    def __setslice__(self, i, j, value): self[slice(i,j)] = value
     def insert(self, i, value): self._data.insert(i, value)
-    def extend(self, itr):      self._data.extend(value)
+    def extend(self, itr):      self._data.extend(itr)
     def append(self, value):    self.insert(len(self), value)
     def __iadd__(self, other):
         self.extend(other)
         return self
     def __imul__(self, n): # much slower than raw
-        if not isinstance(n, (int, long)): raise TypeError('an integer is required')
+        if not isinstance(n, Integral): raise TypeError('an integer is required')
         if n <= 0: del self[:] # become empty
         elif n == 1: return    # stay the same
         else:
@@ -209,8 +287,8 @@ class ListWrapper(list):
                 bl = n.bit_length() -1
             else:
                 nx, bl = n, -1
-                while nx: nx >>= 1; bl += 1;
-            for i in xrange(bl): self.extend(self._data) # double the length a bunch of times (use _data here just to make sure it isn't using the iterable)
+                while nx: nx >>= 1; bl += 1
+            for _ in xrange(bl): self.extend(self._data) # double the length a bunch of times (use _data here just to make sure it isn't using the iterable)
             n &= (1 << bl) - 1
             self.extend(self[:n]) # remainder
         return self
@@ -219,26 +297,26 @@ class ListWrapper(list):
     def reverse(self): # much slower than raw
         half = len(self)//2
         self[:half], self[-half:] = self[-1:-half-1:-1], self[half-1::-1]
-    def sort(self, cmp=None, key=None, reverse=False): # much slower than raw
-        if cmp != None:
-            if key != None: raise ValueError('cannot specify both cmp and key')
+    def sort(self, cmp=None, key=None, reverse=False): #pylint: disable=redefined-builtin
+        # much slower than raw
+        if cmp is not None:
+            if key is not None: raise ValueError('cannot specify both cmp and key')
             from functools import cmp_to_key
             key = cmp_to_key(cmp)
-        decorated = [(self[i],i,self[i]) for i in xrange(len(self))] if key == None else [(key(self[i]),i,self[i]) for i in xrange(len(self))]
+        decorated = [(self[i],i,self[i]) for i in xrange(len(self))] if key is None else [(key(self[i]),i,self[i]) for i in xrange(len(self))]
         decorated.sort(reverse=reverse)
-        for i,(k,old_i,v) in enumerate(decorated): self[i] = v
+        for i,(_,_,v) in enumerate(decorated): self[i] = v
         #swaps = [(old_i,new_i) for new_i,(k,old_i) in enumerate(keys)]
         # TODO: how to use swaps? is it more efficient?
 
     # Direct retrieval, iteration, and length
     def __len__(self):            return len(self._data)
     def __getitem__(self, i):     return self._data[i]
-    def __getslice__(self, i, j): return self[slice(i,j)]
     def __iter__(self):
         for i in xrange(len(self)): yield self[i]
     def __contains__(self, value): return any(self[i] == value for i in xrange(len(self)))
-    def index(self, value, start=0, stop=maxint):
-        if not isinstance(start, (int, long)) or not isinstance(stop, (int, long)): raise TypeError('an integer is required')
+    def index(self, value, start=0, stop=maxsize):
+        if not isinstance(start, Integral) or not isinstance(stop, Integral): raise TypeError('an integer is required')
         for i in xrange(start, min(stop, len(self))):
             if self[i] == value: return i
         raise ValueError('%s is not in list' % value)
@@ -249,8 +327,8 @@ class ListWrapper(list):
         lst = self[:]
         lst.extend(other)
         return lst
-    def __mul__(self, other):
-        if not isinstance(other, (int, long)): raise TypeError('an integer is required')
+    def __mul__(self, n):
+        if not isinstance(n, Integral): raise TypeError('an integer is required')
         if n <= 0: return self[0:0] # empty list of same type
         elif n == 1: return self[:] # copy
         else:
@@ -259,8 +337,8 @@ class ListWrapper(list):
                 bl = n.bit_length() -1
             else:
                 nx, bl = n, -1
-                while nx: nx >>= 1; bl += 1;
-            for i in xrange(bl): lst.extend(lst) # double the length a bunch of times
+                while nx: nx >>= 1; bl += 1
+            for _ in xrange(bl): lst.extend(lst) # double the length a bunch of times
             n &= (1 << bl) - 1
             lst.extend(lst[:n]) # remainder
             return lst
@@ -291,4 +369,5 @@ class ReadOnlyListWrapper(ListWrapper):
     # Even though these are defined in terms of other mutating functions, they have the opportunity to quiettly do nothing in same cases (e.g. lst *= 1)
     def __imul__(self, n): raise AttributeError('Illegal action for readonly list')
     def reverse(self): raise AttributeError('Illegal action for readonly list')
-    def sort(self, cmp=None, key=None, reverse=False): raise AttributeError('Illegal action for readonly list')
+    def sort(self, cmp=None, key=None, reverse=False): #pylint: disable=redefined-builtin
+        raise AttributeError('Illegal action for readonly list')

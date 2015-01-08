@@ -7,26 +7,34 @@ class is useful for dealing with command lines as there are functions for using 
 automatically parse the command line or format help.
 """
 
-__all__ = ["main","Help","Opt","Command","CommandEasy"]
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
 
+__all__ = ["main", "Help", "Opt", "Command", "CommandEasy"]
+
+import sys
 from abc import ABCMeta, abstractmethod
+String = str if sys.version_info[0] == 3 else basestring
 from numbers import Integral
 from collections import Sequence
+from itertools import chain
 
 from textwrap import TextWrapper
-from .general.utils import get_terminal_width
-out_width = max(get_terminal_width()-1,24)
+from .general.utils import get_terminal_width, all_subclasses
+out_width = max(get_terminal_width()-1, 24)
 fill = TextWrapper(width=out_width).fill
-stack_status_fill = TextWrapper(width=out_width,subsequent_indent=2).fill
+stack_status_fill = TextWrapper(width=out_width, subsequent_indent=2).fill
 
 from .general.enum import Enum
-class Verbosity(int,Enum):
+class Verbosity(int, Enum):
     No = 0
     Min = 1
     Max = 2
 verbosity = Verbosity.No
 
-class Stack:
+class Stack(object):
     """
     The stack of image stacks that commands consume from and produce to. In general a command should
     only ever need pop and push, and possible len(...) and empty. The select and remove functions'
@@ -39,31 +47,32 @@ class Stack:
     def pop(self):
         if len(self._stack) == 0: raise ValueError('No image stack to consume')
         ims = self._stack.pop()
-        if verbosity >= Verbosity.Min: print stack_status_fill("- Consuming image stack '%s'"%ims)
+        if verbosity >= Verbosity.Min: print(stack_status_fill("- Consuming image stack '%s'"%ims))
         return ims
     def push(self, ims):
         from .images import ImageStack
         if not isinstance(ims, ImageStack): raise ValueError('Illegal call to Stack.push')
         if verbosity >= Verbosity.Min:
-            print stack_status_fill("+ Produced image stack '%s'"%ims)
+            print(stack_status_fill("+ Produced image stack '%s'"%ims))
             Help.print_stack(ims)
         self._stack.append(ims)
     def _inv_inds(self, inds):
         n = len(self)
         inds = [(n-i-1) if i>=0 else (-i-1) for i in inds]
-        if any(not (0<=i<n) for i in inds): raise ValueError('No image stack #%d', i)
+        for i in inds:
+            if not (0<=i<n): raise ValueError('No image stack #%d', i)
         return inds
     def select(self, inds):
         inds = self._inv_inds(inds)
         ims = [self._stack[i] for i in inds]
         if verbosity >= Verbosity.Min:
-            for i in ims: print stack_status_fill("* Moving image stack '%s' to top"%i)
+            for i in ims: print(stack_status_fill("* Moving image stack '%s' to top"%i))
         for i in sorted(set(inds), reverse=True): del self._stack[i]
         self._stack.extend(ims)
     def remove(self, inds):
         inds = sorted(set(self._inv_inds(inds)), reverse=True)
         if verbosity >= Verbosity.Min:
-            for i in inds: print stack_status_fill("* Removing image stack '%s'"%self._stack[i])
+            for i in inds: print(stack_status_fill("* Removing image stack '%s'"%self._stack[i]))
         for i in inds: del self._stack[i]
     def __iter__(self): return iter(self._stack)
         
@@ -73,10 +82,10 @@ class PseudoStack(Stack):
     doesn't accept or return them). However it does record the number of items on the stack and
     checks to make sure the stack is never under-flowed.
     """
-    def __init__(self): self._stack_count = 0
+    def __init__(self): self._stack_count = 0 #pylint: disable=super-init-not-called
     def __len__(self): return self._stack_count
     def pop(self):
-        if self._stack_count == 0: raise ValueError('No image stack to consume', i)
+        if self._stack_count == 0: raise ValueError('No image stack to consume')
         self._stack_count -= 1
     def push(self, ims=None): self._stack_count += 1
     def select(self, inds):
@@ -87,7 +96,7 @@ class PseudoStack(Stack):
         self._stack_count -= len(set(inds))
 
     
-class Args:
+class Args(object):
     """
     A collection of command arguments which can include both positional and named arguments. This
     class acts mostly like a dictionary except the keys can be ints (for positional arguments),
@@ -115,9 +124,9 @@ class Args:
         it is not found then None and the "translated" key are returned (notice that the key has
         changed position!).
         """
-        if   isinstance(key, Integral)   and key < len(self._args): return key, self._args[key]
-        elif isinstance(key, basestring) and key in self.kwargs:    return key, self._kwargs[key]
-        elif isinstance(key, Sequence) and len(key) == 2 and isinstance(key[0], Integral) and isinstance(key[1], basestring):
+        if   isinstance(key, Integral) and key < len(self._args): return key, self._args[key]
+        elif isinstance(key, String)   and key in self._kwargs:   return key, self._kwargs[key]
+        elif isinstance(key, Sequence) and len(key) == 2 and isinstance(key[0], Integral) and isinstance(key[1], String):
             pos, name = key
             possed, named = pos < len(self._args), name in self._kwargs
             if possed != named: return (pos, self._args[pos]) if possed else (name, self._kwargs[name])
@@ -151,21 +160,23 @@ class Args:
         values in the same order requested. The values are casted. This assumes that all arguments
         should fit into one of the options and raises exceptions if there are extra values.
         """
-        return get_all_kw(*opts).itervalues()
+        return tuple(self.get_all_kw(*opts).itervalues())
     def get_all_kw(self, *opts):
         """Like get_all except it returns a dictionary of name:value pairs."""
-        try: return {o.name:(o.default if key is None else o.cast(val)) for key,val,o in self.__get_all(*opts)}
-        except (LookupError): raise ValueError("Value required for argument '%s'" % o.name)
-        except (ValueError, TypeError): raise ValueError("Argument '%s' does not support value '%s'" % (o.name, val))
+        for key,val,o in self.__get_all(*opts):
+            try:
+                opts[o.name] = o.default if key is None else o.cast(val)
+            except (LookupError): raise ValueError("Value required for argument '%s'" % o.name)
+            except (ValueError, TypeError): raise ValueError("Argument '%s' does not support value '%s'" % (o.name, val))
     def __contains__(self, key): return self.__get(key)[0] is not None
     def has_key(self, key): return key in self
     def __len__(self): return len(self._args)+len(self._kwargs)
     def __delitem__(self, key):
         if isinstance(key, slice): del self._args[key]
         else:
-            key,val = self.__get(key)
+            key,_ = self.__get(key)
             if key is None: raise KeyError(key)
-            if isinstance(key, basestring): del self._kwargs[key]
+            if isinstance(key, String): del self._kwargs[key]
             else: del self._args[key]
     def clear(self):
         del self._args[:]
@@ -174,22 +185,16 @@ class Args:
     def positional(self): return self._args
     @property
     def named(self):      return self._kwargs
-    def __iter__(self):
-        for x in xrange(len(self._args)): yield x
-        for x in self._kwargs:            yield x
+    def __iter__(self):   return chain(xrange(len(self._args)), self._kwargs)
     def iterkeys(self):   return iter(self)
-    def itervalues(self):
-        for x in self._args:                yield x
-        for x in self._kwargs.itervalues(): yield x
-    def iteritems(self):
-        for x in enumerate(self._args):    yield x
-        for x in self._kwargs.iteritems(): yield x
+    def itervalues(self): return chain(self._args, self._kwargs.itervalues())
+    def iteritems(self):  return chain(enumerate(self._args), self._kwargs.iteritems())
     def keys(self):   return range(len(self._args)) + self._kwargs.keys()
     def values(self): return self._args + self._kwargs.values()
     def items(self):  return list(enumerate(self._args)) + self._kwargs.items()
 
 _NoDefault = object()
-class Opt:
+class Opt(object):
     """
     An option for a command. The `name` is used to look for named arguments. The `desc` is for
     printing information about the option. The `cast` is a function that takes a single argument
@@ -200,7 +205,7 @@ class Opt:
     Also included in this class are various general casting functions. They all return the actual
     casting function, possibly customized for a particular purpose.
     """
-    def __init__(self, name, desc, cast, default = _NoDefault):
+    def __init__(self, name, desc, cast, default=_NoDefault):
         self._name = name
         self._desc = desc
         self._cast = cast
@@ -217,7 +222,7 @@ class Opt:
     @property
     def has_default(self): return self._def is not _NoDefault
     @property
-    def full_desc(self): return self.description+("" if self._def is _NoDefault else " (default: "+str(self.default)+")")
+    def full_desc(self): return self.description+("" if self._def is _NoDefault else " (default: %s)"%self.default)
     def cast(self, x): return self._cast(x)
 
     # Various casting functions
@@ -360,13 +365,13 @@ class _CommandMeta(ABCMeta):
 _cmd_names = {}
 _cmd_flags = {}
 def _get_cmd_class(nf): return _cmd_flags.get(nf, None) or _cmd_names.get(nf.lower(), None)
-class Command:
+class Command(object):
     """
     A command that can be executed from the command line. It is looked up with its name or the
-    flags. it is run in two seperate phases: parsing (in the __init__ function) and the executing.
-    The __init__ function does much of the logic work and once called the command should know
-    everything it needs to do during execution. The exception is with files which may not be saved
-    yet when the parsing happens but may exist (because another command ran) when executing.
+    flags. It is run in two seperate phases: parsing and executing. The __init__() function does
+    much of the logic work and once called the command should know everything it needs to do during
+    execution. The exception is with files which may not be saved yet when the parsing happens but
+    may exist (because another command ran) when executing.
 
     Implementors must implement the followng class methods:
         name(cls)
@@ -381,16 +386,10 @@ class Command:
     __metaclass__ = _CommandMeta
     
     @classmethod
-    def _get_all_subclasses(cls):
-        subcls = cls.__subclasses__()
-        for sc in list(subcls): subcls.extend(sc._get_all_subclasses())
-        return subcls
-
-    @classmethod
     def __get_cmd_class(cls, name_or_flag):
         ccls = _get_cmd_class(name_or_flag)
         if ccls is not None: return ccls
-        for ccls in cls._get_all_subclasses():
+        for ccls in all_subclasses(cls):
             n, f = ccls.name(), ccls.flags()
             if n is not None: _cmd_names[n.lower()] = ccls
             if f is not None: _cmd_flags.update({F:ccls for F in f})
@@ -421,17 +420,19 @@ class Command:
         Print the generic help page for this command using the given width. There are many functions
         in the Help class to ease printing.
         """
-        pass
+        raise NotImplementedError()
 
-    @abstractmethod
-    def __init__(self, args, stack):
-        """
-        Parse the command arguments, given from the Args object. The stack is a psuedo-stack object
-        that has the same interface as the stack given to execute except no image stacks are taken
-        or returned. You must call pop/push on the stack so that an accurate count of items on the
-        stack is kept to check for errors.
-        """
-        pass
+# If this method is defined then pylint complains about not calling super-init in all subclasses
+# Having it defined only makes it so pylint shows errors if subclasses have a different signature
+##    @abstractmethod
+##    def __init__(self, args, stack):
+##        """
+##        Parse the command arguments, given from the Args object. The stack is a psuedo-stack object
+##        that has the same interface as the stack given to execute except no image stacks are taken
+##        or returned. You must call pop/push on the stack so that an accurate count of items on the
+##        stack is kept to check for errors.
+##        """
+##        pass
     
     @abstractmethod
     def __str__(self):
@@ -457,22 +458,22 @@ class CommandEasy(Command):
     """
     @classmethod
     def _title(cls):
-        """The title of the easy command, default is the name with Title Case."""
+        """The title of the command, default is the name with Title Case."""
         return " ".join(w.capitalize() for w in cls.name.split())
     @classmethod
     def _desc(cls):
-        """The description of the easy command"""
+        """The description of the command"""
         return None
     @classmethod
     def _opts(cls):
-        """Optional list of Option objects for the options/arguments of the easy command"""
+        """Optional list of Option objects for the options/arguments of the command"""
         return None
     @classmethod
-    def _consumed(cls):
+    def _consumes(cls):
         """Return a list that names all consumed image stacks"""
         return ()
     @classmethod
-    def _produced(cls):
+    def _produces(cls):
         """Return a list that names all produced image stacks"""
         return ()
     @classmethod
@@ -487,31 +488,36 @@ class CommandEasy(Command):
     def print_help(cls, width):
         t, d, fs, os, co, pr, ex, sa = (
             cls._title(), cls._desc(), cls.flags(), cls._opts(),
-            cls._consumed(), cls._produced(), cls._examples(), cls._see_also())
+            cls._consumes(), cls._produces(), cls._examples(), cls._see_also())
         if fs is None or len(fs) == 0: return
         p = Help(width)
         p.title(t)
-        if d: p.text(d); print ""
+        if d: p.text(d); print("")
         p.flags(fs)
-        print ""
+        print("")
         p.text("Command format:")
         s = sorted(fs, key=len)[-1]
         s = ('--' if len(s) > 1 else '-')+s
         if os: s += " " + (" ".join('['+o.name+']' if o.has_default else o.name for o in os))
         p.cmds(s)
-        if os: print "\nOptions:"; p.opts(*os)
-        if co or pr: print ""; p.stack_changes(consumed=co, produced=pr)
-        if ex: print ""; p.list(*ex)
-        if sa: print ""; p.list(*sa)
-    def __init__(self, args, stack):
-        typ = type(self)
-        for i in xrange(len(typ._consumed())): stack.pop()
-        for i in xrange(len(typ._produced())): stack.push()
-        self._vals = args.get_all_kw(*typ._opts()).iteritems()
-        for name,val in self._vals:
+        if os: print("\nOptions:"); p.opts(*os) #pylint: disable=star-args
+        if co or pr: print(""); p.stack_changes(consumes=co, produces=pr)
+        if ex: print(""); p.list(*ex) #pylint: disable=star-args
+        if sa: print(""); p.list(*sa) #pylint: disable=star-args
+    def __new__(cls, args, stack):
+        for _ in xrange(len(cls._consumes())): stack.pop()
+        for _ in xrange(len(cls._produces())): stack.push()
+        self = super(CommandEasy, cls).__new__()
+        self._vals = vals = args.get_all_kw(*cls._opts()).iteritems() #pylint: disable=protected-access
+        for name,val in vals:
             setattr(self, '_'+name, val)
+    def __init__(self, args, stack): super(CommandEasy, self).__init__(self, args, stack)
+    @abstractmethod
+    def __str__(self): pass
+    @abstractmethod
+    def execute(self, stack): pass
 
-class Help:
+class Help(object):
     """
     General methods for display help. For printing, instantiate this class with a width and then use
     all the various utility printing functions.
@@ -528,77 +534,75 @@ class Help:
         Also note that every Command subclass automatically has it's print_help registered under its
         flag and names.
         """
-        if isinstance(topics, basestring): topics = (topics,)
+        if isinstance(topics, String): topics = (topics,)
         for t in topics: Help._topics[t.strip()] = content
 
     @staticmethod
     def show(topic=None):
-        from sys import exit
-        if topic == None: Help.__msg()
+        if topic is None: Help.__msg()
         else:
             content = Help._topics.get(topic.strip())
             if content is None: __err_msg("Help topic not found.")
-            if isinstance(content, basestring):
-                for l in desc.splitlines(): print fill(l)
+            if isinstance(content, String):
+                for l in content.splitlines(): print(fill(l))
             else: content(out_width)
-        exit(0)
+        sys.exit(0)
 
     @staticmethod
     def print_stack(ims, always=False):
         if not always and verbosity != Verbosity.Max: return
         ims.print_detailed_info(out_width)
-        print "-"*out_width
+        print("-"*out_width)
     
     @staticmethod
     def __msg():
         from os.path import basename
-        from sys import argv
         f12 = TextWrapper(width=out_width, subsequent_indent=' '*11).fill
         f18 = TextWrapper(width=out_width, subsequent_indent=' '*18).fill
-        print fill("===== Image Stack Reader and Converter Tool " + ("="*max(0,out_width-44)))
-        print f18("%s [basic args] [--cmd1 args...] [--cmd2 args...] ..." % basename(argv[0]))
-        print fill("Basic arguments:")
-        print f18("  -h  --help [x]  display help about a command, filter, or format (all other arguments will be ignored)")
-        print f18("  -v  --verbose   display all information about processing of commands")
-        print f18("                  double -v/--verbose increases information output")
-        print ""
-        print fill("You may specify any set of commands and arguments via a file using @argfile which will read that file in as POSIX-style command arguments (including supporting # for comments).")
-        print ""
-        print fill("The basic idea of this program is it runs a series of commands where each command can consume and/or produce image stacks. Some examples are 'loading' doesn't consume any stacks and produces one stack - to be consumed by the next command. The list of image stack is done in a LIFO ordering.")
-        print ""
-        print fill("All commands start with - or -- and the arguments that follow the command can be provided in order or using named agruments such as name=value.")
-        print ""
-        print fill("For the available commands, see the following help topics:")
-        print f12("  load      loading an image stack")
-        print f12("  save      saving an image stack")
-        print f12("  select    choose which image stacks will be used next")
-        print f12("  commands  a list of available commands and some other non-command topics (like colors)")
+        print(fill("===== Image Stack Reader and Converter Tool " + ("="*max(0,out_width-44))))
+        print(f18("%s [basic args] [--cmd1 args...] [--cmd2 args...] ..." % basename(sys.argv[0])))
+        print(fill("Basic arguments:"))
+        print(f18("  -h  --help [x]  display help about a command, filter, or format (all other arguments will be ignored)"))
+        print(f18("  -v  --verbose   display all information about processing of commands"))
+        print(f18("                  double -v/--verbose increases information output"))
+        print("")
+        print(fill("You may specify any set of commands and arguments via a file using @argfile which will read that file in as POSIX-style command arguments (including supporting # for comments)."))
+        print("")
+        print(fill("The basic idea of this program is it runs a series of commands where each command can consume and/or produce image stacks. Some examples are 'loading' doesn't consume any stacks and produces one stack - to be consumed by the next command. The list of image stack is done in a LIFO ordering."))
+        print("")
+        print(fill("All commands start with - or -- and the arguments that follow the command can be provided in order or using named agruments such as name=value."))
+        print("")
+        print(fill("For the available commands, see the following help topics:"))
+        print(f12("  load      loading an image stack"))
+        print(f12("  save      saving an image stack"))
+        print(f12("  select    choose which image stacks will be used next"))
+        print(f12("  commands  a list of available commands and some other non-command topics (like colors)"))
 
     def __init__(self, width=out_width):
         self._width = width
-        self._title_wrp = TextWrapper(width=width-6, initial_indent='===== ', subsequent_indent='===== ').wrap
-        self._subtitle_wrp = TextWrapper(width=width-6,initial_indent='----- ', subsequent_indent='----- ').wrap
-        self._cmd_fll = TextWrapper(width=width, initial_indent='  ', subsequent_indent='        ').fill
-        self._text_fll = TextWrapper(width=width).fill
-        self._flag_fll = TextWrapper(width=width, initial_indent='  ').fill
+        self._title_wrp    = TextWrapper(width=width-6, initial_indent='===== ', subsequent_indent='===== ').wrap
+        self._subtitle_wrp = TextWrapper(width=width-6, initial_indent='----- ', subsequent_indent='----- ').wrap
+        self._cmd_fll      = TextWrapper(width=width, initial_indent='  ', subsequent_indent='        ').fill
+        self._text_fll     = TextWrapper(width=width).fill
+        self._flag_fll     = TextWrapper(width=width, initial_indent='  ').fill
         self._stack_ch_fll = TextWrapper(width=width, subsequent_indent=' '*10).fill
-        self._list_fll = TextWrapper(width=width, initial_indent=' * ', subsequent_indent='   ').fill
+        self._list_fll     = TextWrapper(width=width, initial_indent=' * ', subsequent_indent='   ').fill
     def title(self, text):
         """General help page printing of a title."""
         text = text.strip()
         lines = self._title_wrp(text)
-        for l in lines[:-1]: print l + (" "*(self._width-len(l)-5)) + '====='
-        print lines[-1] + ' ' + ('='*(self._width-len(lines[-1])-1))
+        for l in lines[:-1]: print(l + (" "*(self._width-len(l)-5)) + '=====')
+        print(lines[-1] + ' ' + ('='*(self._width-len(lines[-1])-1)))
     def subtitle(self, text):
         """General help page printing of a title. Comes with an extra newline before it."""
         text = text.strip()
         lines = self._subtitle_wrp(text)
-        print ''
-        for l in lines[:-1]: print l + (" "*(self._width-len(l)-5)) + '-----'
-        print lines[-1] + ' ' + ('-'*(self._width-len(lines[-1])-1))
+        print('')
+        for l in lines[:-1]: print(l + (" "*(self._width-len(l)-5)) + '-----')
+        print(lines[-1] + ' ' + ('-'*(self._width-len(lines[-1])-1)))
     def cmds(self, *cmds):
         """Print a list of command lines"""
-        for c in cmds: print self._cmd_fll(c)
+        for c in cmds: print(self._cmd_fll(c))
     def text(self, text):
         """
         General help page printing of a block of text. In that block, double-newlines form a new
@@ -612,56 +616,57 @@ class Help:
             elif len(lines[-1]) == 0:  lines[-1] += line     # beginning of a new line
             elif lines[-1][-1] == ' ': lines.append(line)    # literal new line starts a new line
             else:                      lines[-1] += ' '+line # add it to the last line with a space
-        for l in lines: print self._text_fll(l)
+        for l in lines: print(self._text_fll(l))
     def flags(self, flags):
         """General help page printing of the command flags."""
         if flags is None or len(flags) == 0: return
-        print self._text_fll("Command names:")
-        for f in flags: print self._flag_fll(('-' if len(f) == 1 else '--') + f)
+        print(self._text_fll("Command names:"))
+        for f in flags: print(self._flag_fll(('-' if len(f) == 1 else '--') + f))
     def __stack_changes(self, name, req, opt):
         if len(req) + len(opt) > 0:
             names = (", ".join(req))+(", " if len(req) != 0 and len(opt) != 0 else "")+(", ".join(opt))
             s = "s" if len(req)+len(opt) > 1 else ""
             up = "" if len(opt) == 0 else "-%d"%(len(req)+len(opt))
-            print self._stack_ch_fll("%s %d%s image stack%s (%s)"%(name, len(req), up, s, names))
-    def stack_changes(self, consumed=(), opt_consumed=(), produced=(), opt_produced=()):
+            print(self._stack_ch_fll("%s %d%s image stack%s (%s)"%(name, len(req), up, s, names)))
+    def stack_changes(self, consumes=(), opt_consumes=(), produces=(), opt_produces=()):
         """
-        General help page printing of how the command effects the stack of images. The `consumed` and
-        `produced` arguments are lists of image stack names that are always taken/created (such as
-        'mask'). The `opt_consumed` and `opt_generated` are ones that may be taken/created.
+        General help page printing of how the command effects the stack of images. The `consumes` and
+        `produces` arguments are lists of image stack names that are always taken/created (such as
+        'mask'). The `opt_consumes` and `opt_produces` are ones that may be taken/created.
         """
-        self.__stack_changes("Consumes: ", consumed, opt_consumed)
-        self.__stack_changes("Produces: ", produced, opt_produced)
+        self.__stack_changes("Consumes: ", consumes, opt_consumes)
+        self.__stack_changes("Produces: ", produces, opt_produces)
     def opts(self, *opts):
         """General help page printing of a set of command options."""
         l = min(max(max(len(o.name) for o in opts)+1, 8), 16)
         fll = TextWrapper(width=self._width, initial_indent='  ', subsequent_indent=' '*(2+l)).fill
-        for o in opts: print fll(o.name+(' '*max(l-len(o.name), 1))+o.full_desc)
+        for o in opts: print(fll(o.name+(' '*max(l-len(o.name), 1))+o.full_desc))
     def list(self, *items):
         """General help page printing of a list of strings."""
-        for x in items: print self._list_fll(x)
+        for x in items: print(self._list_fll(x))
+    def newline(self): #pylint: disable=no-self-use
+        """Convience, prints a new line"""
+        print("")
         
 def __topics_help(width):
     p = Help(width)
     p.title("Topics / Commands")
     topics = {}
-    for t,f in Help._topics.iteritems(): topics.setdefault(f,[]).append(t)
+    for t,f in Help._topics.iteritems(): topics.setdefault(f,[]).append(t) #pylint: disable=protected-access
     topics = [sorted(ts, key=len, reverse=True) for f,ts in topics.iteritems()]
     topics.sort(key=lambda l:l[0].lower())
     p.list(*[", ".join(ts) for ts in topics])
 Help.register(('topic','topics','commands'),__topics_help)
 
 def __err_msg(msg, ex=None):
-    from sys import stderr, exit
-    print >> stderr, fill(msg)
+    print(fill(msg), file=sys.stderr)
     if ex is not None and verbosity >= Verbosity.Min:
-        from sys import exc_info
         from traceback import print_exception
-        typ, val, tb = exc_info()
-        print >> stderr, ""
+        _, val, tb = sys.exc_info()
+        print("", file=sys.stderr)
         print_exception(type(ex), ex, tb if val is ex else None)
         del tb
-    exit(1)
+    sys.exit(1)
 
 ##def get_opts(s):
 ##    x = s[2:].rsplit(':',1)
@@ -682,24 +687,42 @@ def __split_args(args):
     return out
 
 def main():
-    from sys import argv
-    import shlex
+    args = __parse_args(sys.argv[1:])
     
-    ##### Parse Arguments #####
-    args = argv[1:]
-    append = False
+    # Parse all of the commands
+    stack = PseudoStack()
+    cmds = []
+    for cmd_arg in args:
+        try: cmds.append(Command.create(cmd_arg[0].lstrip('-'),Args(cmd_arg),stack))
+        except StandardError as ex: __err_msg('%s: %s'%(" ".join(cmd_arg),ex), ex)
 
+    # Execute all of the commands
+    stack = Stack()
+    for cmd in cmds:
+        if verbosity >= Verbosity.Min:
+            if verbosity == Verbosity.Max: print("="*out_width)
+            print("> %s"%cmd)
+        try: cmd.execute(stack)
+        except StandardError as ex: __err_msg('%s: %s'%(cmd,ex), ex)
+
+    # Output anything left in the stack
+    if verbosity >= Verbosity.Min:
+        if verbosity == Verbosity.Max: print("="*out_width)
+        for ims in stack: print(stack_status_fill("~ Unused image stack '%s'"%ims))
+
+def __parse_args(args):
+    import shlex
     ## Find and expand @argfile arguments
     # This loop goes through all @ arguments in reverse order providing the index of the @ argument
     for i in reversed([i for i,a in enumerate(args) if len(a)>0 and a[0] == '@']):
         try:
             with open(args[i][1:], 'r') as argfile: args[i:i+1] = shlex.split(argfile.read(), True) # read the file, split it, and insert in place of the @ argument
-        except IOError as ex:   __err_msg('Unable to read arg-file "%s": %s' % (args[i][1:],ex), ex)
-        except Exception as ex: __err_msg('Invalid contect of arg-file "%s": %s' % (args[i][1:],ex), ex)
+        except IOError as ex:       __err_msg('Unable to read arg-file "%s": %s' % (args[i][1:],ex), ex)
+        except StandardError as ex: __err_msg('Invalid content of arg-file "%s": %s' % (args[i][1:],ex), ex)
     args = __split_args(args)
 
     # Basic arguments
-    global verbosity
+    global verbosity #pylint: disable=global-statement
     num_basic_args = 0
     for cmd in args:
         if cmd[0] in ('-v', '--verbose'):
@@ -712,29 +735,9 @@ def main():
             Help.show(cmd[1] if len(cmd) == 2 else None)
             # unreachable: num_basic_args += 1
         else: break
-    del args[:num_basic_args]
-    if len(args) == 0: Help.show()
+    if len(args) == num_basic_args: Help.show()
+    return args[num_basic_args:]
 
-    # Parse all of the commands
-    stack = PseudoStack()
-    cmds = []
-    for cmd_arg in args:
-        try: cmds.append(Command.create(cmd_arg[0].lstrip('-'),Args(cmd_arg),stack))
-        except Exception as ex: __err_msg('%s: %s'%(" ".join(cmd_arg),ex), ex)
-
-    # Execute all of the commands
-    stack = Stack()
-    for cmd in cmds:
-        if verbosity >= Verbosity.Min:
-            if verbosity == Verbosity.Max: print "="*out_width
-            print "> %s"%cmd
-        try: cmd.execute(stack)
-        except Exception as ex: __err_msg('%s: %s'%(cmd,ex), ex)
-
-    # Output anything left in the stack
-    if verbosity >= Verbosity.Min:
-        if verbosity == Verbosity.Max: print "="*out_width
-        for ims in stack: print stack_status_fill("~ Unused image stack '%s'"%ims)
-
-import _imstack
-import images # make sure everything is loaded to get commands and help topics registered
+# make sure everything is loaded to get commands and help topics registered
+from . import _imstack #pylint: disable=unused-import
+from . import images   #pylint: disable=unused-import

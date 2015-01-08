@@ -1,7 +1,14 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+
 from numpy import dtype, iinfo, sctypes, bool_, ndarray
 from sys import byteorder
 import numbers
 import re
+
+from ._util import String
 
 __all__ = [
     'create_im_dtype','get_im_dtype','get_im_dtype_and_nchan','im_dtype_desc','get_dtype_endian',
@@ -27,7 +34,7 @@ if not issubclass(__int_types[0], numbers.Integral):
 
     
 ##### dtype functions #####
-__re_im_dtype = re.compile(r'^((\d+\*)?([UIFC])|RGBA?)(\d+)(-BE)?$', re.IGNORECASE)
+__re_im_dtype = re.compile(r'^(([0-9]+\*)?([UIFC])|RGBA?)([0-9]+)(-BE)?$', re.IGNORECASE)
 def create_im_dtype(base, big_endian=False, channels=1):
     """
     Creates an image data type given a base type, endian-ness, and number of channels. When creating
@@ -36,28 +43,28 @@ def create_im_dtype(base, big_endian=False, channels=1):
     Big endian can instead be specified as <, > or =. Additionally, this accepts all strings that
     im_dtype_desc can produce in which case the last two arguments are ignored.
     """
-    if isinstance(base, basestring):
+    if isinstance(base, String):
         result = __re_im_dtype.search(base)
         if result is None: raise ValueError('Image type not known')
         grps = result.groups()
         bits = int(grps[3])
         if bits == 1 and grps[2] not in 'uU': raise ValueError('Only unsigned integer can have 1 bit')
         if bits != 1 and (bits%8) != 0: raise ValueError('Invalid number of bits, must be 1 or a multiple of 8')
-        bytes //= 8 # now 0 if originally 1
+        nbytes = bits//8 # now 0 if originally 1
         big_endian = grps[4] is not None
         if grps[0][0] in 'rR':
             channels = 4 if grps[0][-1] in 'aA' else 3
-            if bytes == 0 or (bytes%channels) != 0: raise ValueError('Invalid number of bits for RGB/RGBA image')
-            base = dtype('u'+str(bytes//channels))
+            if nbytes == 0 or (nbytes%channels) != 0: raise ValueError('Invalid number of bits for RGB/RGBA image')
+            base = dtype('u'+str(nbytes//channels))
         else:
             channels = 1 if grps[1] is None else int(grps[1][:-1])
             if channels == 0 or channels > 4: raise ValueError('Invalid number of channels')
-            base = bool if bytes == 0 else dtype(grps[2].lower()+str(bytes))
+            base = bool if nbytes == 0 else dtype(grps[2].lower()+str(nbytes))
     if isinstance(base, dtype): base = dtype.type
     if base in __cmplx_types:
         if channels != 1: raise ValueError('Complex types must use 1 channel')
     elif base not in __basic_types: raise ValueError('Image base type not known')
-    endian = bid_endian if isinstance(big_endian, basestring) else ('>' if big_endian else '<')
+    endian = big_endian if isinstance(big_endian, String) else ('>' if big_endian else '<')
     return dtype((base, channels)).newbyteorder(endian)
 def get_im_dtype(im_or_dtype):
     """
@@ -108,9 +115,9 @@ def im_dtype_desc(im_or_dtype):
     elif kind == 'c': base = 'C%d%s' % (bits, be)
     else: base = str(dt)
     return ('%d*%s'%(nchan,base)) if nchan > 1 else base
-def get_dtype_endian(dtype):
+def get_dtype_endian(dt):
     """Get a '<' or '>' from a dtype's byteorder (which can be |, =, <, or >)."""
-    endian = dtype.byteorder
+    endian = dt.byteorder
     if endian == '|': return '<' # | means N/A (single byte), report as little-endian
     elif endian == '=': return '<' if byteorder == 'little' else '>' # is native byte-order
     return endian
@@ -143,7 +150,7 @@ def __is_rgb_view(im):
     try:
         d = im.dtype
         if any(d[0]!=d[i] for i in xrange(1,len(d))) or ''.join(d.names) not in ('RGB','RGBA','BGR','BGRA'): return False
-    except: return False
+    except StandardError: return False
     return True
 def im_rgb_view(im, bgr=False):
     """
@@ -153,7 +160,8 @@ def im_rgb_view(im, bgr=False):
     viewed image will not be accepted by most functions and is_image returns False for it.
     """
     if __is_rgb_view(im): return im
-    if im.ndim != 3 or im.shape[2] not in (3,4) or im.dtype.type not in __basic_types: raise ValueError('Not an RGB or RGBA raw image')
+    shp = im.shape
+    if len(shp) != 3 or shp[2] not in (3,4) or im.dtype.type not in __basic_types: raise ValueError('Not an RGB or RGBA raw image')
     return im.view(dtype=dtype([(C,im.dtype) for C in ('BGRA' if bgr else 'RGBA')[:shp[2]]])).squeeze(2)
 def im_raw_view(im):
     """
@@ -173,8 +181,9 @@ def im_complexify(im):
     float-point types, otherwise an exception will occur. If the image is already complex, it is
     returned as-is.
     """
-    if (im.ndim == 3 and im.shape[2] == 1 or im.ndim == 2) and im.dtype.type in __cmplx_types: return im
-    if im.ndim != 3 or im.shape[2] != 2 or im.dtype.type not in __float2cmplx: raise ValueError('Image is not able to be represented as a complex type')
+    shp = im.shape
+    if (len(shp) == 3 and shp[2] == 1 or len(shp) == 2) and im.dtype.type in __cmplx_types: return im
+    if len(shp) != 3 or shp[2] != 2 or im.dtype.type not in __float2cmplx: raise ValueError('Image is not able to be represented as a complex type')
     return im.view(dtype=dtype(__float2cmplx[im.dtype.type]).newbyteorder(im.dtype.byteorder)).squeeze(2)
 def im_decomplexify(im):
     """
@@ -193,7 +202,7 @@ def get_im_min_max(im):
     """Gets the min and max values for an image or an image dtype."""
     if isinstance(im, dtype): dt = im; im = None
     else: dt = im.dtype
-    if im == None or dt not in __float_types: return __min_max_values[dt]
+    if im is None or dt not in __float_types: return __min_max_values[dt]
     mn, mx = im.min(), im.max()
     return (mn, mx) if mn < 0.0 or mx > 1.0 else __min_max_values[dt]
 

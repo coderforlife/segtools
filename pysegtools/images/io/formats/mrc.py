@@ -1,11 +1,20 @@
+#pylint: disable=protected-access
+
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+
 from collections import OrderedDict
-from numpy import empty, int8, uint8, int16, uint16, int32, float32, complex64
+from itertools import izip
+from numpy import int8, uint8, int16, uint16, int32, float32, complex64
 
 from ....general.datawrapper import ListWrapper, ReadOnlyListWrapper
 from ....general.enum import Enum, Flags
 from ...types import create_im_dtype, get_im_dtype_and_nchan, get_dtype_endian
+from ..._util import Unicode, pack, unpack, unpack1
 from .._stack import HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader, Field, FixedField, MatchQuality
-from .._util import copy_data, openfile, imread_raw, imsave_raw
+from .._util import copy_data, openfile, imread_raw, imsave_raw, file_remove_ranges
 
 __all__ = ['MRC']
 
@@ -15,7 +24,7 @@ HDR_LEN = 224
 LBL_LEN = 80
 LBL_COUNT = 10
 
-class MRCMode(int32, Enum):
+class MRCMode(int32, Enum): #pylint: disable=no-init
     Byte    =  0 # 8 bit
     Short   =  1 # 16 bit, signed
     Float   =  2 # 32 bit
@@ -25,10 +34,10 @@ class MRCMode(int32, Enum):
     UShort  =  6 # 16 bit, non-standard
     Byte3   = 16 # 24 bit, rgb, non-standard
 
-class MRCFlags(int32, Flags):
+class MRCFlags(int32, Flags): #pylint: disable=no-init
     SignedByte = 1
     
-class MRCEndian(int32, Enum):
+class MRCEndian(int32, Enum): #pylint: disable=no-init
     Little    = 0x00004144
     LittleAlt = 0x00000044
     Big       = 0x00001717
@@ -68,25 +77,24 @@ class MRC(HomogeneousFileImageStack):
 
     @classmethod
     def _openable(cls, f, **opts):
-        from struct import unpack
         if len(opts) != 0: return MatchQuality.NotAtAll
         f.seek(0)
         raw = memoryview(f.read(HDR_LEN))
         if len(raw) != HDR_LEN: return MatchQuality.NotAtAll
-        map, en = unpack('<ii', raw[208:216])
+        map_, en = unpack('<ii', raw[208:216])
         endian = '<'
-        if map == MAP_:
+        if map_ == MAP_:
             if en == MRCEndian.Big or en == MRCEndian.BigAlt: endian = '>'
             elif en != MRCEndian.Little and en != MRCEndian.LittleAlt: return MatchQuality.NotAtAll
         nx, ny, nz, mode = unpack(endian+'4i', raw[:16])
         if nx <= 0 or ny <= 0 or nz < 0 or mode not in MRCMode: return MatchQuality.NotAtAll
         mapc, mapr, maps = unpack(endian+'3i', raw[64:76])
         if mapc != 1 or mapr != 2 or maps != 3: return MatchQuality.NotAtAll
-        next = unpack(endian+'i', raw[92:96])[0]
+        nxt = unpack1(endian+'i', raw[92:96])
         stamp, flags = unpack(endian+'2i', raw[152:160])
-        nlbl = unpack(endian+'i', raw[220:])[0]
-        if next < 0 or nlbl < 0 or nlbl > LBL_COUNT or (stamp == IMOD and flags not in MRCFlags): return MatchQuality.NotAtAll
-        return MatchQuality.Definitely if map == MAP_ else MatchQuality.Likely
+        nlbl = unpack1(endian+'i', raw[220:])
+        if nxt < 0 or nlbl < 0 or nlbl > LBL_COUNT or (stamp == IMOD and flags not in MRCFlags): return MatchQuality.NotAtAll
+        return MatchQuality.Definitely if map_ == MAP_ else MatchQuality.Likely
 
     @classmethod
     def create(cls, f, ims, **options):
@@ -149,7 +157,7 @@ Supported image types:""")
         else:              self._file.truncate(self._get_off(end))
         self._insert_slices(idx, [MRCSlice(self, self._header, z) for z in xrange(idx, end)])
         self._file.seek(self._get_off(idx)) # TODO: don't seek if it won't change position?
-        for z,im in zip(xrange(idx, end), ims):
+        for z,im in izip(xrange(idx, end), ims):
             im = im.data
             imsave_raw(self._file, im)
             self._slices[z]._cache_data(im)
@@ -200,7 +208,7 @@ class MRCHeader(FileImageStackHeader):
             ('xlen',_f_ro(float32)), ('ylen',_f_ro(float32)), ('zlen',_f_ro(float32)), # cell size, pixel spacing = xlen/mx, ...
             ('alpha',_f(float32)),   ('beta',_f(float32)),    ('gamma',_f(float32)),   # cell angles (not used in IMOD)
             ('mapc',_f_fix(int32,1)),('mapr',_f_fix(int32,2)),('maps',_f_fix(int32,3)),# map columns/rows/section in x/y/z (should always be 1,2,3)
-            ('amin',_f(float32)),('amax',_f(float32)),('amean',_f(float32)),           # min/max/mean pixel value
+            ('amin',_f(float32)),    ('amax',_f(float32)),    ('amean',_f(float32)),   # min/max/mean pixel value
             ('ispf',_f(int32)),                                                        # space group number (not used in IMOD)
             ('next',_f_ro(int32)),                                                     # number of bytes in the extended header (called nsymbt in MRC standard)
             ('creatid',_f(int16)),                                                     # used to be an ID, now always 0
@@ -226,7 +234,6 @@ class MRCHeader(FileImageStackHeader):
     # Required for headers
     _imstack = None
     _fields = None
-    _data = None
 
     # Specific to MRC
     _is_new = True
@@ -238,10 +245,9 @@ class MRCHeader(FileImageStackHeader):
 
     def __init__(self):
         self._fields = MRCHeader.__fields_base.copy()
+        super(MRCHeader, self).__init__()
 
     def _open(self, f, readonly):
-        from struct import unpack
-
         ### Opening an existing file ###
         f = openfile(f, 'rb' if readonly else 'r+b')
 
@@ -249,9 +255,9 @@ class MRCHeader(FileImageStackHeader):
         try:
             raw = f.read(HDR_LEN)
             if len(raw) != HDR_LEN: raise ValueError('MRC file does not have enough bytes for header')
-            map, en = unpack('<ii', raw[208:216])
+            map_, en = unpack('<ii', raw[208:216])
             endian = '<'
-            if map == MAP_:
+            if map_ == MAP_:
                 if en == MRCEndian.Big or en == MRCEndian.BigAlt:
                     endian = '>'
                 elif en != MRCEndian.Little and en != MRCEndian.LittleAlt:
@@ -262,37 +268,50 @@ class MRCHeader(FileImageStackHeader):
                 self._is_new = False
                 self._fields.update(MRCHeader.__fields_old)
                 self._format = MRCHeader.__format_old
-            self._data = h = OrderedDict(zip(self._fields, unpack(self._format, raw)))
+            self._data = h = OrderedDict(izip(self._fields, unpack(self._format, raw)))
             if self._data['mode'] == 5: self._data['mode'] = 0
             self._check()
-            #h['mode'] = MRCMode(h['mode'])
-            #h['imodFlags'] = MRCFlags(h['imodFlags']) if h['imodStamp'] == IMOD else MRCFlags._None
-            #if self._is_new: h['stamp'] = MRCEndian(h['stamp'])
-
-            mode, next, nlabl = h['mode'], h['next'], h['nlabl']
+            #h['imodFlags'] = MRCFlags(h['imodFlags']) if h['imodStamp'] == IMOD else MRCFlags.None
 
             if h['nx'] <= 0 or h['ny'] <= 0 or h['nz'] < 0:  raise ValueError('MRC file is invalid (dims are %dx%dx%d)' % (h['nx'], h['ny'], h['nz']))
-            if next < 0:                                     raise ValueError('MRC file is invalid (extended header size is %d)' % h['next'])
-            if not (0 <= nlabl <= LBL_COUNT):                raise ValueError('MRC file is invalid (the number of labels is %d)' % h['nlabl'])
             if h['mapc'] != 1 or h['mapr'] != 2 or h['maps'] != 3: raise ValueError('MRC file has an unsupported data ordering (%d, %d, %d)' % (h['mapc'], h['mapr'], h['maps']))
 
-            # Read labels and extra header data
-            lbls = f.read(LBL_LEN*nlabl)
-            if len(lbls) != LBL_LEN*nlabl: raise ValueError('MRC file does not have enough bytes for header')
-            self._labels = [lbls[i:i+LBL_LEN].lstrip() for i in xrange(0,len(lbls),LBL_LEN)]
-            if next:
-                f.seek(HDR_LEN + LBL_LEN * LBL_COUNT)
-                self._extra = memoryview(f.read(next))
-                if len(self._extra) != next: raise ValueError('MRC file does not have enough bytes for header')
-                self._old_next = next
-
-            # Determine data type
-            if   mode in (MRCMode.Byte, MRCMode._Byte):         self._dtype = create_im_dtype(int8 if h['imodStamp'] == IMOD and MRCFlags.SignedByte in h['imodFlags'] else uint8)
-            elif mode in __mode2dtype: dt = __mode2dtype[mode]; self._dtype = create_im_dtype(dt[0], endian, dt[1])
-            else:                      raise ValueError('MRC file is invalid (mode is %d)' % mode)
+            self._labels = self.__get_labels(f)
+            self._extra = self.__get_extra(f)
+            if self._extra: self._old_next = len(self._extra)
+            self._dtype = self.__get_dtype(endian)
+            
             return f
+        except:
+            f.close()
+            raise
 
-        except: f.close(); raise
+    def __get_labels(self, f):
+        nlabl = self._data['nlabl']
+        if not (0 <= nlabl <= LBL_COUNT): raise ValueError('MRC file is invalid (the number of labels is %d)' % nlabl)
+        lbls = f.read(LBL_LEN*nlabl)
+        if len(lbls) != LBL_LEN*nlabl: raise ValueError('MRC file does not have enough bytes for header')
+        return [lbls[i:i+LBL_LEN].lstrip() for i in xrange(0,len(lbls),LBL_LEN)]
+        
+    def __get_extra(self, f):
+        nxt = self._data['next']
+        if nxt < 0: raise ValueError('MRC file is invalid (extended header size is %d)' % nxt)
+        if nxt == 0: return None
+        f.seek(HDR_LEN + LBL_LEN * LBL_COUNT)
+        extra = memoryview(f.read(nxt))
+        if len(extra) != nxt: raise ValueError('MRC file does not have enough bytes for header')
+        return extra
+                
+    def __get_dtype(self, endian):
+        # Determine data type
+        mode = self._data['mode']
+        if mode in (MRCMode.Byte, MRCMode._Byte):
+            stamp, flags = self._data['imodStamp'], self._data['imodFlags']
+            return create_im_dtype(int8 if stamp == IMOD and MRCFlags.SignedByte in flags else uint8)
+        elif mode in __mode2dtype:
+            dt = __mode2dtype[mode]
+            return create_im_dtype(dt[0], endian, dt[1])
+        raise ValueError('MRC file is invalid (mode is %d)' % mode)
 
     def _create(self, f, shape, dtype):
         ### Creating a new file ###
@@ -332,7 +351,9 @@ class MRCHeader(FileImageStackHeader):
         try:
             self._save(f)
             return f
-        except: f.close(); raise
+        except:
+            f.close()
+            raise
 
     def _get_field_name(self, f): return f if f in self._fields else None
     
@@ -364,10 +385,10 @@ class MRCHeader(FileImageStackHeader):
     def pixel_spacing(self, value):
         """Sets the pixel spacing in the header but does not write the header to disk."""
         if self._imstack._readonly: raise AttributeError('header is readonly')
-        if len(spacing) != 3: raise ValueError()
-        self._data['xlen'] = float32(spacing[0])/self._data['mx']
-        self._data['ylen'] = float32(spacing[1])/self._data['my']
-        self._data['zlen'] = float32(spacing[2])/self._data['mz']
+        if len(value) != 3: raise ValueError()
+        self._data['xlen'] = float32(value[0])/self._data['mx']
+        self._data['ylen'] = float32(value[1])/self._data['my']
+        self._data['zlen'] = float32(value[2])/self._data['mz']
 
     def update_pixel_values(self):
         """
@@ -381,7 +402,7 @@ class MRCHeader(FileImageStackHeader):
             self._data['amean'] = float32(0.0)
         else:
             itr = iter(self._imstack)
-            im = itr.next()
+            im = next(itr)
             amin = im.data.min()
             amax = im.data.max()
             amean = im.data.mean()
@@ -406,7 +427,7 @@ class MRCHeader(FileImageStackHeader):
     @labels.setter
     def labels(self, lbls):
         if self._imstack._readonly: raise Exception('readonly')
-        lbls = [str(l) for l in lbls]
+        lbls = [Unicode(l) for l in lbls]
         if len(lbls) > LBL_COUNT: raise ValueError('lbls is too long (max label count is %d)' % LBL_COUNT)
         if any(len(l) > LBL_LEN for l in lbls): raise ValueError('lbls contains label that is too long (max label length is %d)' % LBL_LEN)
         self._labels[:] = lbls # copy it this way so that any references to the list are updated as well
@@ -417,14 +438,14 @@ class MRCHeader(FileImageStackHeader):
     @extra.setter
     def extra(self, value):
         if self._imstack._readonly: raise AttributeError('header is readonly')
-        if value == None:
+        if value is None:
             self._extra = None 
             self._data['next'] = int32(0)
         else:
             self._extra = memoryview(value)
             self._data['next'] = int32(len(self._extra) * self._extra.itemsize)
    
-    def save(self, update_pixel_values=True):
+    def save(self, update_pixel_values=True): #pylint: disable=arguments-differ
         """
         Write the header to disk. Updates fields as necessary. The fields amin, amax, and amean are
         only updated when update_pixel_values is True (which is default).
@@ -434,20 +455,19 @@ class MRCHeader(FileImageStackHeader):
         self._check()
         if self._old_next != self._data['next']:
             # Header changed size, need to shift image data
-            next = self._data['next']
+            nxt = self._data['next']
             new_off = HDR_LEN + LBL_LEN * LBL_COUNT + next
-            copy_data(f, self._imstack._off, new_off)
-            self._old_next = next
+            copy_data(self._imstack._file, self._imstack._off, new_off)
+            self._old_next = nxt
             self._imstack._off = new_off
             self._imstack._update_offs(0)
         self._save(self._imstack._file)
         
     def _save(self, f):
         """Internal saving function"""
-        from struct import pack
         f.seek(0)
         values = [self._data[field] for field in self._fields]
-        f.write(pack(self._format, *values))
+        f.write(pack(self._format, *values)) #pylint: disable=star-args
         for lbl in self._labels: f.write(lbl.ljust(LBL_LEN))
         f.write(' ' * LBL_LEN * (LBL_COUNT - len(self._labels)))
         if self._extra: f.write(self._extra)
@@ -465,12 +485,12 @@ class LabelList(ListWrapper):
         del self._data[i]
         self._hdr['nlabl'] = int32(len(self._data))
     def __setitem__(self, i, value):
-        value = str(value)
+        value = Unicode(value)
         if len(value) > LBL_LEN: raise ValueError('label too long')
         self._data[i] = value
         #self._hdr['nlabl'] = len(self._data)
     def insert(self, i, value):    
-        value = str(value)
+        value = Unicode(value)
         if len(value) > LBL_LEN: raise ValueError('label too long')
         if len(self._data) >= LBL_COUNT:
             if i == len(self): del self._data[0] # appending
@@ -478,7 +498,7 @@ class LabelList(ListWrapper):
         self._data.insert(i, value)
         self._hdr['nlabl'] = int32(len(self._data))
     def extend(self, values):
-        values = [str(value) for value in values]
+        values = [Unicode(value) for value in values]
         if len(values) > LBL_COUNT: raise ValueError('adding too many labels')
         if any(len(value) > LBL_LEN for value in values): raise ValueError('label too long')
         if len(self._data) + len(values) > LBL_COUNT:

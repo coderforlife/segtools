@@ -1,11 +1,16 @@
-"""Here are the commands for I/O: load, save, and append"""
+"""The commands for I/O: load, save, and append to image stacks"""
+
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
 
 import re
 numeric_pattern = re.compile("(^[^#]*)(#+)([^#]*[.][^#]+)$")
-def re_search(re, s): re_search.match = m = re.search(s); return m != None
 
 from ...imstack import Command, Opt, Help
 from ._stack import FileImageStack
+from .._util import re_search
 
 @staticmethod
 def cast_num_pattern(s):
@@ -34,16 +39,16 @@ class LoadCommand(Command):
         p = Help(width)
         p.title("Loading an Image Stack")
         p.text("Image stacks can be loaded from individual 3D image files or a collection of 2D image files.")
-        print ""
+        p.newline()
         p.flags(cls.flags())
-        print ""
+        p.newline()
         p.text("Command formats:")
         p.cmds("--load filepath [format-specific-options]",
                "--load pattern [start] [step] [stop]",
                "--load [ file1 file2 ... ]   (literal brackets)")
-        print ""
-        p.stack_changes(produced=('loaded image stack',))
-        print ""
+        p.newline()
+        p.stack_changes(produces=('loaded image stack',))
+        p.newline()
         p.text("See also:")
         p.list('save', 'append')
         
@@ -84,7 +89,8 @@ Examples:""")
     def __init__(self, args, stack, appending=False):
         from os.path import abspath, isfile
         if len(args.positional) == 0: raise ValueError("No file given to load")
-        stack.pop() if appending else stack.push()
+        if appending: stack.pop()
+        else: stack.push()
         self._name = args[0]
         self._args = ()
         self._kwargs = {}
@@ -116,13 +122,13 @@ Examples:""")
         else: # 3D Image File
             if len(args.positional)>0: raise ValueError('You must provide all file-format options as named options.')
             args = args.named
-            if isfile(path) and not FileImageStack.openable(path, not appending, **args):
+            if isfile(path) and not FileImageStack.openable(path, not appending, **args): #pylint: disable=star-args
                 # if the file does not yet exist, it may after some other operation, so only check if it exists now
                 raise ValueError("Unable to open '%s' with given options" % path)
             self._file   = path
             self._kwargs = args # arguments get passed straight to the iamge stack creator
             self._name = "'%s'" % self._name
-            if len(args)>0: self._name += " with options " + (", ".join("%s=%s"%(k,v) for k,v in arg.iteritems()))
+            if len(args)>0: self._name += " with options " + (", ".join("%s=%s"%(k,v) for k,v in args.iteritems()))
             
     def _get_files(self, appending=False):
         from glob import glob, iglob
@@ -168,16 +174,16 @@ class AppendCommand(LoadCommand):
         p = Help(width)
         p.title("Appending to an Image Stack")
         p.text("Appending to an image stack is very similar to loading and saving an image stack.")
-        print ""
+        p.newline()
         p.flags(cls.flags())
-        print ""
+        p.newline()
         p.text("Command formats:")
         p.cmds("--append filepath [format-specific-options]",
                "--append pattern [start] [step] [stop]",
                "--append [ file1 ... ] [pattern [start] [step]]  (literal brackets around list)")
-        print ""
-        p.stack_changes(consumed=('image stack to be saved',))
-        print ""
+        p.newline()
+        p.stack_changes(consumes=('image stack to be saved',))
+        p.newline()
         p.text("See also:")
         p.list('load', 'save')
         
@@ -242,16 +248,16 @@ class SaveCommand(Command):
         p = Help(width)
         p.title("Saving an Image Stack")
         p.text("Image stacks can be saved to individual 3D image files or a collection of 2D image files.")
-        print ""
+        p.newline()
         p.flags(cls.flags())
-        print ""
+        p.newline()
         p.text("Command formats:")
         p.cmds("--save filepath [format-specific-options]",
                "--save pattern [start] [step]",
                "--save [ file1 ... ] [pattern [start] [step]]  (literal brackets around list)")
-        print ""
-        p.stack_changes(consumed=('image stack to be saved',))
-        print ""
+        p.newline()
+        p.stack_changes(consumes=('image stack to be saved',))
+        p.newline()
         p.text("See also:")
         p.list('load', 'append')
         
@@ -323,11 +329,11 @@ Examples:""")
         else: # 3D Image File
             if len(args.positional)>0: raise ValueError('You must provide all file-format options as named options.')
             args = args.named
-            if not FileImageStack.creatable(path, **args): raise ValueError("Unable to create '%s' with given options" % path)
+            if not FileImageStack.creatable(path, **args): raise ValueError("Unable to create '%s' with given options" % path) #pylint: disable=star-args
             self._file   = path
             self._kwargs = args # arguments get passed straight to the iamge stack creator
             self._name = "'%s'" % self._name
-            if len(args)>0: self._name += " with options " + (", ".join("%s=%s"%(k,v) for k,v in arg.iteritems()))
+            if len(args)>0: self._name += " with options " + (", ".join("%s=%s"%(k,v) for k,v in args.iteritems()))
   
     def execute(self, stack):
         from os.path import dirname

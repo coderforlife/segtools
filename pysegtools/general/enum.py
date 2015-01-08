@@ -1,11 +1,23 @@
-# Back ported from Python 3. Some features were lost including keeping names in
-# order and automatic checking for duplicate names. Also required was a trimmed
-# copy of DynamicClassAttribute (difficult to find) and a new MappingProxyType
-# (which I call ReadOnlyDictionaryWrapper) because in Python 3 that one simply
-# is the built-in dictproxy with an available constructor.
+"""
+Back ported from Python 3. Some features were lost including keeping names in
+order and automatic checking for duplicate names. Also required was a trimmed
+copy of DynamicClassAttribute (difficult to find) and a new MappingProxyType
+(which I call ReadOnlyDictionaryWrapper) because in Python 3 that one simply
+is the built-in dictproxy with an available constructor.
+"""
+
+# pylint: disable=protected-access, no-member, star-args
+
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
 
 import sys
-from datawrapper import ReadOnlyDictionaryWrapper
+from collections import Sequence
+String = str if sys.version_info[0] == 3 else basestring
+
+from .datawrapper import ReadOnlyDictionaryWrapper
 
 __all__ = ['Enum', 'IntEnum', 'unique', 'Flags', 'IntFlags']
 
@@ -27,13 +39,11 @@ class DynamicClassAttribute(object):
         if instance is None or self.fget is None: raise AttributeError("unreadable attribute")
         return self.fget(instance)
     def __set__(self, instance, value): raise AttributeError("can't set attribute")
-    def getter(self, fget): return type(self)(fget, self.fset, fget.__doc__)
-    def setter(self, fset): return type(self)(self.fget, fset, fget.__doc__)
+    def getter(self, fget): return type(self)(fget)
 
 def _is_descriptor(obj):
     """Returns True if obj is a descriptor, False otherwise."""
-    return (
-            hasattr(obj, '__get__') or
+    return (hasattr(obj, '__get__') or
             hasattr(obj, '__set__') or
             hasattr(obj, '__delete__'))
 
@@ -65,14 +75,14 @@ Enum = None
 
 class EnumMeta(type):
     """Metaclass for Enum"""
-    def __new__(metacls, cls, bases, classdict):
+    def __new__(metacls, cls, bases, classdict): # pylint: disable=method-hidden
         # an Enum class is final once enumeration items have been defined; it
         # cannot be mixed with other types (int, float, etc.) if it has an
         # inherited __new__ unless a new __new__ is defined (or the resulting
         # class will fail).
         member_type, first_enum = metacls._get_mixins_(bases, Enum)
         __new__, save_new, use_args = metacls._find_new_(classdict, member_type,
-                                                        first_enum, Enum)
+                                                         first_enum, Enum)
 
         # save enum items into separate mapping so they don't get baked into
         # the new class
@@ -97,52 +107,14 @@ class EnumMeta(type):
 
         # check for a __getnewargs__, and if not present sabotage
         # pickling, since it won't work anyway
-        if (member_type is not object and
-            member_type.__dict__.get('__getnewargs__') is None
-            ):
+        if member_type is not object and member_type.__dict__.get('__getnewargs__') is None:
             _make_class_unpicklable(enum_class)
 
         # instantiate them, checking for duplicates as we go
         # we instantiate first instead of checking for duplicates first in case
         # a custom __new__ is doing something funky with the values -- such as
         # auto-numbering ;)
-        for member_name,value in members.iteritems():
-            if isinstance(value, type(lambda:None)): continue
-            if not isinstance(value, tuple):
-                args = (value, )
-            else:
-                args = value
-            if member_type is tuple:   # special case for tuple enums
-                args = (args, )     # wrap it one more time
-            if not use_args:
-                enum_member = __new__(enum_class)
-                if not hasattr(enum_member, '_value_'):
-                    enum_member._value_ = value
-            else:
-                enum_member = __new__(enum_class, *args)
-                if not hasattr(enum_member, '_value_'):
-                    enum_member._value_ = member_type(*args)
-            value = enum_member._value_
-            enum_member._name_ = member_name
-            enum_member.__objclass__ = enum_class
-            enum_member.__init__(*args)
-            # If another member with the same value was already defined, the
-            # new member becomes an alias to the existing one.
-            for name, canonical_member in enum_class._member_map_.items():
-                if canonical_member.value == enum_member._value_:
-                    enum_member = canonical_member
-                    break
-            else:
-                # Aliases don't appear in member names (only in __members__).
-                enum_class._member_names_.append(member_name)
-            enum_class._member_map_[member_name] = enum_member
-            try:
-                # This may fail if value is not hashable. We can't add the value
-                # to the map, and by-value lookups for this value will be
-                # linear.
-                enum_class._value2member_map_[value] = enum_member
-            except TypeError:
-                pass
+        metacls._instantiate_members_(enum_class, members, member_type, __new__, use_args)
 
         # double check that repr and friends are not the mixin's or various
         # things break (such as pickle)
@@ -163,7 +135,45 @@ class EnumMeta(type):
             enum_class.__new__ = Enum.__new__
         return enum_class
 
-    def __call__(cls, value, names=None, module=None, type=None):
+    @staticmethod
+    def _instantiate_members_(enum_class, members, member_type, __new__, use_args):
+        func_type = type(lambda:None)
+        for member_name,value in members.iteritems():
+            if isinstance(value, func_type): continue
+            args = (value,) if not isinstance(value, tuple) else value
+            if member_type is tuple: # special case for tuple enums
+                args = (args,)       # wrap it one more time
+            if not use_args:
+                enum_member = __new__(enum_class)
+                if not hasattr(enum_member, '_value_'):
+                    enum_member._value_ = value
+            else:
+                enum_member = __new__(enum_class, *args)
+                if not hasattr(enum_member, '_value_'):
+                    enum_member._value_ = member_type(*args)
+            value = enum_member._value_
+            enum_member._name_ = member_name
+            enum_member.__objclass__ = enum_class
+            enum_member.__init__(*args)
+            # If another member with the same value was already defined, the
+            # new member becomes an alias to the existing one.
+            for canonical_member in enum_class._member_map_.itervalues():
+                if canonical_member.value == enum_member._value_:
+                    enum_member = canonical_member
+                    break
+            else:
+                # Aliases don't appear in member names (only in __members__).
+                enum_class._member_names_.append(member_name)
+            enum_class._member_map_[member_name] = enum_member
+            try:
+                # This may fail if value is not hashable. We can't add the value
+                # to the map, and by-value lookups for this value will be
+                # linear.
+                enum_class._value2member_map_[value] = enum_member
+            except TypeError:
+                pass
+
+    def __call__(cls, value, names=None, module=None, typ=None):
         """Either returns an existing member, or creates a new enum class.
 
         This method is used both when an enum class is given a value to match
@@ -182,7 +192,7 @@ class EnumMeta(type):
         if names is None:  # simple value lookup
             return cls._member_map_[value] if value in cls._member_map_ else cls._value2member_map_[value]
         # otherwise, functional API: we're creating a new Enum type
-        return cls._create_(value, names, module=module, type=type)
+        return cls._create_(value, names, module=module, typ=typ)
 
     def __contains__(cls, member):
         return isinstance(member, cls) and member.name in cls._member_map_ or member in cls._value2member_map_
@@ -191,13 +201,11 @@ class EnumMeta(type):
         # nicer error message when someone tries to delete an attribute
         # (see issue19025).
         if attr in cls._member_map_:
-            raise AttributeError(
-                    "%s: cannot delete Enum member." % cls.__name__)
-        super(EnumMeta,cls).__delattr__(attr)
+            raise AttributeError("%s: cannot delete Enum member." % cls.__name__)
+        super(EnumMeta, cls).__delattr__(attr)
 
     def __dir__(self):
-        return (['__class__', '__doc__', '__members__', '__module__'] +
-                self._member_names_)
+        return (['__class__', '__doc__', '__members__', '__module__'] + self._member_names_)
 
     def __getattr__(cls, name):
         """Return the enum member matching `name`
@@ -251,9 +259,9 @@ class EnumMeta(type):
         member_map = cls.__dict__.get('_member_map_', {})
         if name in member_map:
             raise AttributeError('Cannot reassign members.')
-        super(EnumMeta,cls).__setattr__(name, value)
+        super(EnumMeta, cls).__setattr__(name, value)
 
-    def _create_(cls, class_name, names=None, module=None, type=None):
+    def _create_(cls, class_name, names=None, module=None, typ=None):
         """Convenience method to create a new Enum class.
 
         `names` can be:
@@ -266,18 +274,18 @@ class EnumMeta(type):
 
         """
         metacls = cls.__class__
-        bases = (cls, ) if type is None else (type, cls)
+        bases = (cls, ) if typ is None else (typ, cls)
         classdict = dict()
 
         # special processing needed for names?
-        if isinstance(names, basestring):
+        if isinstance(names, String):
             names = names.replace(',', ' ').split()
-        if isinstance(names, (tuple, list)) and isinstance(names[0], basestring):
+        if isinstance(names, Sequence) and isinstance(names[0], String):
             names = [(e, i) for (i, e) in enumerate(names, 1)]
 
         # Here, names is either an iterable of (name, value) or a mapping.
         for item in names:
-            if isinstance(item, basestring):
+            if isinstance(item, String):
                 member_name, member_value = item, names[item]
             else:
                 member_name, member_value = item
@@ -288,13 +296,14 @@ class EnumMeta(type):
         # module is ever developed
         if module is None:
             try:
-                module = sys._getframe(2).f_globals['__name__']
-            except (AttributeError, ValueError) as exc:
+                from sys import _getframe
+                module = _getframe(2).f_globals['__name__']
+            except (AttributeError, ValueError):
                 pass
         if module is None:
             _make_class_unpicklable(enum_class)
         else:
-            enum_class.__module__ = module
+            enum_class.__module__ = module # pylint: disable=attribute-defined-outside-init
 
         return enum_class
 
@@ -307,27 +316,24 @@ class EnumMeta(type):
         base_class: Enum or Flags
 
         """
-        if not bases or base_class == None:
+        if not bases or base_class is None:
             return object, base_class
 
         # double check that we are not subclassing a class with existing
         # enumeration members; while we're at it, see if any other data
         # type has been mixed in so we can use the correct __new__
         member_type = first_enum = None
-        for base in bases:
-            if  (base is not base_class and
-                    issubclass(base, base_class) and
-                    base._member_names_):
-                raise TypeError("Cannot extend enumerations")
+        if any(base is not base_class and issubclass(base, base_class) and base._member_names_
+               for base in bases): raise TypeError("Cannot extend enumerations")
         # base is now the last base in bases
-        if not issubclass(base, base_class):
+        if not issubclass(bases[-1], base_class):
             raise TypeError("new enumerations must be created as "
-                    "`ClassName([mixin_type,] enum_type)`")
+                            "`ClassName([mixin_type,] enum_type)`")
 
         # get correct mix-in type (either mix-in type of Enum subclass, or
         # first base if last base is Enum)
         if not issubclass(bases[0], base_class):
-            member_type = bases[0]     # first data type
+            member_type = bases[0]  # first data type
             first_enum = bases[-1]  # enum type
         else:
             for base in bases[0].__mro__:
@@ -372,8 +378,7 @@ class EnumMeta(type):
                             None,
                             None.__new__,
                             object.__new__,
-                            base_type.__new__,
-                            }:
+                            base_type.__new__}:
                         __new__ = target
                         break
                 if __new__ is not None:
@@ -392,7 +397,7 @@ class EnumMeta(type):
         return __new__, save_new, use_args
 
 
-class Enum:
+class Enum: # pylint: disable=function-redefined, no-init
     __metaclass__ = EnumMeta
     """Generic enumeration.
 
@@ -419,16 +424,14 @@ class Enum:
         raise ValueError("%s is not a valid %s" % (value, cls.__name__))
 
     def __repr__(self):
-        return "<%s.%s: %r>" % (
-                self.__class__.__name__, self._name_, self._value_)
+        return "<%s.%s: %r>" % (self.__class__.__name__, self._name_, self._value_)
 
     def __str__(self):
         return "%s.%s" % (self.__class__.__name__, self._name_)
 
     def __dir__(self):
         added_behavior = [m for m in self.__class__.__dict__ if m[0] != '_']
-        return (['__class__', '__doc__', '__module__', 'name', 'value'] +
-                added_behavior)
+        return (['__class__', '__doc__', '__module__', 'name', 'value'] + added_behavior)
 
     def __format__(self, format_spec):
         # mixed-in Enums should use the mixed-in type's __format__, otherwise
@@ -480,10 +483,8 @@ def unique(enumeration):
         if name != member.name:
             duplicates.append((name, member.name))
     if duplicates:
-        alias_details = ', '.join(
-                ["%s -> %s" % (alias, name) for (alias, name) in duplicates])
-        raise ValueError('duplicate values found in %r: %s' %
-                (enumeration, alias_details))
+        alias_details = ', '.join(["%s -> %s" % (alias, name) for (alias, name) in duplicates])
+        raise ValueError('duplicate values found in %r: %s' % (enumeration, alias_details))
     return enumeration
 
 
@@ -494,13 +495,7 @@ def unique(enumeration):
 # implicit values for bitwise combinations that are not explicity declared.
 
 from numbers import Integral
-from math import floor, log
-
-try:
-    # NumPy integral types should be be "Integral" but aren't so we register them
-    from numpy import byte, short, intc, int_, longlong, ubyte, ushort, uintc, uint, ulonglong
-    [Integral.register(x) for x in byte, short, intc, int_, longlong, ubyte, ushort, uintc, uint, ulonglong]
-except: pass
+#from math import floor, log
 
 def _get_bits_set(i):
     if i < 0:
@@ -523,13 +518,13 @@ Flags = None
 
 class FlagsMeta(EnumMeta):
     """Metaclass for Flags"""
-    def __new__(metacls, cls, bases, classdict):
+    def __new__(metacls, cls, bases, classdict): # pylint: disable=method-hidden
         # a Flags class is final once flag items have been defined; it
         # cannot be mixed with other types (int, float, etc.) if it has an
         # inherited __new__ unless a new __new__ is defined (or the resulting
         # class will fail).
         member_type, first_flags = metacls._get_mixins_(bases, Flags)
-        __new__, _save_new, _use_args = metacls._find_new_(classdict, member_type, first_flags, Flags)
+        __new__, _, _ = metacls._find_new_(classdict, member_type, first_flags, Flags)
 
         # save flags items into separate mapping so they don't get baked into
         # the new class
@@ -542,7 +537,7 @@ class FlagsMeta(EnumMeta):
         if invalid_names:
             raise ValueError('Invalid flag member name: {0}'.format(
                 ','.join(invalid_names)))
-        if any(m.find('|') >= 0 or m.find('~') >= 0 for m in members): 
+        if any(m.find('|') >= 0 or m.find('~') >= 0 for m in members):
             raise ValueError('Invalid flag member name: {0}'.format(
                 ','.join(m for m in members if m.find('|') >= 0 or m.find('~') >= 0)))
 
@@ -565,9 +560,7 @@ class FlagsMeta(EnumMeta):
 
         # check for a __getnewargs__, and if not present sabotage
         # pickling, since it won't work anyway
-        if (member_type is not object and
-            member_type.__dict__.get('__getnewargs__') is None
-            ):
+        if (member_type is not object and member_type.__dict__.get('__getnewargs__') is None):
             _make_class_unpicklable(flags_class)
 
         # instantiate them, checking for duplicates as we go
@@ -578,17 +571,18 @@ class FlagsMeta(EnumMeta):
             flags_member = metacls._create_member_(member_name, value, flags_class, True)
             if len(flags_member._bits_set_) == 0: flags_class._no_bits_ = flags_member
             else:                                 flags_class._mask_ |= flags_member._value_
-        if member_type is not object and flags_class._no_bits_ == None:
-            flags_class._no_bits_ = metacls._create_member_('_None', 0, flags_class, False)
-        
+        if member_type is not object and flags_class._no_bits_ is None:
+            name = next((name for name in ('None','NoFlags','NoneSet','None_','_None')
+                         if name not in members), None)
+            if name is not None:
+                flags_class._no_bits_ = metacls._create_member_(name, 0, flags_class, False)
 
         # double check that repr and friends are not the mixin's or various
         # things break (such as pickle)
         for name in ('__repr__', '__str__', '__format__', '__getnewargs__',
                      '__contains__', '__invert__',
                      '__and__', '__or__', '__xor__',
-                     '__rand__', '__ror__', '__rxor__', 
-                     ):
+                     '__rand__', '__ror__', '__rxor__'):
             class_method = getattr(flags_class, name)
             obj_method = getattr(member_type, name, None)
             flags_method = getattr(first_flags, name, None)
@@ -597,7 +591,7 @@ class FlagsMeta(EnumMeta):
 
         return flags_class
 
-    def __call__(cls, value, names=None, module=None, type=None):
+    def __call__(cls, value, names=None, module=None, typ=None):
         """Either returns an existing member, or creates a new flags class.
 
         This method is used both when a flags class is given a value to match
@@ -634,14 +628,14 @@ class FlagsMeta(EnumMeta):
                 # Start with one-sized sets
                 for bs in bits_set:
                     f = sets.pop(frozenset((bs,)), None)
-                    if f != None: flags[f._bits_set_] = f
-                    else:         missing.add(bs)
+                    if f is not None: flags[f._bits_set_] = f
+                    else:             missing.add(bs)
                 # While there are still some missing, move up in sizes
                 while len(missing) > 0:
                     # Update sets to only those with having at least one vertex in missing
                     sets = {fbs:f for fbs,f in sets.iteritems() if not fbs.isdisjoint(missing)}
                     # Select the flag that has the least number of vertices then the most in missing
-                    fbs = min(sets, key=lambda fbs:(len(fbs),len(fbs-missing)))
+                    fbs = min(sets, key=lambda fbs: (len(fbs), len(fbs-missing)))
                     # Update missing
                     missing -= fbs
                     # Remove flags from the selected set if they are covered by the addition of the new edge
@@ -656,7 +650,7 @@ class FlagsMeta(EnumMeta):
                 return cls._member_map_[value]
         else:
             # otherwise, functional API: we're creating a new Flags type
-            return cls._create_(value, names, module=module, type=type)
+            return cls._create_(value, names, module=module, typ=typ)
     def __contains__(cls, member): return isinstance(member, cls) and member.name in cls._member_map_ or (member & cls._mask_) == member
     def __dir__(self): return ['__mask__'] + super(FlagsMeta, self).__dir__()
 
@@ -689,7 +683,7 @@ class FlagsMeta(EnumMeta):
         flags_member.__init__(*args)
         # If another member with the same value was already defined, the
         # new member becomes an alias to the existing one.
-        for name, canonical_member in flags_class._member_map_.items():
+        for canonical_member in flags_class._member_map_.itervalues():
             if canonical_member.value == flags_member._value_:
                 flags_member = canonical_member
                 break
@@ -699,7 +693,7 @@ class FlagsMeta(EnumMeta):
         flags_class._value2member_map_[value] = flags_member
         return flags_member
 
-class Flags:
+class Flags: # pylint: disable=function-redefined, no-init
     __metaclass__ = FlagsMeta
     """Generic set of flags.
 

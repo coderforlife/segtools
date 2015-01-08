@@ -1,3 +1,8 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+
 from abc import ABCMeta, abstractproperty, abstractmethod
 from collections import Sequence
 from numpy import ndarray
@@ -14,6 +19,7 @@ class ImageSource(object):
     unless otherwise specified.
     """
     __metaclass__ = ABCMeta
+    
     @abstractproperty
     def w(self): pass
     @abstractproperty
@@ -72,17 +78,17 @@ class DeferredPropertiesImageSource(ImageSource):
     
     @property
     def w(self):
-        if self._w == None: self._get_props()
+        if self._w is None: self._get_props()
         return self._w
     @property
     def h(self):
-        if self._h == None: self._get_props()
+        if self._h is None: self._get_props()
         return self._h
     @property
     def shape(self):
-        if self._shape == None: self._get_props()
+        if self._shape is None: self._get_props()
         return self._shape
     @property
     def dtype(self):
-        if self._dtype == None: self._get_props()
+        if self._dtype is None: self._get_props()
         return self._dtype

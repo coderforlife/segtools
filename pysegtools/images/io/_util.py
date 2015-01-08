@@ -1,9 +1,15 @@
 """Utilities for IO library use."""
 
-import os
-from io import open, FileIO, IOBase, BufferedIOBase, SEEK_SET, SEEK_CUR, SEEK_END
-from numpy import fromfile, fromstring, nditer, empty
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
 
+import os, sys, io
+from numpy import fromfile, nditer, empty, prod
+from numbers import Integral
+
+from .._util import String
 from ...general.gzip import GzipFile
 from ...general.enum import Flags
 
@@ -23,7 +29,7 @@ class FileMode(int, Flags):
 
     @staticmethod
     def from_string(mode):
-        m = FileMode._None
+        m = FileMode(0)
         if 'r' in mode: m |= FileMode.Read
         if 'w' in mode: m |= FileMode.Write | FileMode.Truncate
         if 'a' in mode: m |= FileMode.Append
@@ -45,14 +51,17 @@ class FileMode(int, Flags):
         if FileMode.Binary in mode: m += 'b'
         return m
     
+__is_py3 = sys.version_info[0] == 3
 def isfileobj(f):
     """
     Checks if f is an object that can be given to fromfile and tofile. This includes strings of
     filenames and file objects (from open()). Not included are file-like objects which cannot be
     directly used by fromfile and tofile.
     """
-    # TODO: are FileIO and BufferedIOBase usable in NumPy? or only in Python 3?
-    return isinstance(f, (basestring, file))
+    if sys.version_info[0] == 3:
+        return isinstance(f, (String, io.FileIO)) or (isinstance(f, io.BufferedIOBase) and hasattr(f, 'raw') and isinstance(f.raw, io.FileIO))
+    else:
+        return isinstance(f, (String, file))
 
 def openfile(f, mode, compression=None, comp_level=9, off=None):
     """
@@ -63,16 +72,16 @@ def openfile(f, mode, compression=None, comp_level=9, off=None):
     to the starting offset for you (if negative and no compression, will seek from end).
     """
     if compression not in (None, 'deflate', 'zlib', 'gzip', 'auto') or compression and off < 0: raise ValueError
-    compressing = compression != None
+    compressing = compression is not None
     if compression == 'auto': compression = None
-    if isinstance(f, basestring):
+    if isinstance(f, String):
         if compressing: return GzipFile(f, mode, type=compression, level=comp_level, start_off=off)
-        f = open(f, mode)
-    elif isinstance(f, IOBase): f = f if hasattr(f, 'mode') and mode == f.mode else open(f.fileno(), mode)
-    elif isinstance(f, file) or hasattr(f, 'fileno'): f = open(f.fileno(), mode)
+        f = io.open(f, mode)
+    elif isinstance(f, io.IOBase): f = f if hasattr(f, 'mode') and mode == f.mode else io.open(f.fileno(), mode)
+    elif sys.version_info[0] == 2 and (isinstance(f, file) or hasattr(f, 'fileno')): f = io.open(f.fileno(), mode)
     try:
         if compressing: f = GzipFile(f, type=compression, level=comp_level, start_off=off)
-        elif off:       f.seek(off, SEEK_END if off < 0 else SEEK_SET)
+        elif off:       f.seek(off, io.SEEK_END if off < 0 else io.SEEK_SET)
     except:
         f.close()
         raise
@@ -91,12 +100,12 @@ def imread_raw(f, shape, dtype, order='C'):
         if f.readinto(im.data) != len(im.data): raise ValueError
         return im
 
-def imskip_raw(f, shape, dtype, order='C'):
+def imskip_raw(f, shape, dtype):
     """
     Skip the raw image data from a file or file-like object. The shape, dtype, and order are that of
     the image. The shape does not include the dtype shape.
     """
-    f.seek(prod(shape)*dtype.itemsize, SEEK_CUR)
+    f.seek(prod(shape)*dtype.itemsize, io.SEEK_CUR)
 
 def imsave_raw(f, im):
     """Save the raw image data to a file or file-like object."""
@@ -174,10 +183,13 @@ def imsave_ascii_raw(f, im):
 
 def get_file_size(f):
     """Get the size of a file, either from the filename, the file-number, or seeking and telling."""
-    if isinstance(f, basestring): return os.path.getsize(f)
+    if isinstance(f, String): return os.path.getsize(f)
     else:
-        try: return os.fstat(f.fileno()).st_size
-        except: f.seek(0,SEEK_END); return f.tell()
+        try:
+            return os.fstat(f.fileno()).st_size
+        except OSError:
+            f.seek(0, io.SEEK_END)
+            return f.tell()
 
 def _copy_data(f, src, dst, buf):
     f.seek(src)
@@ -194,7 +206,7 @@ def _copy_data_complete(f, src, dst, buf):
     n = 0
     while n < len(buf): n += f.write(buf[n:])
 
-def copy_data(f, src, dst, size=None, truncate=None, buf_size=16777216):
+def copy_data(f, src, dst, size=None, truncate=None, buf=16777216):
     """
     Copy data within a single file-like object `f` from `src` offset to `dst` offset of `size`
     bytes possibly truncating the file at `dst`+`size`. If `size` is not provided or is None, all
@@ -213,15 +225,19 @@ def copy_data(f, src, dst, size=None, truncate=None, buf_size=16777216):
         return
 
     # Setup buffers
-    buf_raw = bytearray(buf_size)
-    buf = memoryview(buf_raw) # allows us to slice without copying
+    if isinstance(buf, Integral):
+        buf_size = buf
+        buf_raw = bytearray(buf)
+        buf = memoryview(buf_raw) # allows us to slice without copying
+    else:
+        buf_size = len(buf)
 
     if src < dst:
         # Copy data moving backwards
         if dst_end > file_size: f.truncate(dst_end)
         src, dst = src_end - buf_size, dst_end - buf_size
         while src > src_start:
-            copied = _copy_data_complete(f, src, dst, buf)
+            _copy_data_complete(f, src, dst, buf)
             src -= buf_size
             dst -= buf_size
         if src < src_start: _copy_data_complete(f, src_start, dst_start, buf[:buf_size-src_start])
@@ -275,6 +291,6 @@ def file_remove_ranges(f, ranges, buf_size=16777216): # 16 MB
     for i in keep_ints:
         n = i.upper_bound - i.lower_bound
         if position != i.lower_bound:
-            copy_data(f, i.lower_bound, position, n)
+            copy_data(f, i.lower_bound, position, n, buf=buf)
         position += n
     f.truncate(position)

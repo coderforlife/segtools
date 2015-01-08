@@ -1,8 +1,13 @@
-"""Base IO functions."""
+"""IO functions for reading, writing and querying 2D image formats, or 'single slices'."""
 
-from numpy import bool_, uint8,uint16,uint32, int8,int16,int32, float16,float32,float64
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+
+from numpy import bool_, uint8,uint16,uint32, int8,int16,int32, float32,float64 #float16
 from sys import byteorder
-from ..types import create_im_dtype as dt, check_image, get_im_dtype_and_nchan
+from ..types import create_im_dtype as d, check_image, get_im_dtype_and_nchan
 
 __all__ = ['iminfo','imread','imsave']
 
@@ -12,23 +17,23 @@ __pil_mode_to_dtype = {
     #'P' is a special case
     # Some of these modes will actually never show up because they are raw modes.
     
-    'RGB': dt(uint8,False,3), 'RGBX':dt(uint8,False,4), # however the fourth one is "padding"
-    'RGBA':dt(uint8,False,4), 'RGBa':dt(uint8,False,4), # non-premultiplied and pre-multiplied
-    'CMYK':dt(uint8,False,4), 'YCbCr':dt(uint8,False,3),
-    'LAB': dt(uint8,False,3), 'HSV':dt(uint8,False,3),
-    'LA':  dt(uint8,False,2), # grayscale with alpha
+    'RGB': d(uint8,False,3), 'RGBX':d(uint8,False,4), # however the fourth one is "padding"
+    'RGBA':d(uint8,False,4), 'RGBa':d(uint8,False,4), # non-premultiplied and pre-multiplied
+    'CMYK':d(uint8,False,4), 'YCbCr':d(uint8,False,3),
+    'LAB': d(uint8,False,3), 'HSV':d(uint8,False,3),
+    'LA':  d(uint8,False,2), # grayscale with alpha
 
-    '1':dt(bool_),'L':dt(uint8),'I':dt(int32,__native),
-    'I;8':dt(uint8),'I;8S':dt(int8),
-    'I;16':dt(uint16),'I;16L':dt(uint16),'I;16B':dt(uint16,True),'I;16N':dt(uint16,__native),
-    'I;16S':dt(int16),'I;16LS':dt(int16),'I;16BS':dt(int16,True),'I;16NS':dt(int16,__native),
-    'I;32':dt(uint32),'I;32L':dt(uint32),'I;32B':dt(uint32,True),'I;32N':dt(uint32,__native),
-    'I;32S':dt(int32),'I;32LS':dt(int32),'I;32BS':dt(int32,True),'I;32NS':dt(int32,__native),
+    '1':d(bool_),'L':d(uint8),'I':d(int32,__native),
+    'I;8':d(uint8),'I;8S':d(int8),
+    'I;16':d(uint16),'I;16L':d(uint16),'I;16B':d(uint16,True),'I;16N':d(uint16,__native),
+    'I;16S':d(int16),'I;16LS':d(int16),'I;16BS':d(int16,True),'I;16NS':d(int16,__native),
+    'I;32':d(uint32),'I;32L':d(uint32),'I;32B':d(uint32,True),'I;32N':d(uint32,__native),
+    'I;32S':d(int32),'I;32LS':d(int32),'I;32BS':d(int32,True),'I;32NS':d(int32,__native),
     
-    'F':dt(float32,__native),
-    #'F;16F':dt(float16),'F;16BF':dt(float16,True),'F;16NF':dt(float16,__native),
-    'F;32F':dt(float32),'F;32BF':dt(float32,True),'F;32NF':dt(float32,__native),
-    'F;64F':dt(float64),'F;64BF':dt(float64,True),'F;64NF':dt(float64,__native),
+    'F':d(float32,__native),
+    #'F;16F':d(float16),'F;16BF':dt(float16,True),'F;16NF':dt(float16,__native),
+    'F;32F':d(float32),'F;32BF':d(float32,True),'F;32NF':d(float32,__native),
+    'F;64F':d(float64),'F;64BF':d(float64,True),'F;64NF':d(float64,__native),
 }
 __dtype_to_pil_mode = { # mode, rawmode (little endian), rawmode (big endian)
     # Multi-channel and bit images are special cases
@@ -42,6 +47,7 @@ __dtype_to_pil_mode = { # mode, rawmode (little endian), rawmode (big endian)
     float32:('F','F;32F','F;32BF'),
     float64:('F','F;64F','F;64BF'),
 }
+del d
 
 
 def iminfo(filename):
@@ -78,7 +84,7 @@ def __iminfo_register(ext, info):
     Setting an extension to None will remove it.
     """
     if ext[0] != '.': ext = '.' + ext
-    if info == None:
+    if info is None:
         try: del iminfo.formats[ext.lower()]
         except KeyError: pass
     elif not callable(info): raise TypeError
@@ -120,7 +126,7 @@ def __imread_register(ext, read):
     association. Setting an extension to None will remove it.
     """
     if ext[0] != '.': ext = '.' + ext
-    if read == None:
+    if read is None:
         try: del imread.formats[ext.lower()]
         except KeyError: pass
     elif not callable(read): raise TypeError
@@ -174,7 +180,7 @@ def _imsave_register(ext, save):
     overwrite any previous association. Setting an extension to None will remove it.
     """
     if ext[0] != '.': ext = '.' + ext
-    if save == None:
+    if save is None:
         try: del imsave.formats[ext.lower()]
         except KeyError: pass
     elif not callable(save): raise TypeError
@@ -183,4 +189,4 @@ imsave.formats = {}
 imsave.register = _imsave_register
 
 # Import additional formats
-import formats
+from . import formats # pylint: disable=unused-import

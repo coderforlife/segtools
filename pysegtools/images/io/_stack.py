@@ -1,16 +1,25 @@
+#pylint: disable=protected-access
+
+from __future__ import absolute_import
 from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+
 from abc import ABCMeta, abstractmethod
 from collections import Iterable, OrderedDict
 from numbers import Integral
-from itertools import repeat
+from itertools import repeat, izip
 from numpy import ndarray, ceil
+import functools
 
 from .._stack import ImageStack, HomogeneousImageStack, ImageSlice, Homogeneous
+from .._util import String
 from ..types import is_image, get_im_dtype
 from ..source import ImageSource
 from ...imstack import Help
 from ...general.datawrapper import DictionaryWrapperWithAttr
 from ...general.enum import Enum
+from ...general.utils import all_subclasses
 
 __all__ = ['FileImageStack','HomogeneousFileImageStack','FileImageSlice','FileImageStackHeader','Field','FixedField','NumericField','MatchQuality']
 
@@ -57,9 +66,9 @@ class FileImageStack(ImageStack):
         string then it is treated as an existing file. Otherwise it needs to be an iterable of
         file names. Extra options are only supported by some file formats. 
         """
-        if isinstance(filename, basestring):
+        if isinstance(filename, String):
             highest_cls, highest_mq = None, MatchQuality.NotAtAll
-            for cls in cls._get_all_subclasses():
+            for cls in all_subclasses(cls):
                 if not cls._can_read() or not (readonly or cls._can_write()): continue
                 with open(filename, 'r') as f: mq = cls._openable(f, **options)
                 if mq > highest_mq: highest_cls, highest_mq = cls, mq
@@ -67,7 +76,7 @@ class FileImageStack(ImageStack):
             if highest_mq == MatchQuality.NotAtAll: raise ValueError('Unknown file format')
             return highest_cls.open(filename, readonly, **options)
         elif isinstance(filename, Iterable):
-            from _collection import FileCollectionStack
+            from ._collection import FileCollectionStack
             return FileCollectionStack.open(filename, readonly, **options)
         else: raise ValueError()
         
@@ -80,12 +89,13 @@ class FileImageStack(ImageStack):
         some file formats.
         """
         try:
-            if isinstance(filename, basestring):
-                for cls in cls._get_all_subclasses():
+            if isinstance(filename, String):
+                for cls in all_subclasses(cls):
                     with open(filename, 'r') as f:
-                        if cls._can_read() and (readonly or cls._can_write()) and cls._openable(f, **options) > MatchQuality.NotAtAll: return True
+                        if cls._can_read() and (readonly or cls._can_write()) \
+                           and cls._openable(f, **options) > MatchQuality.NotAtAll: return True
             elif isinstance(filename, Iterable): return True
-        except: pass
+        except StandardError: pass
         return False
         
     @classmethod
@@ -104,19 +114,19 @@ class FileImageStack(ImageStack):
         options given.
         """
         ims = [ImageSource.as_image_source(im) for im in ims]
-        if isinstance(filename, basestring):
+        if isinstance(filename, String):
             from os.path import splitext
             ext = splitext(filename)[1].lower().lstrip('.')
             highest_cls, highest_mq = None, MatchQuality.NotAtAll
-            for cls in cls._get_all_subclasses():
+            for cls in all_subclasses(cls):
                 if not cls._can_write(): continue
                 mq = cls._creatable(filename, ext, **options)
                 if mq > highest_mq: highest_cls, highest_mq = cls, mq
                 if mq == MatchQuality.Definitely: break
             if highest_mq == MatchQuality.NotAtAll: raise ValueError('Unknown file extension')
             return highest_cls.create(filename, ims, **options)
-        elif filename == None or isinstance(filename, Iterable):
-            from _collection import FileCollectionStack
+        elif filename is None or isinstance(filename, Iterable):
+            from ._collection import FileCollectionStack
             return FileCollectionStack.create(filename, ims, **options)
         else: raise ValueError()
         
@@ -129,26 +139,26 @@ class FileImageStack(ImageStack):
         "pattern" option with an extension and %d in it. 
         """
         try:
-            if isinstance(filename, basestring):
+            if isinstance(filename, String):
                 from os.path import splitext
                 ext = splitext(filename)[1].lower().lstrip('.')
-                return any(cls._can_write() and cls._creatable(filename, ext, **options)>MatchQuality.NotAtAll
-                           for cls in cls._get_all_subclasses())
-            elif filename == None or isinstance(filename, Iterable): return True
-        except: pass
+                return any(cls._can_write() and cls._creatable(filename, ext, **options)>MatchQuality.NotAtAll #pylint: disable=star-args
+                           for cls in all_subclasses(cls))
+            elif filename is None or isinstance(filename, Iterable): return True
+        except StandardError: pass
         return False
 
     @classmethod
     def formats(cls, read=True):
-        formats = []
-        for cls in cls._get_all_subclasses():
+        frmts = []
+        for cls in all_subclasses(cls):
             f = cls.name()
             if f is not None and (read and cls._can_read or not read and cls._can_write):
-                formats.append(f)
-        return formats
+                frmts.append(f)
+        return frmts
 
     @classmethod
-    def _openable(cls, f, **opts):
+    def _openable(cls, f, **opts): #pylint: disable=unused-argument
         """
         [To be implemented by format, default is nothing is openable]
         
@@ -163,7 +173,7 @@ class FileImageStack(ImageStack):
         return MatchQuality.NotAtAll
 
     @classmethod
-    def _creatable(cls, filename, ext, **opts):
+    def _creatable(cls, filename, ext, **opts): #pylint: disable=unused-argument
         """
         [To be implemented by format, default is nothing is creatable]
 
@@ -223,10 +233,10 @@ class FileImageStack(ImageStack):
     def header(self): return self._header
     def print_detailed_info(self, width=None): # TODO: use width
         super(FileImageStack, self).print_detailed_info()
-        if len(self.header) == 0: print "No header information"
+        if not self.header or len(self.header) == 0: print("No header information")
         else:
-            print "Header:"
-            for k,v in self._header.iteritems(): print "  %s = %s" % (k,v)
+            print("Header:")
+            for k,v in self._header.iteritems(): print("  %s = %s" % (k,v))
 
     # Internal slice maniplutions - primary functions to be implemented by base classes
     # Getting and setting individual slices is done in the FileImageSlice objects
@@ -265,7 +275,7 @@ class FileImageStack(ImageStack):
         
 
     # Caching of slices
-    def __update_cache(self, c): self._cache = OrderedDict(zip(c, repeat(True)))
+    def __update_cache(self, c): self._cache = OrderedDict(izip(c, repeat(True)))
     
     def _delete_slices(self, start, stop):
         ss = stop - start
@@ -327,37 +337,40 @@ class FileImageStack(ImageStack):
         garbage data if a subsequent set operation raises an exception.
         """
         if self._readonly: raise Exception('readonly')
-        if isinstance(idx, Integral):
-            if idx < 0: idx += self._d
-            if not (0 <= idx <= self._d): raise IndexError()
-            if idx == self._d: self._insert(idx, [ImageSource.as_image_source(im)])
-            else:              self._slices[idx].data = im
-        elif isinstance(idx, slice):
-            start, stop, step = idx.indices(self._d)
-            length = slice_len(start, stop, step)
-            ims = [ImageSource.as_image_source(im) for im in ims]
-            if step == +1:
-                for i in xrange(min(length, len(ims))): self._slices[start+i].data = ims[i]
-                if   len(ims) < length: self._delete([(start+len(ims), stop)])
-                elif len(ims) > length: self._insert(stop, ims[length:])
-            elif step == -1:
-                for i in xrange(min(length, len(ims))): self._slices[start-i].data = ims[i]
-                if   len(ims) < length: self._delete([(stop, start-len(ims)+1)])
-                elif len(ims) > length: self._insert(stop+1, ims[:length-1:-1])
-            elif len(ims) != length:
-                raise ValueError("setting slices with |step|>1 requires an iterable of the same length as the indices")
-            else:
-                for i, im in enumerate(ims): self._slices[start+i*step].data = im
-        elif isinstance(idx, Iterable):
-            idx = [check_int(i+self._d) if i < 0 else i for i in idx]
-            reduce(lambda d,i: (d+1 if i==d else d) if 0<=i<=d else [][0], idx, self._d) # check if any indicies will be out of range - [][0] causes an IndexError
-            ims = [ImageSource.as_image_source(im) for im in ims]
-            if len(ims) != len(idx):
-                raise ValueError("setting iterable indices requires an iterable of the same length as the indices")
-            for i, im in zip(idx, ims):
-                if i == self._d: self._insert(self._d, [im])
-                else:            self._slices[i].data = im
+        if isinstance(idx, Integral): self.__set_int(idx, ims)
+        elif isinstance(idx, slice): self.__set_slice(idx, ims)
+        elif isinstance(idx, Iterable): self.__set_iter(idx, ims)
         else: raise TypeError('index')
+    def __set_int(self, idx, ims):
+        if idx < 0: idx += self._d
+        if not (0 <= idx <= self._d): raise IndexError()
+        if idx == self._d: self._insert(idx, [ImageSource.as_image_source(ims)])
+        else:              self._slices[idx].data = ims
+    def __set_slice(self, idx, ims):
+        start, stop, step = idx.indices(self._d)
+        length = slice_len(start, stop, step)
+        ims = [ImageSource.as_image_source(im) for im in ims]
+        if step == +1:
+            for i in xrange(min(length, len(ims))): self._slices[start+i].data = ims[i]
+            if   len(ims) < length: self._delete([(start+len(ims), stop)])
+            elif len(ims) > length: self._insert(stop, ims[length:])
+        elif step == -1:
+            for i in xrange(min(length, len(ims))): self._slices[start-i].data = ims[i]
+            if   len(ims) < length: self._delete([(stop, start-len(ims)+1)])
+            elif len(ims) > length: self._insert(stop+1, ims[:length-1:-1])
+        elif len(ims) != length:
+            raise ValueError("setting slices with |step|>1 requires an iterable of the same length as the indices")
+        else:
+            for i, im in enumerate(ims): self._slices[start+i*step].data = im
+    def __set_iter(self, idx, ims):
+        idx = [check_int(i+self._d) if i < 0 else i for i in idx]
+        functools.reduce(lambda d,i: (d+1 if i==d else d) if 0<=i<=d else [][0], idx, self._d) # check if any indicies will be out of range - [][0] causes an IndexError
+        ims = [ImageSource.as_image_source(im) for im in ims]
+        if len(ims) != len(idx):
+            raise ValueError("setting iterable indices requires an iterable of the same length as the indices")
+        for i, im in izip(idx, ims):
+            if i == self._d: self._insert(self._d, [im])
+            else:            self._slices[i].data = im
     def append(self, im):
         """Appends a single slice, writing it to disk."""
         # equivilient to self[len(self)] = im
@@ -437,14 +450,17 @@ class HomogeneousFileImageStack(HomogeneousImageStack, FileImageStack):
     An file-based image stack where every slice has the same shape and data type.
     """
     def __init__(self, header, slices, w, h, dtype, readonly=False):
-        FileImageStack.__init__(self, header, slices, readonly)
-        HomogeneousImageStack._init_props(self, w, h, dtype)
+        super(HomogeneousFileImageStack, self).__init__(self, w, h, dtype, slices, {'header':header,'readonly':readonly})
     def print_detailed_info(self, width=None): # TODO: use width
         super(HomogeneousFileImageStack, self).print_detailed_info()
-        if len(self.header) == 0: print "No header information"
+        if len(self.header) == 0: print("No header information")
         else:
-            print "Header:"
-            for k,v in self._header.iteritems(): print "  %s = %s" % (k,v)
+            print("Header:")
+            for k,v in self._header.iteritems(): print("  %s = %s" % (k,v))
+    @abstractmethod
+    def _delete(self, idxs): pass
+    @abstractmethod
+    def _insert(self, idx, ims): pass
 
 class FileImageSlice(ImageSlice):
     """
@@ -455,7 +471,7 @@ class FileImageSlice(ImageSlice):
     def __init__(self, stack, z): super(FileImageSlice, self).__init__(stack, z)
 
     @ImageSlice.data.setter
-    def data(self, im):
+    def set_data(self, im):
         self._cache_data(self._set_data(ImageSource.as_image_source(im)))
 
     def _cache_data(self, im):
@@ -495,12 +511,12 @@ class FileImageStackHeader(DictionaryWrapperWithAttr):
     be created for common header values between different types.
 
     **Implementation Notes**
-    The implementor must set the class fields _imstack, _fields, and _data before calling
-    super.__init__(). These contain the image stack for which this header is connected to, the
+    The implementor must set the class fields _imstack and _fields before calling
+    super().__init__(). These contain the image stack for which this header is connected to, the
     known fields as a dictionary or ordered dictionary containing field-name to Field object, and
-    the data for those fields as a dictionary of field-name to data. If you wish to delay-load, then
-    make sure to call super._check() whenever the header is loaded (and do not call
-    super.__init__()).
+    the data for those fields as a dictionary of field-name to data. Whenever _data or _fields are
+    changed directly you must call super()._check(). This is called for you automatically in
+    super().__init__().
 
     The functions self.save(), self._update_depth(d), and self._get_field_name(f) must also be
     implemented. More information about those is provided in the abstract definitions.
@@ -511,14 +527,15 @@ class FileImageStackHeader(DictionaryWrapperWithAttr):
     """
     __metaclass__ = ABCMeta
 
-    def __init__(self):
+    def __init__(self, data=None):
+        super(FileImageStackHeader, self).__init__({} if data is None else data)
         if any((x not in self.__dict__) for x in ('_imstack', '_fields', '_data')): raise TypeError
         self._check()
 
     def _check(self):
         for _key,value in self._data.items():
             key = self._get_field_name(_key)
-            if key == None: raise KeyError('%s cannot be in header' % _key)
+            if key is None: raise KeyError('%s cannot be in header' % _key)
             if key != _key: # key was changed, update data
                 self._data[key] = value
                 del self._data[_key]
@@ -591,29 +608,30 @@ class FileImageStackHeader(DictionaryWrapperWithAttr):
     def __setitem__(self, key, value):
         if self._imstack._readonly: raise AttributeError('header is readonly')
         _key, key = key, self._get_field_name(key)
-        if key == None: raise KeyError('%s cannot be added to header' % _key)
+        if key is None: raise KeyError('%s cannot be added to header' % _key)
         f = self._fields.get(key, None)
-        if f == None: self._data[key] = value
+        if f is None: self._data[key] = value
         elif f.ro: raise AttributeError('%s cannot be edited in header' % _key)
         else: self._data[key] = f.cast(value, self)
     def setdefault(self, key, default = DictionaryWrapperWithAttr._marker):
         if self._imstack._readonly: raise AttributeError('header is readonly')
         _key, key = key, self._get_field_name(key)
-        if key == None: raise KeyError('%s cannot be added to header' % _key)
+        if key is None: raise KeyError('%s cannot be added to header' % _key)
         if key not in self._data:
-            if default is DictionaryWrapper._marker: raise KeyError
+            if default is DictionaryWrapperWithAttr._marker: raise KeyError
             f = self._fields.get(key, None)
-            if f == None: self._data[key] = default
+            if f is None: self._data[key] = default
             elif f.ro: raise AttributeError('%s cannot be edited in header' % _key)
             else: self._data[key] = f.cast(default, self)
         return self._data[key]
     def update(self, d=None, **kwargs):
         if self._imstack._readonly: raise AttributeError('header is readonly')
-        if d == None: d = kwargs
+        if d is None: d = kwargs
         itr = d.iteritems() if isinstance(d, dict) else d
         for k,v in itr: self[k] = v
 
-class Field():
+class Field(object):
+    # TODO: re-use the casting system from the command-line parsing 
     """
     A image stack header field. The base class takes a casting function, if the value is read-only
     (to the external world, default False), if the field is optional (default True), and a default
@@ -627,7 +645,7 @@ class Field():
         self.ro    = ro
         self.opt   = opt
         # TODO: use default value somewhere
-    def cast(self, v, h): return self._cast(v)
+    def cast(self, v, h): return self._cast(v) #pylint: disable=unused-argument
 class FixedField(Field):
     """
     This is an image stack header field that can have only one value ever. It is readonly. We still
@@ -635,30 +653,27 @@ class FixedField(Field):
     from cast to see if it is identical to the value we are fixed to.
     """
     def __init__(self, cast, value, opt=True):
-        self._cast = cast
+        super(FixedField, self).__init__(cast, True, opt, value)
         self.value = cast(value)
-        self.ro    = True
-        self.opt   = opt
     def cast(self, v, h):
         if self._cast(v) != self.value: raise ValueError
         return self.value
 class NumericField(Field):
     """
     A numeric-based field. By default the casting operator is "int" and no upper or lower bound is
-    placed on the value. You can set cast, min, and max to change this behavior.
+    placed on the value. You can set cast, lower, and upper to change this behavior.
     """
-    def __init__(self, cast=int, min=None, max=None, ro=False, opt=True, default=None):
-        # Note: min and max are inclusive, if None no restriction on that end
-        self._cast = cast
-        self.min   = cast(min) if min != None else None
-        self.max   = cast(max) if max != None else None
-        self.ro    = ro
-        self.opt   = opt
+    def __init__(self, cast=int, lower=None, upper=None, ro=False, opt=True, default=None):
+        # Note: lower/min and upper/max are inclusive, if None no restriction on that end
+        super(NumericField, self).__init__(cast, ro, opt, default)
+        self.min = cast(lower) if lower is not None else None
+        self.max = cast(upper) if upper is not None else None
     def cast(self, v, h):
         v = self._cast(v)
-        if self.min != None and v < self.min or self.max != None and v > self.max: raise ValueError('value not in range')
+        if (self.min is not None and v < self.min) or (self.max is not None and v > self.max):
+            raise ValueError('value not in range')
         return v
 
 # Import formats and commands
-import formats
-import _commands
+from . import formats   #pylint: disable=unused-import
+from . import _commands #pylint: disable=unused-import

@@ -1,6 +1,11 @@
 """Here are the "built-in" commands for imstack: select, remove, and info"""
 
-from imstack import Command, CommandEasy, Opt, Help
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+
+from .imstack import Command, CommandEasy, Opt, Help
 
 class SelectCommand(Command):
     @classmethod
@@ -15,12 +20,12 @@ class SelectCommand(Command):
 Since numerous image stacks may be open simultaneously and you may want to not work with last image
 stack produce you need a way to select which image stack to work with. With this command you can
 also duplicate immage stacks.""")
-        print ""
+        p.newline()
         p.flags(cls.flags())
-        print ""
+        p.newline()
         p.text("Command format:")
         p.cmds("--select image-stack-numbers-or-slices ...")
-        print ""
+        p.newline()
         p.text("""
 The command is simply followed by a series or numbers or slices. These are the image stacks that you
 wish to move to the front of the line, to be worked with next. A value of 0 would be the image stack
@@ -41,7 +46,7 @@ Examples:""")
                "--select 0 0    # adds a copy of the top image stack to the top",
                "--select -1     # bottom image stack goes to the top",
                "--select :-2:   # every other image stack is brought to the top")
-        print ""
+        p.newline()
         p.text("See also:")
         p.list('remove')
     def __str__(self): return "Selecting "+(", ".join(self._inds))
@@ -58,11 +63,11 @@ Examples:""")
                     parts = [int(i) if len(i) > 0 else None for i in arg.split(':', 2)]
                     start, stop, step = parts[0], parts[-1], ((parts[2] if len(parts) == 2 else None) or 1)
                     if step > 0:
-                        start = 0         if start is None else ((ls+start) if start < 0 else start)
-                        stop  = (last_ind if stop  is None else ((ls+stop)  if stop  < 0 else stop))+1
+                        start = 0         if start is None else ((last_ind+start) if start < 0 else start)
+                        stop  = (last_ind if stop  is None else ((last_ind+stop)  if stop  < 0 else stop))+1
                     else: # step < 0
-                        start = last_ind if start is None else ((ls+start) if start < 0 else start)
-                        stop  = (0       if stop  is None else ((ls+stop)  if stop  < 0 else stop))-1
+                        start = last_ind if start is None else ((last_ind+start) if start < 0 else start)
+                        stop  = (0       if stop  is None else ((last_ind+stop)  if stop  < 0 else stop))-1
                     self._inds.extend(xrange(start, stop, step))
                 else:
                     i = int(arg)
@@ -82,12 +87,12 @@ class RemoveCommand(SelectCommand):
         p = Help(width)
         p.title("Removing Image Stacks")
         p.text("Sometimes commands produce image stacks that you don't actually want to use and this command allows you to remove them.")
-        print ""
+        p.newline()
         p.flags(cls.flags())
-        print ""
+        p.newline()
         p.text("Command format:")
         p.cmds("--remove image-stack-numbers-or-slices ...")
-        print ""
+        p.newline()
         p.text("""
 The command is simply followed by a series or numbers or slices. These are the image stacks that you
 wish to remove from being processed. A value of 0 would be the image stack that is going to be next,
@@ -104,7 +109,7 @@ Examples:""")
                "--remove 0:2    # same as above",
                "--remove -1     # remove the bottom image stack",
                "--remove :2:    # remove every other image stack")
-        print ""
+        p.newline()
         p.text("See also:")
         p.list('select')
     def __str__(self): return "Removing "+(", ".join(self._inds))
@@ -115,6 +120,7 @@ Examples:""")
     def execute(self, stack): stack.remove(self._inds)
 
 class InfoCommand(CommandEasy):
+    _detailed = None # suppresses pylint warning
     @classmethod
     def name(cls): return 'info'
     @classmethod
@@ -128,11 +134,11 @@ class InfoCommand(CommandEasy):
     def __str__(self): return "Detailed Information" if self._detailed else "Information"
     def execute(self, stack):
         n = len(stack)
-        print ("There are %d image stacks available"%n) if n!=1 else "There is 1 image stack available"
+        print(("There are %d image stacks available"%n) if n!=1 else "There is 1 image stack available")
         if self._detailed:
             for i,ims in enumerate(stack):
-                print "Stack %d"%(n-i-1)
+                print("Stack %d"%(n-i-1))
                 Help.print_stack(ims, True)
         else:
             s = "%0"+str(len(str(n-1)))+"d: %s"
-            for i,ims in enumerate(stack): print s%((n-i-1),ims)
+            for i,ims in enumerate(stack): print(s%((n-i-1),ims))
