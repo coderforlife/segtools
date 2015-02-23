@@ -56,7 +56,7 @@ from __future__ import unicode_literals
 
 import copy
 
-class Smallest:
+class Smallest(object):
     """Represents the smallest value
 
     This type doesn't do much; it implements a pseudo-value that's smaller
@@ -138,7 +138,7 @@ class Smallest:
         return 0x55555555
 
 
-class Largest:
+class Largest(object):
     """Class representing the universal largest value
 
     This type doesn't do much; it implements a pseudo-value that's larger
@@ -220,7 +220,7 @@ class Largest:
 Inf = Largest()
 # Use -Inf for the smallest value
 
-class Interval:
+class Interval(object):
     """Represents a continuous range of values
 
     An Interval is composed of the lower bound, a closed lower bound
@@ -746,20 +746,20 @@ class Interval:
         """
         if isinstance(obj, Interval):
             if obj.lower_bound < self.lower_bound:
-                insideLower = False
+                inside_lower = False
             elif obj.lower_bound == self.lower_bound:
-                insideLower = (obj.lower_closed <= self.lower_closed)
+                inside_lower = (obj.lower_closed <= self.lower_closed)
             else:
-                insideLower = True
+                inside_lower = True
 
             if obj.upper_bound > self.upper_bound:
-                insideUpper = False
+                inside_upper = False
             elif obj.upper_bound == self.upper_bound:
-                insideUpper = (obj.upper_closed <= self.upper_closed)
+                inside_upper = (obj.upper_closed <= self.upper_closed)
             else:
-                insideUpper = True
+                inside_upper = True
 
-            result = insideLower and insideUpper
+            result = inside_lower and inside_upper
         else:
             result = Interval.equal_to(obj) in self
         return result
@@ -1131,7 +1131,7 @@ class BaseIntervalSet(object):
         if len(self.intervals) == 0:
             result = Interval.none()
         else:
-            result =  Interval(
+            result = Interval(
                 self.lower_bound(), self.upper_bound(),
                 lower_closed=self.lower_closed(),
                 upper_closed=self.upper_closed())
@@ -1742,7 +1742,7 @@ class BaseIntervalSet(object):
         >>> IntervalSet([3, 4, 5]) != [3, 4, 5, 3]
         True
         """
-        return not (self == other)
+        return not self == other
 
     def __lt__(self, other):
         """Tests if the given operand is a subset of the object
@@ -1784,7 +1784,7 @@ class BaseIntervalSet(object):
         False
         """
         if isinstance(other, BaseIntervalSet):
-            return (self <= other and not self == other)
+            return self <= other and not self == other
         else:
             raise TypeError(
                 "unsupported operand type(s) for <: expected BaseIntervalSet")
@@ -2089,7 +2089,8 @@ class IntervalSet(BaseIntervalSet):
         >>> IntervalSet()
         IntervalSet([])
         >>> IntervalSet([2, 4])
-        IntervalSet([Interval(2, 2, lower_closed=True, upper_closed=True), Interval(4, 4, lower_closed=True, upper_closed=True)])
+        IntervalSet([Interval(2, 2, lower_closed=True, upper_closed=True),
+                     Interval(4, 4, lower_closed=True, upper_closed=True)])
         """
         return "IntervalSet([%s])" % (
             ", ".join(repr(i) for i in self.intervals),)
@@ -2391,7 +2392,8 @@ class FrozenIntervalSet(BaseIntervalSet):
         >>> FrozenIntervalSet()
         FrozenIntervalSet([])
         >>> FrozenIntervalSet([2, 4])
-        FrozenIntervalSet([Interval(2, 2, lower_closed=True, upper_closed=True), Interval(4, 4, lower_closed=True, upper_closed=True)])
+        FrozenIntervalSet([Interval(2, 2, lower_closed=True, upper_closed=True),
+                           Interval(4, 4, lower_closed=True, upper_closed=True)])
         """
         return "FrozenIntervalSet([%s])" % (
             ", ".join(repr(i) for i in self.intervals),)

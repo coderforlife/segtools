@@ -51,9 +51,9 @@ class LoadCommand(Command):
         p.newline()
         p.text("See also:")
         p.list('save', 'append')
-        
+
         p.subtitle("3D Image Files")
-        p.text("""Command Format: --load filepath [format-specific-options] 
+        p.text("""Command Format: --load filepath [format-specific-options]
 Supported formats are:""")
         p.list(*FileImageStack.formats(True))
         p.text("""
@@ -78,13 +78,13 @@ Examples:""")
         p.list("--load file###.png", "-L file###.png 3 2 15")
 
         p.subtitle("List of 2D Image Files")
-        p.text("""Command Format: --load [ file1 file2 file3 ]   (literal brackets) 
+        p.text("""Command Format: --load [ file1 file2 file3 ]   (literal brackets)
 A list of files is given between literal [ and ]. Glob patterns are also accepted within the
 brackets.
 
 Examples:""")
         p.list("[ file1.png file2.png file3.png ]", "[ dir/*.png ]")
-                        
+
     def __str__(self): return "Loading from %s"%self._name
     def __init__(self, args, stack, appending=False):
         from os.path import abspath, isfile
@@ -96,7 +96,7 @@ Examples:""")
         self._kwargs = {}
         del args[0]
         path = abspath(self._name)
-        
+
         if self._name == "[": # File image list
             try: end = args.positional.index("]")
             except ValueError: raise ValueError("No terminating ']' in filename list")
@@ -111,14 +111,14 @@ Examples:""")
                     self._kwargs = {'pattern':abspath(pattern),'start':start,'step':step}
                     self._name = ((self._name+', then using ') if end else '')+_pattern_desc(raw_pattern,start+end,step)
                 except KeyError: raise ValueError("Appending to a file list does not support any extra options without pattern")
-                
+
         elif re_search(numeric_pattern, path): # Numeric Pattern
             before, digits, after = re_search.match.groups()
             start, step, stop = args.get_all(oStart, oStep, oStop)
             self._file = (before, after, start, step, stop)
             self._name = _pattern_desc(self._name, start, step, stop)
             if appending: self._kwargs = {'pattern':before+("%%0%dd"%len(digits))+after,'start':start,'step':step}
-                
+
         else: # 3D Image File
             if len(args.positional)>0: raise ValueError('You must provide all file-format options as named options.')
             args = args.named
@@ -129,11 +129,11 @@ Examples:""")
             self._kwargs = args # arguments get passed straight to the iamge stack creator
             self._name = "'%s'" % self._name
             if len(args)>0: self._name += " with options " + (", ".join("%s=%s"%(k,v) for k,v in args.iteritems()))
-            
+
     def _get_files(self, appending=False):
         from glob import glob, iglob
         from os.path import isfile
-        
+
         if isinstance(self._file, list): # File image list
             files = []
             for f in self._file:
@@ -144,7 +144,7 @@ Examples:""")
                     if not appending: raise IOError("File %s does not exist" % f)
                 files.append(f)
             return files
-                
+
         elif isinstance(self._file, tuple): # Numeric Pattern
             before, after, start, step, stop = self._file
             files = []
@@ -157,9 +157,9 @@ Examples:""")
                 if i<start or (stop is not None and i>stop) or ((i-start)%step)!=0: continue
                 files.append((i, f))
             return [f for i,f in sorted(files)]
-            
+
         else: return self._file # 3D Image File
-        
+
     def execute(self, stack):
         stack.push(FileImageStack.open(self._get_files(), True, **self._kwargs))
 
@@ -186,9 +186,9 @@ class AppendCommand(LoadCommand):
         p.newline()
         p.text("See also:")
         p.list('load', 'save')
-        
+
         p.subtitle("3D Image Files")
-        p.text("""Command Format: --load filepath [format-specific-options] 
+        p.text("""Command Format: --load filepath [format-specific-options]
 Supported formats are:""")
         p.list(*FileImageStack.formats(False))
         p.text("""
@@ -215,7 +215,7 @@ Examples:""")
         p.list("--append file###.png", "-A file###.png 3 2 15")
 
         p.subtitle("List of 2D Image Files")
-        p.text("""Command Format: --append [ file1 ... ] [pattern [start] [step]]  (literal brackets around list) 
+        p.text("""Command Format: --append [ file1 ... ] [pattern [start] [step]]  (literal brackets around list)
 A list of files is given between literal [ and ]. Glob patterns are also accepted within the
 brackets but only apply to loading images. The files are loaded as long as they exist. Once we
 reach a file that doesn't exist we start saving. If there are more slices than filenames listed and
@@ -260,9 +260,9 @@ class SaveCommand(Command):
         p.newline()
         p.text("See also:")
         p.list('load', 'append')
-        
+
         p.subtitle("3D Image Files")
-        p.text("""Command Format: --load filepath [format-specific-options] 
+        p.text("""Command Format: --load filepath [format-specific-options]
 Supported formats are:""")
         p.list(*FileImageStack.formats(False))
         p.text("""
@@ -286,7 +286,7 @@ Examples:""")
         p.list("--save file###.png", "-S file###.png 3 2")
 
         p.subtitle("List of 2D Image Files")
-        p.text("""Command Format: --save [ file1 ... ] [pattern [start] [step]]  (literal brackets around list) 
+        p.text("""Command Format: --save [ file1 ... ] [pattern [start] [step]]  (literal brackets around list)
 A list of files is given between literal [ and ]. Glob patterns are not accepted. If there are more
 slices than filenames listed and a pattern is given, that pattern will be used to generate the
 remaining filenames. See above for the definition of those options.
@@ -303,7 +303,7 @@ Examples:""")
         self._kwargs = {}
         del args[0]
         path = abspath(self._name)
-        
+
         if self._name == "[": # File image list
             try: end = args.positional.index("]")
             except ValueError: raise ValueError("No terminating ']' in filename list")
@@ -325,7 +325,7 @@ Examples:""")
             self._file = (pattern, start, step)
             self._name = _pattern_desc(self._name, start, step)
             self._kwargs = {'pattern':pattern,'start':start,'step':step}
-                
+
         else: # 3D Image File
             if len(args.positional)>0: raise ValueError('You must provide all file-format options as named options.')
             args = args.named
@@ -334,7 +334,7 @@ Examples:""")
             self._kwargs = args # arguments get passed straight to the iamge stack creator
             self._name = "'%s'" % self._name
             if len(args)>0: self._name += " with options " + (", ".join("%s=%s"%(k,v) for k,v in args.iteritems()))
-  
+
     def execute(self, stack):
         from os.path import dirname
         from ...general.utils import make_dir

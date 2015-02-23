@@ -217,7 +217,7 @@ def __is_color_channel(x):
         x = x.strip().lower()
         return x in ('true', 'false', 't', 'f') or __no_throw(complex,x) or __no_throw(long,x) or __no_throw(float,x)
     return isinstance(x, (bool, bool_, Real, complex))
-    
+
 def is_color(x):
     """
     Checks if a value represents a color for any image type. This may mean that is_color(x) works
@@ -328,7 +328,7 @@ def get_color(x, im_or_dtype):
         if len(x) == 3: x += (1.0,) # set alpha channel to opaque
     elif len(x) == 1: x *= nchan
     if len(x) != nchan: raise ValueError()
-    
+
     # Convert channels
     # At the of this block the tuple has 1 properly converted value per channel
     # Note: because NumPy scalars cannot have endian-ness the values might be the wrong endian

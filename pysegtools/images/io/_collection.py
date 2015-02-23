@@ -74,7 +74,7 @@ class FileCollectionStack(FileImageStack):
         s = FileCollectionStack(h, files, [], False)
         s._insert(0, ims)
         return s
-    
+
     def __init__(self, h, all_file_names, starting_files, readonly=False):
         super(FileCollectionStack, self).__init__(h, [FileSlice(self, f, z) for z, f in enumerate(starting_files)], readonly)
         self._orig_files = all_file_names
@@ -117,7 +117,7 @@ class FileCollectionStack(FileImageStack):
             im = im.data
             imsave(s._filename, im)
             s._cache_data(im)
-        
+
     def _delete(self, idx):
         for start, stop in idx:
             # This could be done in a slightly better way by going from the lowest start to the
@@ -163,7 +163,7 @@ class FileCollectionStackHeader(FileImageStackHeader):
         'start':  NumericField(int, 0, None, True, True, 0),
         'step':   NumericField(int, 1, None, True, True, 1),
         }
-    
+
     # Setup all instance variables to make sure they are in __dict__
     # Required for headers
     _imstack = None

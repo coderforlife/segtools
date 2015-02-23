@@ -36,7 +36,7 @@ class MRCMode(int32, Enum): #pylint: disable=no-init
 
 class MRCFlags(int32, Flags): #pylint: disable=no-init
     SignedByte = 1
-    
+
 class MRCEndian(int32, Enum): #pylint: disable=no-init
     Little    = 0x00004144
     LittleAlt = 0x00000044
@@ -44,23 +44,24 @@ class MRCEndian(int32, Enum): #pylint: disable=no-init
     BigAlt    = 0x00000017
 
 __dtype2mode = {
-    1:{uint8:MRCMode.Byte,int8:MRCMode.Byte,int16:MRCMode.Short,float32:MRCMode.Float,complex64:MRCMode.Float2,uint16:MRCMode.UShort},
-    2:{int16:MRCMode.Short2,float32:MRCMode.Float2},
+    1:{uint8:MRCMode.Byte, int8:MRCMode.Byte, int16:MRCMode.Short, uint16:MRCMode.UShort,
+       float32:MRCMode.Float, complex64:MRCMode.Float2},
+    2:{int16:MRCMode.Short2, float32:MRCMode.Float2},
     3:{uint8:MRCMode.Byte3},
 }
 __mode2dtype = { # MRCMode.Byte handled special
-    MRCMode.Short:  (int16,1),
-    MRCMode.Float:  (float32,1),
-    MRCMode.Short2: (int16,2),
-    MRCMode.Float2: (complex64,1),
-    MRCMode.UShort: (uint16,1),
-    MRCMode.Byte3:  (uint8,3),
+    MRCMode.Short:  (int16, 1),
+    MRCMode.Float:  (float32, 1),
+    MRCMode.Short2: (int16, 2),
+    MRCMode.Float2: (complex64, 1),
+    MRCMode.UShort: (uint16, 1),
+    MRCMode.Byte3:  (uint8, 3),
 }
 
 # TODO: support mapc/mapr/maps = 2,1,3 using Fortran-ordered arrays?
 
 class MRC(HomogeneousFileImageStack):
-    """  
+    """
     Represents an MRC image. Supports all features of the "IMOD" variant of MRC files.
     """
 
@@ -187,7 +188,7 @@ class MRCSlice(FileImageSlice):
         imsave_raw(self._file, im)
         return im
 
-    
+
 def _f(cast): return Field(cast, False, False)
 def _f_ro(cast): return Field(cast, True, False)
 def _f_fix(cast, value): return FixedField(cast, value, False)
@@ -230,7 +231,7 @@ class MRCHeader(FileImageStackHeader):
             ])
 
     # Setup all instance variables to make sure they are in __dict__
-    
+
     # Required for headers
     _imstack = None
     _fields = None
@@ -280,7 +281,7 @@ class MRCHeader(FileImageStackHeader):
             self._extra = self.__get_extra(f)
             if self._extra: self._old_next = len(self._extra)
             self._dtype = self.__get_dtype(endian)
-            
+
             return f
         except:
             f.close()
@@ -292,7 +293,7 @@ class MRCHeader(FileImageStackHeader):
         lbls = f.read(LBL_LEN*nlabl)
         if len(lbls) != LBL_LEN*nlabl: raise ValueError('MRC file does not have enough bytes for header')
         return [lbls[i:i+LBL_LEN].lstrip() for i in xrange(0,len(lbls),LBL_LEN)]
-        
+
     def __get_extra(self, f):
         nxt = self._data['next']
         if nxt < 0: raise ValueError('MRC file is invalid (extended header size is %d)' % nxt)
@@ -301,7 +302,7 @@ class MRCHeader(FileImageStackHeader):
         extra = memoryview(f.read(nxt))
         if len(extra) != nxt: raise ValueError('MRC file does not have enough bytes for header')
         return extra
-                
+
     def __get_dtype(self, endian):
         # Determine data type
         mode = self._data['mode']
@@ -356,7 +357,7 @@ class MRCHeader(FileImageStackHeader):
             raise
 
     def _get_field_name(self, f): return f if f in self._fields else None
-    
+
     def convert_to_new_format(self):
         """
         Converts MRC header from old format to new format. Does not write to disk.
@@ -376,7 +377,7 @@ class MRCHeader(FileImageStackHeader):
         self._fields.update(MRCHeader.__fields_new)
         self._format = '<' + MRCHeader.__format_new
         self._is_new = True
-        
+
     @property
     def pixel_spacing(self):
         """Gets the pixel spacing of the data"""
@@ -432,19 +433,19 @@ class MRCHeader(FileImageStackHeader):
         if any(len(l) > LBL_LEN for l in lbls): raise ValueError('lbls contains label that is too long (max label length is %d)' % LBL_LEN)
         self._labels[:] = lbls # copy it this way so that any references to the list are updated as well
         self._data['nlabl'] = int32(len(lbls))
-        
+
     @property
     def extra(self): return self._extra # will be readonly in all cases where where header is readonly, and can never change size (I believe)
     @extra.setter
     def extra(self, value):
         if self._imstack._readonly: raise AttributeError('header is readonly')
         if value is None:
-            self._extra = None 
+            self._extra = None
             self._data['next'] = int32(0)
         else:
             self._extra = memoryview(value)
             self._data['next'] = int32(len(self._extra) * self._extra.itemsize)
-   
+
     def save(self, update_pixel_values=True): #pylint: disable=arguments-differ
         """
         Write the header to disk. Updates fields as necessary. The fields amin, amax, and amean are
@@ -462,7 +463,7 @@ class MRCHeader(FileImageStackHeader):
             self._imstack._off = new_off
             self._imstack._update_offs(0)
         self._save(self._imstack._file)
-        
+
     def _save(self, f):
         """Internal saving function"""
         f.seek(0)
@@ -489,7 +490,7 @@ class LabelList(ListWrapper):
         if len(value) > LBL_LEN: raise ValueError('label too long')
         self._data[i] = value
         #self._hdr['nlabl'] = len(self._data)
-    def insert(self, i, value):    
+    def insert(self, i, value):
         value = Unicode(value)
         if len(value) > LBL_LEN: raise ValueError('label too long')
         if len(self._data) >= LBL_COUNT:

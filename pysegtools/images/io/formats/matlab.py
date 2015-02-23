@@ -11,7 +11,7 @@ from ...types import is_image, create_im_dtype
 # TODO: doesn't handle endian-ness, unsure if anything needs to be done
 # TODO: support imsave and stacks
 
-# NOTE: to use .MAT v7 or older files (from R2006a and earlier) you must have SciPy v0.12 or newer 
+# NOTE: to use .MAT v7 or older files (from R2006a and earlier) you must have SciPy v0.12 or newer
 # NOTE: to use .MAT v7.3 of newer files (from R2006b and later) you must have h5py
 
 __all__ = ['iminfo_mat','imread_mat']

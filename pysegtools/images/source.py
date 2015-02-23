@@ -19,7 +19,7 @@ class ImageSource(object):
     unless otherwise specified.
     """
     __metaclass__ = ABCMeta
-    
+
     @abstractproperty
     def w(self): pass
     @abstractproperty
@@ -75,7 +75,7 @@ class DeferredPropertiesImageSource(ImageSource):
         self._h = h
         self._shape = None if h is None or w is None else (h, w)
         self._dtype = dtype
-    
+
     @property
     def w(self):
         if self._w is None: self._get_props()

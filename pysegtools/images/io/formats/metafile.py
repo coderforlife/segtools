@@ -118,7 +118,7 @@ def read_mha_header(f):
 
     # Check/Parse Header
     datafile, headersize = parse_mha_header(h, f)
-    
+
     # Check/Parse Element Type Header Keys
     endian = _bool(h.get('BinaryDataByteOrderMSB', False))
     etype = h['ElementType']
@@ -243,7 +243,7 @@ def imsave_mha(filename, im, CompressedData=False, BinaryData=True, **tags):
 def imsave_mhd(filename, im, datafile=None, CompressedData=False, BinaryData=True, ElementNumberOfChannels=None, **tags):
     """
     Save an image as an MHD image.
-    
+
     If the datafile name is not given it will be automatically generated. If it is 'LOCAL' than the
     data will be embeded in the main file (MHA-mode). If an iterable of files is given, each will
     contain a slice of the data. The number of files must be equal to the length of the highest
@@ -254,7 +254,7 @@ def imsave_mhd(filename, im, datafile=None, CompressedData=False, BinaryData=Tru
 
     If you set BinaryData to False it will cause the image data to be written in ASCII. This will
     slow down saving and will result in significantly larger file, but they are human-readable.
-    
+
     You may specify extra tags to be saved in the image header. These are ignored for the most part
     and simply copied into the header. Known tags are checked and possibly corrected. For any tag
     that requires one value per dimension and only a single value is provided it will automatically
@@ -273,7 +273,7 @@ def imsave_mhd(filename, im, datafile=None, CompressedData=False, BinaryData=Tru
     was_complex = im.dtype.kind == 'c'
     im = im_decomplexify(im) # we support complex numbers only by breaking them into a 2-channel image
     if im.dtype.type not in dtype2met: raise ValueError('Format of image is not supported')
-    
+
     # Figure out the dimensions
     if im.ndims > 2: im = im.squeeze(2)
     echans, shape = 1, list(im.shape)
@@ -319,7 +319,7 @@ def imsave_mhd(filename, im, datafile=None, CompressedData=False, BinaryData=Tru
     # Save data
     imsave = imsave_raw if BinaryData else imsave_ascii_raw
     save_data(im, filename, datafile, elem_data_file, alltags, CompressedData, imsave)
-        
+
 def get_datafile(filename, datafile, comp, binary, shape0):
     if not binary and comp: raise ValueError('Cannot compress non-binary data')
     directory = os.path.dirname(filename)

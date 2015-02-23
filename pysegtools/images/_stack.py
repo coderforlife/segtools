@@ -22,7 +22,7 @@ class Homogeneous(int, Flags):
     Shape = 1
     DType = 2
     Both  = 3
-    
+
 class ImageStack(object):
     """
     A stack of 2D image slices. This may represent an image on disk or image filter to be/already
@@ -33,7 +33,7 @@ class ImageStack(object):
     len(). The [] also accepts slice-notation and iterables of indicies and returns a list of
     ImageSlice objects.
     """
-    
+
     __metaclass__ = ABCMeta
 
     @classmethod
@@ -50,7 +50,7 @@ class ImageStack(object):
         elif isinstance(ims, ImageSource): return ImageStackCollection((ims,)) # single ImageSource
         elif isinstance(ims, Iterable):    return ImageStackCollection(ims)    # iterable of (presumably) ImageSources/ndarrays
         else: raise ValueError()
-    
+
     def __init__(self, slices):
         self._slices = slices
         self._d = len(slices)
@@ -234,7 +234,7 @@ class HomogeneousImageStack(ImageStack):
     def shape(self): return self._shape
     @property
     def dtype(self): return self._dtype
-    
+
     @property
     def stack(self):
         """Get the entire stack as a single 3D image."""
@@ -250,7 +250,7 @@ class ImageSlice(DeferredPropertiesImageSource):
     _get_props function (the trivial one would be def _get_props(self): pass).
     """
     __metaclass__ = ABCMeta
-    
+
     def __init__(self, stack, z):
         self._stack = stack
         self._z = z

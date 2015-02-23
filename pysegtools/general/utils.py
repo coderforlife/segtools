@@ -3,16 +3,17 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-def check_reqs(scipy = True, numpy = True, PIL = True, psutil = False):
+def check_reqs(scipy=True, numpy=True, PIL=True, psutil=False):
     """Checks to see if the required 3rd-party modules are available for import."""
     if numpy:  check_req('numpy')
     if scipy:  check_req('scipy')
     if PIL:    check_req('PIL', 'Pillow')
     if psutil: check_req('psutil')
-def check_req(name, module_name = None):
+def check_req(name, module_name=None):
     if module_name is None: module_name = name
     import importlib
-    try: importlib.import_module(name)
+    try:
+        importlib.import_module(name)
     except ImportError:
         import sys
         print("Could not import the required module %s" % name, file=sys.stderr)
@@ -28,10 +29,11 @@ def make_dir(d):
     try:
         os.makedirs(d)
         return True
-    except OSError: return False
+    except OSError:
+        return False
 
 
-def only_keep_num(d, allowed, match_slice = slice(None), pattern='*'):
+def only_keep_num(d, allowed, match_slice=slice(None), pattern='*'):
     """
     Searches for all files matching a particular glob pattern, extracts the given slice as an
     integer, and makes sure it is in the list of allowed numbers. If not, the file is deleted.
@@ -39,7 +41,7 @@ def only_keep_num(d, allowed, match_slice = slice(None), pattern='*'):
     from glob import iglob
     from os import unlink
     from os.path import basename, join, isfile
-    
+
     files = ((f, basename(f)[match_slice]) for f in iglob(join(d, pattern)) if isfile(f))
     for f in (f for f, x in files if x.isdigit() and int(x) not in allowed):
         try: unlink(f)

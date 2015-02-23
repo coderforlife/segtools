@@ -32,11 +32,13 @@ else:
             if len(args) > 0 and type(args[0]) == HANDLE: CloseHandle(args[0])
             raise WinError()
         return True
-    def cb_wait_check(result, func, args): return result == 0
+    def cb_wait_check(result, func, args):
+        return result == 0
     def cb_ValidHandle(h):
         if h == 0: raise WinError()
         return HANDLE(h)
-    def ft2sec(ft): return ((ft.dwHighDateTime << 32) | ft.dwLowDateTime) / 10000000.0
+    def ft2sec(ft):
+        return ((ft.dwHighDateTime << 32) | ft.dwLowDateTime) / 10000000.0
 
     k32 = windll.kernel32
 
@@ -58,7 +60,9 @@ else:
     GetExitCodeProcess.errcheck = cb_winerrcheck
 
     GetProcessTimes = k32.GetProcessTimes
-    GetProcessTimes.argtypes = [HANDLE, POINTER(FILETIME), POINTER(FILETIME), POINTER(FILETIME), POINTER(FILETIME)]
+    GetProcessTimes.argtypes = [HANDLE,
+                                POINTER(FILETIME), POINTER(FILETIME),
+                                POINTER(FILETIME), POINTER(FILETIME)]
     GetProcessTimes.restype  = BOOL
     GetProcessTimes.errcheck = cb_winerrcheck
 
@@ -88,13 +92,13 @@ else:
     #CloseHandle.errcheck = cb_winerrcheck
 
     struct_rusage = namedtuple('struct_rusage',
-                               ['ru_utime','ru_stime',
-                                'ru_maxrss','ru_ixrss','ru_idrss','ru_isrss',
-                                'ru_minflt','ru_majflt','ru_nswap',
-                                'ru_inblock','ru_oublock',
-                                'ru_msgsnd','ru_msgrcv',
+                               ['ru_utime', 'ru_stime',
+                                'ru_maxrss', 'ru_ixrss', 'ru_idrss', 'ru_isrss',
+                                'ru_minflt', 'ru_majflt', 'ru_nswap',
+                                'ru_inblock', 'ru_oublock',
+                                'ru_msgsnd', 'ru_msgrcv',
                                 'ru_nsignals',
-                                'ru_nvcsw','ru_nivcsw'])
+                                'ru_nvcsw', 'ru_nivcsw'])
 
     def wait4(pid, options_ = 0):
         h = OpenProcess(PROCESS_QUERY_INFORMATION | SYNCHRONIZE, True, pid)
@@ -108,19 +112,19 @@ else:
 
         mem = PROCESS_MEMORY_COUNTERS(cb=sizeof(PROCESS_MEMORY_COUNTERS))
         GetProcessMemoryInfo(h, byref(mem), sizeof(PROCESS_MEMORY_COUNTERS))
-        
+
         io = IO_COUNTERS()
         GetProcessIoCounters(h, byref(io))
 
         CloseHandle(h)
-        
+
         rusage = struct_rusage(
-            ru_utime = ft2sec(utime), ru_stime = ft2sec(stime),
-            ru_maxrss = mem.PeakWorkingSetSize // 1024, ru_ixrss = 0, ru_idrss = 0, ru_isrss = 0,
-            ru_minflt = mem.PageFaultCount, ru_majflt = 0, ru_nswap = 0,
-            ru_inblock = io.ReadOperationCount, ru_oublock = io.WriteOperationCount,
-            ru_msgsnd = 0, ru_msgrcv = 0, ru_nsignals = 0,
-            ru_nvcsw = 0, ru_nivcsw = 0,
+            ru_utime=ft2sec(utime), ru_stime=ft2sec(stime),
+            ru_maxrss=mem.PeakWorkingSetSize//1024, ru_ixrss=0, ru_idrss=0, ru_isrss=0,
+            ru_minflt=mem.PageFaultCount, ru_majflt=0, ru_nswap=0,
+            ru_inblock=io.ReadOperationCount, ru_oublock=io.WriteOperationCount,
+            ru_msgsnd=0, ru_msgrcv=0, ru_nsignals=0,
+            ru_nvcsw=0, ru_nivcsw=0,
             )
-        
+
         return pid, exitcode.value, rusage

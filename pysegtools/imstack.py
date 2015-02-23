@@ -58,24 +58,29 @@ class Stack(object):
         self._stack.append(ims)
     def _inv_inds(self, inds):
         n = len(self)
-        inds = [(n-i-1) if i>=0 else (-i-1) for i in inds]
+        inds = [(n-i-1) if i >= 0 else (-i-1) for i in inds]
         for i in inds:
-            if not (0<=i<n): raise ValueError('No image stack #%d', i)
+            if not 0 <= i < n: raise ValueError('No image stack #%d', i)
         return inds
     def select(self, inds):
         inds = self._inv_inds(inds)
         ims = [self._stack[i] for i in inds]
         if verbosity >= Verbosity.Min:
-            for i in ims: print(stack_status_fill("* Moving image stack '%s' to top"%i))
-        for i in sorted(set(inds), reverse=True): del self._stack[i]
+            for i in ims:
+                print(stack_status_fill("* Moving image stack '%s' to top"%i))
+        for i in sorted(set(inds), reverse=True):
+            del self._stack[i]
         self._stack.extend(ims)
     def remove(self, inds):
         inds = sorted(set(self._inv_inds(inds)), reverse=True)
         if verbosity >= Verbosity.Min:
-            for i in inds: print(stack_status_fill("* Removing image stack '%s'"%self._stack[i]))
-        for i in inds: del self._stack[i]
-    def __iter__(self): return iter(self._stack)
-        
+            for i in inds:
+                print(stack_status_fill("* Removing image stack '%s'"%self._stack[i]))
+        for i in inds:
+            del self._stack[i]
+    def __iter__(self):
+        return iter(self._stack)
+
 class PseudoStack(Stack):
     """
     A class that almost looks like Stack except that it doesn't actually save image stacks (and
@@ -95,7 +100,7 @@ class PseudoStack(Stack):
         inds = self._inv_inds(inds)
         self._stack_count -= len(set(inds))
 
-    
+
 class Args(object):
     """
     A collection of command arguments which can include both positional and named arguments. This
@@ -112,7 +117,7 @@ class Args(object):
         args = args[1:]
         npos = next((i for i,x in enumerate(args) if '=' in x), len(args)) # number of positional arguments
         if any('=' not in x for x in args[npos:]): raise ValueError("Cannot include positional arguments after named arguments (ones that have '=' in them)")
-        self._kwargs = {key:val for key,val in (arg.split('=',1) for arg in args[npos:])}
+        self._kwargs = {key:val for key,val in (arg.split('=', 1) for arg in args[npos:])}
         if len(self._kwargs) != len(args)-npos: raise ValueError("Multiple values given for a single named argument")
         self._args = args[:npos]
     @property
@@ -124,8 +129,10 @@ class Args(object):
         it is not found then None and the "translated" key are returned (notice that the key has
         changed position!).
         """
-        if   isinstance(key, Integral) and key < len(self._args): return key, self._args[key]
-        elif isinstance(key, String)   and key in self._kwargs:   return key, self._kwargs[key]
+        if isinstance(key, Integral) and key < len(self._args):
+            return key, self._args[key]
+        elif isinstance(key, String) and key in self._kwargs:
+            return key, self._kwargs[key]
         elif isinstance(key, Sequence) and len(key) == 2 and isinstance(key[0], Integral) and isinstance(key[1], String):
             pos, name = key
             possed, named = pos < len(self._args), name in self._kwargs
@@ -174,7 +181,7 @@ class Args(object):
     def __delitem__(self, key):
         if isinstance(key, slice): del self._args[key]
         else:
-            key,_ = self.__get(key)
+            key, _ = self.__get(key)
             if key is None: raise KeyError(key)
             if isinstance(key, String): del self._kwargs[key]
             else: del self._args[key]
@@ -184,7 +191,7 @@ class Args(object):
     @property
     def positional(self): return self._args
     @property
-    def named(self):      return self._kwargs
+    def named(self): return self._kwargs
     def __iter__(self):   return chain(xrange(len(self._args)), self._kwargs)
     def iterkeys(self):   return iter(self)
     def itervalues(self): return chain(self._args, self._kwargs.itervalues())
@@ -256,7 +263,7 @@ class Opt(object):
         like an integer.
         """
         def _cast_equal(x):
-            if x!=val: raise ValueError
+            if x != val: raise ValueError
             return x
         return _cast_equal
     @staticmethod
@@ -291,13 +298,13 @@ class Opt(object):
         def _cast_bool(x):
             if isinstance(x, bool): return x
             x = x.strip().lower()
-            if x in ('t','false','1'):    return True
-            if x in ('f','false','0',''): return False
+            if x in ('t', 'false', '1'):     return True
+            if x in ('f', 'false', '0', ''): return False
             raise ValueError
         return _cast_bool
-        
+
     @staticmethod
-    def cast_int(pred=lambda x:True):
+    def cast_int(pred=lambda x: True):
         """
         Casts the value to an int using the int() function and then checks it with the optional
         predicate (which, by default, allows all integers). If it cannot be cast to an int or the
@@ -309,7 +316,7 @@ class Opt(object):
             return x
         return _cast_int
     @staticmethod
-    def cast_float(pred=lambda x:True):
+    def cast_float(pred=lambda x: True):
         """
         Casts the value to a float using the float() function and then checks it with the optional
         predicate (which, by default, allows all integers). If it cannot be cast to an int or the
@@ -356,8 +363,8 @@ class Opt(object):
 
 class _CommandMeta(ABCMeta):
     """The meta-class for commands, which extends ABCMeta and calls Help.register if applicable"""
-    def __new__(cls, clsname, bases, dct):
-        c = super(_CommandMeta, cls).__new__(cls, clsname, bases, dct)
+    def __new__(mcs, clsname, bases, dct):
+        c = super(_CommandMeta, mcs).__new__(mcs, clsname, bases, dct)
         fs = c.flags()
         if fs is not None and len(fs) > 0: Help.register((c.name(),)+fs, c.print_help)
         return c
@@ -377,14 +384,14 @@ class Command(object):
         name(cls)
         flags(cls)
         print_help(cls, width)
-        
+
     And the following methods:
         __init__(self, args, stack)
         __str__(self)
         execute(self, stack)
     """
     __metaclass__ = _CommandMeta
-    
+
     @classmethod
     def __get_cmd_class(cls, name_or_flag):
         ccls = _get_cmd_class(name_or_flag)
@@ -400,7 +407,7 @@ class Command(object):
         ccls = cls.__get_cmd_class(name_or_flag.lstrip('-'))
         if ccls is None: raise ValueError("'%s' is not a known command" % name_or_flag)
         return ccls(args, stack)
-    
+
     @classmethod
     def name(cls):
         """
@@ -408,7 +415,7 @@ class Command(object):
         the text that is displayed in the list of available commands.
         """
         return None
-    
+
     @classmethod
     def flags(cls):
         """List of acceptable flags to recognize the command, without - or --"""
@@ -433,12 +440,12 @@ class Command(object):
 ##        stack is kept to check for errors.
 ##        """
 ##        pass
-    
+
     @abstractmethod
     def __str__(self):
         """Get a brief, one-line, description of this command."""
         pass
-    
+
     @abstractmethod
     def execute(self, stack):
         """Execute the command from the previously parsed arguments."""
@@ -451,7 +458,7 @@ class CommandEasy(Command):
     any in positional-only arguments or variable-count arguments. Additionally, it is assumed that
     you will pop all image stacks you list before pushing any image stacks, and there can be no
     optionally consumed or produced image stacks.
-    
+
     A dictionary of arguments is available as the _vals attribute and every option is also made into
     a field starting with an underscore than the name of the field. The print-help function is also
     made for you (as long as you fill out the other functiosn, like _title and _desc).
@@ -509,7 +516,7 @@ class CommandEasy(Command):
         for _ in xrange(len(cls._produces())): stack.push()
         self = super(CommandEasy, cls).__new__()
         self._vals = vals = args.get_all_kw(*cls._opts()).iteritems() #pylint: disable=protected-access
-        for name,val in vals:
+        for name, val in vals:
             setattr(self, '_'+name, val)
     def __init__(self, args, stack): super(CommandEasy, self).__init__(self, args, stack)
     @abstractmethod
@@ -553,13 +560,13 @@ class Help(object):
         if not always and verbosity != Verbosity.Max: return
         ims.print_detailed_info(out_width)
         print("-"*out_width)
-    
+
     @staticmethod
     def __msg():
         from os.path import basename
         f12 = TextWrapper(width=out_width, subsequent_indent=' '*11).fill
         f18 = TextWrapper(width=out_width, subsequent_indent=' '*18).fill
-        print(fill("===== Image Stack Reader and Converter Tool " + ("="*max(0,out_width-44))))
+        print(fill("===== Image Stack Reader and Converter Tool " + ("="*max(0, out_width-44))))
         print(f18("%s [basic args] [--cmd1 args...] [--cmd2 args...] ..." % basename(sys.argv[0])))
         print(fill("Basic arguments:"))
         print(f18("  -h  --help [x]  display help about a command, filter, or format (all other arguments will be ignored)"))
@@ -647,16 +654,16 @@ class Help(object):
     def newline(self): #pylint: disable=no-self-use
         """Convience, prints a new line"""
         print("")
-        
+
 def __topics_help(width):
     p = Help(width)
     p.title("Topics / Commands")
     topics = {}
-    for t,f in Help._topics.iteritems(): topics.setdefault(f,[]).append(t) #pylint: disable=protected-access
+    for t, f in Help._topics.iteritems(): topics.setdefault(f, []).append(t) #pylint: disable=protected-access
     topics = [sorted(ts, key=len, reverse=True) for f,ts in topics.iteritems()]
-    topics.sort(key=lambda l:l[0].lower())
+    topics.sort(key=lambda l: l[0].lower())
     p.list(*[", ".join(ts) for ts in topics])
-Help.register(('topic','topics','commands'),__topics_help)
+Help.register(('topic', 'topics', 'commands'), __topics_help)
 
 def __err_msg(msg, ex=None):
     print(fill(msg), file=sys.stderr)
@@ -681,19 +688,19 @@ def __split_args(args):
     out = []
     for a in args:
         if len(a) >= 2 and a[0] == '-' and a[1] not in '.0123456789':
-            if a[1]!='-': out.extend(['-'+x] for x in a[1:])
-            else:         out.append([a])
-        else:             out[-1].append(a)
+            if a[1] != '-': out.extend(['-'+x] for x in a[1:])
+            else: out.append([a])
+        else: out[-1].append(a)
     return out
 
 def main():
     args = __parse_args(sys.argv[1:])
-    
+
     # Parse all of the commands
     stack = PseudoStack()
     cmds = []
     for cmd_arg in args:
-        try: cmds.append(Command.create(cmd_arg[0].lstrip('-'),Args(cmd_arg),stack))
+        try: cmds.append(Command.create(cmd_arg[0].lstrip('-'), Args(cmd_arg), stack))
         except StandardError as ex: __err_msg('%s: %s'%(" ".join(cmd_arg),ex), ex)
 
     # Execute all of the commands
@@ -703,7 +710,7 @@ def main():
             if verbosity == Verbosity.Max: print("="*out_width)
             print("> %s"%cmd)
         try: cmd.execute(stack)
-        except StandardError as ex: __err_msg('%s: %s'%(cmd,ex), ex)
+        except StandardError as ex: __err_msg('%s: %s'%(cmd, ex), ex)
 
     # Output anything left in the stack
     if verbosity >= Verbosity.Min:
@@ -714,11 +721,14 @@ def __parse_args(args):
     import shlex
     ## Find and expand @argfile arguments
     # This loop goes through all @ arguments in reverse order providing the index of the @ argument
-    for i in reversed([i for i,a in enumerate(args) if len(a)>0 and a[0] == '@']):
+    for i in reversed([i for i,a in enumerate(args) if len(a) > 0 and a[0] == '@']):
         try:
-            with open(args[i][1:], 'r') as argfile: args[i:i+1] = shlex.split(argfile.read(), True) # read the file, split it, and insert in place of the @ argument
-        except IOError as ex:       __err_msg('Unable to read arg-file "%s": %s' % (args[i][1:],ex), ex)
-        except StandardError as ex: __err_msg('Invalid content of arg-file "%s": %s' % (args[i][1:],ex), ex)
+            with open(args[i][1:], 'r') as argfile:
+                args[i:i+1] = shlex.split(argfile.read(), True) # read the file, split it, and insert in place of the @ argument
+        except IOError as ex:
+            __err_msg('Unable to read arg-file "%s": %s' % (args[i][1:], ex), ex)
+        except StandardError as ex:
+            __err_msg('Invalid content of arg-file "%s": %s' % (args[i][1:], ex), ex)
     args = __split_args(args)
 
     # Basic arguments

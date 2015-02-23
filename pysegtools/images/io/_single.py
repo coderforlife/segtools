@@ -16,7 +16,7 @@ __native = byteorder!='little'
 __pil_mode_to_dtype = {
     #'P' is a special case
     # Some of these modes will actually never show up because they are raw modes.
-    
+
     'RGB': d(uint8,False,3), 'RGBX':d(uint8,False,4), # however the fourth one is "padding"
     'RGBA':d(uint8,False,4), 'RGBa':d(uint8,False,4), # non-premultiplied and pre-multiplied
     'CMYK':d(uint8,False,4), 'YCbCr':d(uint8,False,3),
@@ -29,7 +29,7 @@ __pil_mode_to_dtype = {
     'I;16S':d(int16),'I;16LS':d(int16),'I;16BS':d(int16,True),'I;16NS':d(int16,__native),
     'I;32':d(uint32),'I;32L':d(uint32),'I;32B':d(uint32,True),'I;32N':d(uint32,__native),
     'I;32S':d(int32),'I;32LS':d(int32),'I;32BS':d(int32,True),'I;32NS':d(int32,__native),
-    
+
     'F':d(float32,__native),
     #'F;16F':d(float16),'F;16BF':dt(float16,True),'F;16NF':dt(float16,__native),
     'F;32F':d(float32),'F;32BF':d(float32,True),'F;32NF':d(float32,__native),
@@ -59,14 +59,14 @@ def iminfo(filename):
     Additional formats can be registered by using iminfo.register(...). Python scripts placed in
     images/io/formats will automatically be loaded. A dictionary of additional formats is
     available at iminfo.formats.
-    
+
     PIL Common Supported Formats: (not all-inclusive)
         PNG:  1-bit BW, 8-bit gray, 16-bit gray, 24-bit RGB
         TIFF: 1-bit BW, 8-bit gray, 16-bit gray, 24-bit RGB [not ZIP compressed]
         BMP:  1-bit BW, 8-bit gray, 24-bit RGB
         JPEG: 8-bit gray, 24-bit RGB
         IM:   all?
-    
+
     See http://pillow.readthedocs.org/en/latest/handbook/image-file-formats.html for more details.
     """
     from os.path import splitext
@@ -99,14 +99,14 @@ def imread(filename):
     Additional formats can be registered by using imread.register(...). Python scripts placed in
     images/io/formats will automatically be loaded. A dictionary of additional formats is
     available at imread.formats.
-    
+
     PIL Common Supported Formats: (not all-inclusive)
         PNG:  1-bit BW, 8-bit gray, 16-bit gray, 24-bit RGB
         TIFF: 1-bit BW, 8-bit gray, 16-bit gray, 24-bit RGB [not ZIP compressed]
         BMP:  1-bit BW, 8-bit gray, 24-bit RGB
         JPEG: 8-bit gray, 24-bit RGB
         IM:   all?
-    
+
     See http://pillow.readthedocs.org/en/latest/handbook/image-file-formats.html for more details.
     """
     from os.path import splitext
@@ -141,14 +141,14 @@ def imsave(filename, im):
     Additional formats can be registered by using imsave.register(...). Python scripts placed in
     images/io/formats will automatically be loaded. A dictionary of additional formats is
     available at imsave.formats.
-    
+
     PIL Common Supported Formats: (not all-inclusive)
         PNG:  1-bit BW, 8-bit gray, 16-bit gray, 24-bit RGB
         TIFF: 1-bit BW, 8-bit gray, 16-bit gray, 24-bit RGB
         BMP:  1-bit BW, 8-bit gray, 24-bit RGB
         JPEG: 8-bit gray, 24-bit RGB
         IM:   all?
-    
+
     See http://pillow.readthedocs.org/en/latest/handbook/image-file-formats.html for more details.
     """
     from os.path import splitext

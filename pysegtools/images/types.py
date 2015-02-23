@@ -32,7 +32,7 @@ if not issubclass(__int_types[0], numbers.Integral):
     for __f in __float_types: numbers.Real.register(__f)
     for __c in __cmplx_types: numbers.Complex.register(__c)
 
-    
+
 ##### dtype functions #####
 __re_im_dtype = re.compile(r'^(([0-9]+\*)?([UIFC])|RGBA?)([0-9]+)(-BE)?$', re.IGNORECASE)
 def create_im_dtype(base, big_endian=False, channels=1):
@@ -209,7 +209,7 @@ def get_im_min_max(im):
 ####### Image dtype coercsion #####
 ####def _astype(im,t): return im.astype(dtype=t)
 ####def bit2rgb(im,t):
-####    
+####
 ####_coerce = {
 ####        IM_BIT:(IM_UINT8,IM_INT8,IM_UINT16,IM_UINT16_BE,IM_INT16,IM_INT16_BE,IM_UINT32,IM_UINT32_BE,IM_INT32,IM_INT32_BE,IM_UINT64,IM_UINT64_BE,IM_INT64,IM_INT64_BE,IM_FLOAT32,IM_FLOAT32_BE,IM_FLOAT64,IM_FLOAT64_BE,
 ####                (IM_RGB24,x),(IM_RGBA32,x),
@@ -234,7 +234,7 @@ def get_im_min_max(im):
 ####        IM_INT64_BE:(IM_INT64,IM_FLOAT64,IM_FLOAT64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,)
 ####        IM_RGB24:((IM_RGBA32,x),),
 ####        IM_RGBA32:(),
-####        
+####
 ####    }
 ####
 ####def im_coerce_dtype(im,targets):

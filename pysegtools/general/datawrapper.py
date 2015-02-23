@@ -25,17 +25,17 @@ For dictionary:
     __contains__
     __iter__
     itervalues
-    __delitem__ 
+    __delitem__
     __setitem__
     __eq__
     copy
 
 For list:
-    __len__ 
+    __len__
     __getitem__
     __delitem__
     __setitem__
-    insert  
+    insert
     extend
     __eq__
     __lt__
@@ -62,7 +62,7 @@ _marker = object() # unique object for detecting if argument is passed
 
 class DictionaryWrapper(dict):
     # Raw Functions     Derived Functions
-    #  __len__      <=  
+    #  __len__      <=
     #  __getitem__  <=           get, setdefault, pop, popitem
     #  __contains__ <=  has_key, get, setdefault, pop
     #  __iter__     <=  popitem, clear, keys, iterkeys, iteritems, items, __repr__
@@ -72,8 +72,8 @@ class DictionaryWrapper(dict):
     #  __setitem__  <=  setdefault, update
     #
     #  __eq__       <=  __ne__
-    # copy          <=  
-    
+    # copy          <=
+
     _marker = _marker
 
     def __init__(self, d): self._data = d
@@ -160,7 +160,7 @@ class _DictViewSetLike(_DictView):
     def __iter__(self): pass
     @abstractmethod
     def __contains__(self, item): pass
-    
+
     @staticmethod
     def __all_contained_in(a, b):
         return all(x in b for x in a)
@@ -249,7 +249,7 @@ class ListWrapper(list):
     #  __eq__       <=  __ne__, __le__, __gt__
     #  __lt__       <=  __le__, __ge__, __gt__
 
-    
+
     def __init__(self, l): self._data = l
 
     # Slice functions are only defined to cover-up the ones defined in list
@@ -257,7 +257,7 @@ class ListWrapper(list):
     def __delslice__(self, i, j): del self[slice(i,j)]
     def __setslice__(self, i, j, value): self[slice(i,j)] = value
     def __getslice__(self, i, j): return self[slice(i,j)]
-    
+
     # Deleting functions
     def __delitem__(self, i): del self._data[i]
     def remove(self, value):
@@ -351,11 +351,11 @@ class ListWrapper(list):
     def __le__(self, other): return (self < other) or (self == other)
     def __gt__(self, other): return not ((self < other) or (self == other))
     def __ge__(self, other): return not (self._data < other)
- 
+
     # Other
     def __repr__(self): return '[' + (', '.join(str(self[i]) for i in xrange(len(self)))) + ']'
     def __reversed__(self):
-        for i in xrange(len(self)-1, -1, -1): yield self[i]    
+        for i in xrange(len(self)-1, -1, -1): yield self[i]
 
 class ReadOnlyListWrapper(ListWrapper):
     def __init__(self, l=None, *args): super(ReadOnlyListWrapper, self).__init__(l or args)

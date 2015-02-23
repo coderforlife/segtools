@@ -36,10 +36,10 @@ class FileMode(int, Flags):
         if '+' in mode: m |= FileMode.ReadWrite
         if 'b' in mode: m |= FileMode.Binary
         return m
-    
+
     @staticmethod
     def from_file(f): return FileMode.from_string(f.mode)
-    
+
     @staticmethod
     def to_string(mode):
         if FileMode.Append in mode:
@@ -50,7 +50,7 @@ class FileMode(int, Flags):
             m = 'r' if FileMode.Write in mode else 'r+'
         if FileMode.Binary in mode: m += 'b'
         return m
-    
+
 __is_py3 = sys.version_info[0] == 3
 def isfileobj(f):
     """
@@ -249,7 +249,7 @@ def copy_data(f, src, dst, size=None, truncate=None, buf=16777216):
             dst += copied
             size -= copied
         if size > 0: _copy_data_complete(f, src, dst, buf[:size])
-    
+
     # Truncate the file
     if truncate: f.truncate(dst_end)
 

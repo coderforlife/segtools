@@ -56,15 +56,15 @@ class FileImageStack(ImageStack):
     When writing, slices are typically saved immediately but the header typically is not. Call
     the save() function to force all data including the header to be saved.
     """
-    
+
     __metaclass__ = _FileImageStackMeta
-    
+
     @classmethod
     def open(cls, filename, readonly=False, **options):
         """
         Opens an existing image-stack file or series of images as a stack. If 'filename' is a
         string then it is treated as an existing file. Otherwise it needs to be an iterable of
-        file names. Extra options are only supported by some file formats. 
+        file names. Extra options are only supported by some file formats.
         """
         if isinstance(filename, String):
             highest_cls, highest_mq = None, MatchQuality.NotAtAll
@@ -79,7 +79,7 @@ class FileImageStack(ImageStack):
             from ._collection import FileCollectionStack
             return FileCollectionStack.open(filename, readonly, **options)
         else: raise ValueError()
-        
+
     @classmethod
     def openable(cls, filename, readonly=False, **options):
         """
@@ -97,7 +97,7 @@ class FileImageStack(ImageStack):
             elif isinstance(filename, Iterable): return True
         except StandardError: pass
         return False
-        
+
     @classmethod
     def create(cls, filename, ims, **options):
         """
@@ -129,14 +129,14 @@ class FileImageStack(ImageStack):
             from ._collection import FileCollectionStack
             return FileCollectionStack.create(filename, ims, **options)
         else: raise ValueError()
-        
+
     @classmethod
     def creatable(cls, filename, **options):
         """
         Checks if a filename can written to as a new image stack. The filename needs to either be a
         string or an iterable of file names (even empty) or None. Extra options are only supported
         by some file formats. When filenames is None or an empty iterable then you need to give a
-        "pattern" option with an extension and %d in it. 
+        "pattern" option with an extension and %d in it.
         """
         try:
             if isinstance(filename, String):
@@ -161,7 +161,7 @@ class FileImageStack(ImageStack):
     def _openable(cls, f, **opts): #pylint: disable=unused-argument
         """
         [To be implemented by format, default is nothing is openable]
-        
+
         Return how likely a readable file-like object is openable as a FileImageStack given the
         dictionary of options. Returns a MatchQuality rating. If this returns anything besides
         NotAtAll then the class must provide a static/class method like:
@@ -186,12 +186,12 @@ class FileImageStack(ImageStack):
         thrown if there any unknown option keys or option values cannot be used.
         """
         return MatchQuality.NotAtAll
-    
+
     @classmethod
     def _can_read(cls):
         """[To be implemented by format, default is readable]"""
         return True
-    
+
     @classmethod
     def _can_write(cls):
         """[To be implemented by format, default is writable]"""
@@ -201,20 +201,20 @@ class FileImageStack(ImageStack):
     def name(cls):
         """
         [To be implemented by format, default causes the format to not be registered]
-        
+
         Return the name of this image stack handler to be displayed in help outputs.
         """
         return None
-    
+
     @classmethod
     def print_help(cls, width):
         """
         [To be implemented by format, default prints nothing]
-        
+
         Prints the help page of this image stack handler.
         """
         pass
-    
+
     def __init__(self, header, slices, readonly=False):
         super(FileImageStack, self).__init__(slices)
         self._header = header
@@ -272,14 +272,14 @@ class FileImageStack(ImageStack):
         This must call FileImageSlice._cache_data(im) after a slice is written.
         """
         pass
-        
+
 
     # Caching of slices
     def __update_cache(self, c): self._cache = OrderedDict(izip(c, repeat(True)))
-    
+
     def _delete_slices(self, start, stop):
         ss = stop - start
-        
+
         # Update cache
         if self._cache_size: self.__update_cache(i-ss if i>=stop else i for i in self._cache if i<start or i>=stop)
 
@@ -290,10 +290,10 @@ class FileImageStack(ImageStack):
         self._header._update_depth(self._d)
         if self._d <= 1: self._homogeneous = Homogeneous.Both
         elif self._homogeneous != Homogeneous.Both: self._homogeneous = None # may have become homogeneous with the deletion
-        
+
     def _insert_slices(self, idx, slices):
         ln = len(slices)
-        
+
         # Update slices and depth
         self._slices[idx:idx] = slices
         self._d += ln
@@ -306,7 +306,7 @@ class FileImageStack(ImageStack):
     # Setting and adding slices
     def __setitem__(self, idx, ims):
         """
-        Sets slices to new images, writing them to disk. The images can be either ndarrays or 
+        Sets slices to new images, writing them to disk. The images can be either ndarrays or
         ImageSource. Accepts advanced indexing as follows:
 
         * Integer index: accepts integers in [-N, N] where negative values are relative to the end
@@ -395,7 +395,7 @@ class FileImageStack(ImageStack):
         # equivilent to ims[i:i] = im
         if self._readonly: raise Exception('readonly')
         self._insert(i, [ImageSource.as_image_source(im)])
-        
+
     # Removing slices
     def __delitem__(self, idx):
         """
@@ -484,7 +484,7 @@ class FileImageSlice(ImageSlice):
                 im.flags.writeable = False
             self._cache = im
         self._stack._update_homogeneous_set(self._z, im.shape[:2], get_im_dtype(im))
-    
+
     @abstractmethod
     def _set_data(self, im):
         """
@@ -493,7 +493,7 @@ class FileImageSlice(ImageSlice):
         then an exception should be thrown. In the case of an exception, it must be thrown before
         any changes are made to this FileImageSlice properties or the data on disk.
 
-        This method can optionally copy any metadata it is aware of from the image to this slice. 
+        This method can optionally copy any metadata it is aware of from the image to this slice.
 
         This must return what self._get_data() would return.
         """
@@ -631,7 +631,7 @@ class FileImageStackHeader(DictionaryWrapperWithAttr):
         for k,v in itr: self[k] = v
 
 class Field(object):
-    # TODO: re-use the casting system from the command-line parsing 
+    # TODO: re-use the casting system from the command-line parsing
     """
     A image stack header field. The base class takes a casting function, if the value is read-only
     (to the external world, default False), if the field is optional (default True), and a default
