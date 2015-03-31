@@ -455,18 +455,18 @@ class CommandEasy(Command):
     """
     A Command that does some extra work for you but restricts how options are parsed. All options
     must be defined in _opts, there cannot be any inter-dependence of options, and there cannot be
-    any in positional-only arguments or variable-count arguments. Additionally, it is assumed that
-    you will pop all image stacks you list before pushing any image stacks, and there can be no
+    any positional-only arguments or variable-count arguments. Additionally, it is assumed that you
+    will pop all image stacks you list before pushing any image stacks, and there can be no
     optionally consumed or produced image stacks.
 
     A dictionary of arguments is available as the _vals attribute and every option is also made into
     a field starting with an underscore than the name of the field. The print-help function is also
-    made for you (as long as you fill out the other functiosn, like _title and _desc).
+    made for you (as long as you fill out the other functions, like _title and _desc).
     """
     @classmethod
     def _title(cls):
         """The title of the command, default is the name with Title Case."""
-        return " ".join(w.capitalize() for w in cls.name.split())
+        return " ".join(w.capitalize() for w in cls.name().split())
     @classmethod
     def _desc(cls):
         """The description of the command"""
@@ -549,7 +549,7 @@ class Help(object):
         if topic is None: Help.__msg()
         else:
             content = Help._topics.get(topic.strip())
-            if content is None: __err_msg("Help topic not found.")
+            if content is None: _err_msg("Help topic not found.")
             if isinstance(content, String):
                 for l in content.splitlines(): print(fill(l))
             else: content(out_width)
@@ -665,7 +665,7 @@ def __topics_help(width):
     p.list(*[", ".join(ts) for ts in topics])
 Help.register(('topic', 'topics', 'commands'), __topics_help)
 
-def __err_msg(msg, ex=None):
+def _err_msg(msg, ex=None):
     print(fill(msg), file=sys.stderr)
     if ex is not None and verbosity >= Verbosity.Min:
         from traceback import print_exception
@@ -701,7 +701,7 @@ def main():
     cmds = []
     for cmd_arg in args:
         try: cmds.append(Command.create(cmd_arg[0].lstrip('-'), Args(cmd_arg), stack))
-        except StandardError as ex: __err_msg('%s: %s'%(" ".join(cmd_arg),ex), ex)
+        except StandardError as ex: _err_msg('%s: %s'%(" ".join(cmd_arg),ex), ex)
 
     # Execute all of the commands
     stack = Stack()
@@ -710,7 +710,7 @@ def main():
             if verbosity == Verbosity.Max: print("="*out_width)
             print("> %s"%cmd)
         try: cmd.execute(stack)
-        except StandardError as ex: __err_msg('%s: %s'%(cmd, ex), ex)
+        except StandardError as ex: _err_msg('%s: %s'%(cmd, ex), ex)
 
     # Output anything left in the stack
     if verbosity >= Verbosity.Min:
@@ -726,9 +726,9 @@ def __parse_args(args):
             with open(args[i][1:], 'r') as argfile:
                 args[i:i+1] = shlex.split(argfile.read(), True) # read the file, split it, and insert in place of the @ argument
         except IOError as ex:
-            __err_msg('Unable to read arg-file "%s": %s' % (args[i][1:], ex), ex)
+            _err_msg('Unable to read arg-file "%s": %s' % (args[i][1:], ex), ex)
         except StandardError as ex:
-            __err_msg('Invalid content of arg-file "%s": %s' % (args[i][1:], ex), ex)
+            _err_msg('Invalid content of arg-file "%s": %s' % (args[i][1:], ex), ex)
     args = __split_args(args)
 
     # Basic arguments
@@ -736,12 +736,12 @@ def __parse_args(args):
     num_basic_args = 0
     for cmd in args:
         if cmd[0] in ('-v', '--verbose'):
-            if verbosity == Verbosity.Max: __err_msg("Too many -v/--verbose arguments.")
-            if len(cmd) > 1: __err_msg("-v/--verbose does not take any values")
+            if verbosity == Verbosity.Max: _err_msg("Too many -v/--verbose arguments.")
+            if len(cmd) > 1: _err_msg("-v/--verbose does not take any values")
             verbosity += 1
             num_basic_args += 1
         elif cmd[0] in ('-h', '--help'):
-            if len(cmd) > 2: __err_msg("-h/--help can take at most more value")
+            if len(cmd) > 2: _err_msg("-h/--help can take at most more value")
             Help.show(cmd[1] if len(cmd) == 2 else None)
             # unreachable: num_basic_args += 1
         else: break
@@ -750,4 +750,5 @@ def __parse_args(args):
 
 # make sure everything is loaded to get commands and help topics registered
 from . import _imstack #pylint: disable=unused-import
-from . import images   #pylint: disable=unused-import
+#from . import images (doesn't work, next line is roughly equivalent) 
+__import__(('.'.join(__name__.split('.')[:-1]+['images'])), globals(), locals()) #pylint: disable=unused-import

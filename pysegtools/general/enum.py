@@ -290,7 +290,7 @@ class EnumMeta(type):
             else:
                 member_name, member_value = item
             classdict[member_name] = member_value
-        enum_class = metacls.__new__(metacls, class_name, bases, classdict)
+        enum_class = metacls.__new__(metacls, str(class_name), bases, classdict)
 
         # TODO: replace the frame hack if a blessed way to know the calling
         # module is ever developed

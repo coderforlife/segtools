@@ -675,5 +675,6 @@ class NumericField(Field):
         return v
 
 # Import formats and commands
-from . import formats   #pylint: disable=unused-import
-from . import _commands #pylint: disable=unused-import
+#from . import formats (doesn't work, next line is roughly equivalent) 
+__import__(('.'.join(__name__.split('.')[:-1]+['formats'])), globals(), locals()) #pylint: disable=unused-import
+from . import _commands             #pylint: disable=unused-import

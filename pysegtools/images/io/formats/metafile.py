@@ -14,7 +14,7 @@ from ..._util import prod, itr2str, splitstr, get_list, _bool
 from ...types import create_im_dtype, im_decomplexify
 from ..._util import String, Unicode, re_search
 from .._util import openfile, get_file_size, imread_raw, imsave_raw, imread_ascii_raw, imsave_ascii_raw
-from .. import _single
+from .._single import iminfo as _iminfo, imread as _imread, imsave as _imsave
 
 ##from functools import partial
 ##from numpy import array
@@ -51,7 +51,9 @@ synonyms = {
     }
 
 # need to do it this way to support ? as a name
-METDistanceUnits = Enum('METDistanceUnits', {'?':0, 'um':1, 'mm':2, 'cm':3, 'UNKNOWN':0}, module=__name__, type=int)
+METDistanceUnits = Enum('METDistanceUnits',
+                        {'?':0, 'um':1, 'mm':2, 'cm':3, 'UNKNOWN':0},
+                        module=__name__, typ=int)
 
 class METModality(int, Enum):
     MET_MOD_CT      = 0
@@ -169,8 +171,8 @@ def iminfo_mhd(filename):
     with openfile(filename, 'rb') as f:
         h, dtype, _, _ = read_mha_header(f)
     return tuple(reversed(splitstr(h['DimSize'], int))), dtype
-_single.iminfo.register('.mha', iminfo_mha)
-_single.iminfo.register('.mhd', iminfo_mhd)
+_iminfo.register('.mha', iminfo_mha)
+_iminfo.register('.mhd', iminfo_mhd)
 
 def imread_mha(filename):
     """Equivilent to imread_mhd, MHD vs MHA files are determined based on the header in the file"""
@@ -232,8 +234,8 @@ def get_reader(h, shape, dtype, headersize):
         return read_data_file(datafile, headersize, datasize, imread, compression, dtype, shape)
     return _reader
 
-_single.imread.register('.mha', lambda filename: imread_mha(filename)[1])
-_single.imread.register('.mhd', lambda filename: imread_mhd(filename)[1])
+_imread.register('.mha', lambda filename: imread_mha(filename)[1])
+_imread.register('.mhd', lambda filename: imread_mhd(filename)[1])
 
 ####### Saving #################################################################
 
@@ -422,5 +424,5 @@ def save_data(im, filename, datafile, elem_data_file, alltags, comp, imsave):
         hdr += 'ElementDataFile = '+elem_data_file
         with openfile(filename, 'wb') as f: f.write(hdr.encode('utf8'))
 
-_single.imsave.register('.mha', imsave_mha)
-_single.imsave.register('.mhd', imsave_mhd)
+_imsave.register('.mha', imsave_mha)
+_imsave.register('.mhd', imsave_mhd)
