@@ -6,6 +6,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 from .imstack import Command, CommandEasy, Opt, Help
+from .images._util import itr2str
 
 class SelectCommand(Command):
     @classmethod
@@ -27,7 +28,7 @@ also duplicate immage stacks.""")
         p.cmds("--select image-stack-numbers-or-slices ...")
         p.newline()
         p.text("""
-The command is simply followed by a series or numbers or slices. These are the image stacks that you
+The command is simply followed by a series of numbers or slices. These are the image stacks that you
 wish to move to the front of the line, to be worked with next. A value of 0 would be the image stack
 that is already going to be next, 1 is second-to-next, and so forth. You can also use negative
 values, where -1 would be the image stack that is last-to-be-used, -2 would be penultimate, etc. The
@@ -48,8 +49,8 @@ Examples:""")
                "--select :-2:   # every other image stack is brought to the top")
         p.newline()
         p.text("See also:")
-        p.list('remove')
-    def __str__(self): return "Selecting "+(", ".join(self._inds))
+        p.list('remove','info')
+    def __str__(self): return "selecting stacks "+itr2str(self._inds, ", ")
     def __init__(self, args, stack):
         if len(args.positional) == 0: raise ValueError("No image stacks selected")
         if len(args.named) != 0: raise ValueError("No named options accepted")
@@ -61,7 +62,7 @@ Examples:""")
                 if ':' in arg:
                     # slice: stop is inclusive and different order from how Python normally operates
                     parts = [int(i) if len(i) > 0 else None for i in arg.split(':', 2)]
-                    start, stop, step = parts[0], parts[-1], ((parts[2] if len(parts) == 2 else None) or 1)
+                    start, stop, step = parts[0], parts[-1], ((parts[1] if len(parts) == 2 else None) or 1)
                     if step > 0:
                         start = 0         if start is None else ((last_ind+start) if start < 0 else start)
                         stop  = (last_ind if stop  is None else ((last_ind+stop)  if stop  < 0 else stop))+1
@@ -111,8 +112,8 @@ Examples:""")
                "--remove :2:    # remove every other image stack")
         p.newline()
         p.text("See also:")
-        p.list('select')
-    def __str__(self): return "Removing "+(", ".join(self._inds))
+        p.list('select','info')
+    def __str__(self): return "removing stacks "+itr2str(self._inds, ", ")
     def __init__(self, args, stack):
         if len(args.positional) == 0: raise ValueError("No image stacks to remove")
         super(RemoveCommand, stack).__init__(args, stack)
@@ -131,7 +132,9 @@ class InfoCommand(CommandEasy):
     def _desc(cls): return "Print out the currently list of available image stacks, going from least-recent to most-recent (and next to be used)."
     @classmethod
     def _opts(cls): return (Opt('detailed','if true then print out much more detailed information about the stacks',Opt.cast_bool(),False),)
-    def __str__(self): return "Detailed Information" if self._detailed else "Information"
+    @classmethod
+    def _see_also(cls): return ('select', 'remove')
+    def __str__(self): return "detailed Information" if self._detailed else "information"
     def execute(self, stack):
         n = len(stack)
         print(("There are %d image stacks available"%n) if n!=1 else "There is 1 image stack available")

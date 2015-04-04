@@ -78,7 +78,7 @@ Examples:""")
         p.list("--load file###.png", "-L file###.png 3 2 15")
 
         p.subtitle("List of 2D Image Files")
-        p.text("""Command Format: --load [ file1 file2 file3 ]   (literal brackets)
+        p.text("""Command Format: --load [ file1 file2 file3 ]   (literal brackets) 
 A list of files is given between literal [ and ]. Glob patterns are also accepted within the
 brackets.
 
@@ -215,7 +215,7 @@ Examples:""")
         p.list("--append file###.png", "-A file###.png 3 2 15")
 
         p.subtitle("List of 2D Image Files")
-        p.text("""Command Format: --append [ file1 ... ] [pattern [start] [step]]  (literal brackets around list)
+        p.text("""Command Format: --append [ file1 ... ] [pattern [start] [step]]  (literal brackets around list) 
 A list of files is given between literal [ and ]. Glob patterns are also accepted within the
 brackets but only apply to loading images. The files are loaded as long as they exist. Once we
 reach a file that doesn't exist we start saving. If there are more slices than filenames listed and
@@ -286,7 +286,7 @@ Examples:""")
         p.list("--save file###.png", "-S file###.png 3 2")
 
         p.subtitle("List of 2D Image Files")
-        p.text("""Command Format: --save [ file1 ... ] [pattern [start] [step]]  (literal brackets around list)
+        p.text("""Command Format: --save [ file1 ... ] [pattern [start] [step]]  (literal brackets around list) 
 A list of files is given between literal [ and ]. Glob patterns are not accepted. If there are more
 slices than filenames listed and a pattern is given, that pattern will be used to generate the
 remaining filenames. See above for the definition of those options.

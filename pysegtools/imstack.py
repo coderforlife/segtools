@@ -366,7 +366,9 @@ class _CommandMeta(ABCMeta):
     def __new__(mcs, clsname, bases, dct):
         c = super(_CommandMeta, mcs).__new__(mcs, clsname, bases, dct)
         fs = c.flags()
-        if fs is not None and len(fs) > 0: Help.register((c.name(),)+fs, c.print_help)
+        if fs is not None and len(fs) > 0:
+            n = c.name()
+            Help.register(fs+(() if n.lower() in fs else (n,)), c.print_help)
         return c
 
 _cmd_names = {}
@@ -420,7 +422,7 @@ class Command(object):
     def flags(cls):
         """List of acceptable flags to recognize the command, without - or --"""
         return None
-
+    
     @classmethod
     def print_help(cls, width):
         """
@@ -455,9 +457,9 @@ class CommandEasy(Command):
     """
     A Command that does some extra work for you but restricts how options are parsed. All options
     must be defined in _opts, there cannot be any inter-dependence of options, and there cannot be
-    any positional-only arguments or variable-count arguments. Additionally, it is assumed that you
-    will pop all image stacks you list before pushing any image stacks, and there can be no
-    optionally consumed or produced image stacks.
+    any positional-only or variable-count arguments. Additionally, it is assumed that you will pop
+    all image stacks you list before pushing any image stacks. Also the number of stacks consumed
+    and produced is fixed.
 
     A dictionary of arguments is available as the _vals attribute and every option is also made into
     a field starting with an underscore than the name of the field. The print-help function is also
@@ -499,25 +501,24 @@ class CommandEasy(Command):
         if fs is None or len(fs) == 0: return
         p = Help(width)
         p.title(t)
-        if d: p.text(d); print("")
+        if d: p.text(d); p.newline();
         p.flags(fs)
-        print("")
+        p.newline(); 
         p.text("Command format:")
         s = sorted(fs, key=len)[-1]
         s = ('--' if len(s) > 1 else '-')+s
         if os: s += " " + (" ".join('['+o.name+']' if o.has_default else o.name for o in os))
         p.cmds(s)
-        if os: print("\nOptions:"); p.opts(*os) #pylint: disable=star-args
-        if co or pr: print(""); p.stack_changes(consumes=co, produces=pr)
-        if ex: print(""); p.list(*ex) #pylint: disable=star-args
-        if sa: print(""); p.list(*sa) #pylint: disable=star-args
+        if os: p.newline(); p.text("Options:"); p.opts(*os) #pylint: disable=star-args
+        if co or pr: p.newline(); p.stack_changes(consumes=co, produces=pr)
+        if ex: p.newline(); p.list(*ex) #pylint: disable=star-args
+        if sa: p.newline(); p.list(*sa) #pylint: disable=star-args
     def __new__(cls, args, stack):
         for _ in xrange(len(cls._consumes())): stack.pop()
         for _ in xrange(len(cls._produces())): stack.push()
         self = super(CommandEasy, cls).__new__()
         self._vals = vals = args.get_all_kw(*cls._opts()).iteritems() #pylint: disable=protected-access
-        for name, val in vals:
-            setattr(self, '_'+name, val)
+        for name, val in vals: setattr(self, '_'+name, val)
     def __init__(self, args, stack): super(CommandEasy, self).__init__(self, args, stack)
     @abstractmethod
     def __str__(self): pass
@@ -660,6 +661,7 @@ def __topics_help(width):
     p.title("Topics / Commands")
     topics = {}
     for t, f in Help._topics.iteritems(): topics.setdefault(f, []).append(t) #pylint: disable=protected-access
+    # TODO: sort these differently, like things with spaces last?
     topics = [sorted(ts, key=len, reverse=True) for f,ts in topics.iteritems()]
     topics.sort(key=lambda l: l[0].lower())
     p.list(*[", ".join(ts) for ts in topics])

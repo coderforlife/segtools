@@ -202,9 +202,9 @@ def get_im_min_max(im):
     """Gets the min and max values for an image or an image dtype."""
     if isinstance(im, dtype): dt = im; im = None
     else: dt = im.dtype
-    if im is None or dt not in __float_types: return __min_max_values[dt]
+    if im is None or dt not in __float_types: return __min_max_values[dt.type]
     mn, mx = im.min(), im.max()
-    return (mn, mx) if mn < 0.0 or mx > 1.0 else __min_max_values[dt]
+    return (mn, mx) if mn < 0.0 or mx > 1.0 else __min_max_values[dt.type]
 
 ####### Image dtype coercsion #####
 ####def _astype(im,t): return im.astype(dtype=t)
