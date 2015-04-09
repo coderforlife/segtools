@@ -43,7 +43,10 @@ class ImageSource(object):
 
 class ArrayImageSource(ImageSource):
     """A simple image source that is backed by an ndarray."""
-    def __init__(self, im): check_image(im); self._im = im
+    def __init__(self, im):
+        check_image(im)
+        self._im = im.view()
+        self._im.flags.writeable = False
     @property
     def w(self): return self._im.shape[1]
     @property

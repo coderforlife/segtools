@@ -165,8 +165,6 @@ class FileCollectionStackHeader(FileImageStackHeader):
         }
 
     # Setup all instance variables to make sure they are in __dict__
-    # Required for headers
-    _imstack = None
     _fields = None
     def __init__(self, pattern, start, step, files=()):
         self._fields = FileCollectionStackHeader.__fields_raw.copy()

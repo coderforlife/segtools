@@ -233,7 +233,6 @@ class MRCHeader(FileImageStackHeader):
     # Setup all instance variables to make sure they are in __dict__
 
     # Required for headers
-    _imstack = None
     _fields = None
 
     # Specific to MRC
@@ -246,7 +245,7 @@ class MRCHeader(FileImageStackHeader):
 
     def __init__(self):
         self._fields = MRCHeader.__fields_base.copy()
-        super(MRCHeader, self).__init__()
+        super(MRCHeader, self).__init__(check=False)
 
     def _open(self, f, readonly):
         ### Opening an existing file ###

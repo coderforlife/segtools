@@ -18,14 +18,14 @@ import sys
 from abc import ABCMeta, abstractmethod
 String = str if sys.version_info[0] == 3 else basestring
 from numbers import Integral
-from collections import Sequence
+from collections import Sequence, OrderedDict
 from itertools import chain
 
 from textwrap import TextWrapper
 from .general.utils import get_terminal_width, all_subclasses
 out_width = max(get_terminal_width()-1, 24)
 fill = TextWrapper(width=out_width).fill
-stack_status_fill = TextWrapper(width=out_width, subsequent_indent=2).fill
+stack_status_fill = TextWrapper(width=out_width, subsequent_indent='  ').fill
 
 from .general.enum import Enum
 class Verbosity(int, Enum):
@@ -37,7 +37,7 @@ verbosity = Verbosity.No
 class Stack(object):
     """
     The stack of image stacks that commands consume from and produce to. In general a command should
-    only ever need pop and push, and possible len(...) and empty. The select and remove functions'
+    only ever need pop and push, and possibly len(...) and empty. The select and remove functions'
     are meant for the internal "select" and "remove" commands.
     """
     def __init__(self): self._stack = []
@@ -85,7 +85,8 @@ class PseudoStack(Stack):
     """
     A class that almost looks like Stack except that it doesn't actually save image stacks (and
     doesn't accept or return them). However it does record the number of items on the stack and
-    checks to make sure the stack is never under-flowed.
+    checks to make sure the stack is never under-flowed. This is used during the initial pass
+    of argument processing.
     """
     def __init__(self): self._stack_count = 0 #pylint: disable=super-init-not-called
     def __len__(self): return self._stack_count
@@ -169,12 +170,14 @@ class Args(object):
         """
         return tuple(self.get_all_kw(*opts).itervalues())
     def get_all_kw(self, *opts):
-        """Like get_all except it returns a dictionary of name:value pairs."""
+        """Like get_all except it returns an ordered dictionary of name:value pairs."""
+        vals = OrderedDict()
         for key,val,o in self.__get_all(*opts):
             try:
-                opts[o.name] = o.default if key is None else o.cast(val)
+                vals[o.name] = o.default if key is None else o.cast(val)
             except (LookupError): raise ValueError("Value required for argument '%s'" % o.name)
             except (ValueError, TypeError): raise ValueError("Argument '%s' does not support value '%s'" % (o.name, val))
+        return vals
     def __contains__(self, key): return self.__get(key)[0] is not None
     def has_key(self, key): return key in self
     def __len__(self): return len(self._args)+len(self._kwargs)

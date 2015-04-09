@@ -52,8 +52,8 @@ del d
 
 def iminfo(filename):
     """
-    Read the basic image information from a file. By default this uses SciPy and PIL for any formats
-    they support. This attempts to only read the header and not the entire image. Returns the shape
+    Read the basic image information from a file. By default this uses PIL for any formats it
+    supports. This attempts to only read the header and not the entire image. Returns the shape
     (H, W) and the dtype.
 
     Additional formats can be registered by using iminfo.register(...). Python scripts placed in
@@ -94,7 +94,7 @@ iminfo.register = __iminfo_register
 
 def imread(filename):
     """
-    Read an image from a file. By default this uses SciPy and PIL for any formats they support.
+    Read an image from a file. By default this uses PIL for any formats it supports.
 
     Additional formats can be registered by using imread.register(...). Python scripts placed in
     images/io/formats will automatically be loaded. A dictionary of additional formats is
@@ -118,7 +118,8 @@ def imread(filename):
         from numpy import array
         im = Image.open(filename)
         dt = __pil_mode_to_dtype[im.palette.mode if im.mode=='P' else im.mode]
-        return array(im.getdata(), dtype=dt).reshape(tuple(reversed(im.size)))
+        a = array(im.getdata(), dtype=dt).reshape(tuple(reversed(dt.shape+im.size)))
+        return a
 def __imread_register(ext, read):
     """
     Register a file extension to use a particular reading function. The reading function needs to
@@ -136,7 +137,7 @@ imread.register = __imread_register
 
 def imsave(filename, im):
     """
-    Save an image to a file. By default this uses SciPy and PIL for any formats they support.
+    Save an image to a file. By default this uses PIL for any formats it supports.
 
     Additional formats can be registered by using imsave.register(...). Python scripts placed in
     images/io/formats will automatically be loaded. A dictionary of additional formats is
@@ -162,7 +163,7 @@ def imsave(filename, im):
         dt, nchan = get_im_dtype_and_nchan(im)
         if nchan > 1:
             if dt.type != uint8 or nchan > 4: raise ValueError
-            mode = ('LA','RGB','RGBA')[nchan-1]
+            mode = ('LA','RGB','RGBA')[nchan-2]
             im = Image.frombuffer(mode, sh, im.data, 'raw', mode, st, 1)
         elif dt.kind == 'b':
             # Make sure data is actually saved as 1-bit data (both SciPy and PIL seem to be broken with this)

@@ -25,6 +25,7 @@ oStep = Opt('step','positive integer to count by',Opt.cast_int(lambda x:x>=1),1)
 oStop = Opt('stop','non-negative integer to stop counting at (it is included)',Opt.cast_or(Opt.cast_equal(None),Opt.cast_int(lambda x:x>=0)),None)
 
 def _pattern_desc(pattern,start,step,stop=None):
+    if start==0 and step==1 and stop is None: return "'%s'" % pattern
     return "'%s' starting at %d%s%s"%(pattern,start,
         ('and stepping by %d'%step) if step!=1 else '',
         ('up to %d'%stop) if stop is not None else '')

@@ -450,7 +450,7 @@ class HomogeneousFileImageStack(HomogeneousImageStack, FileImageStack):
     An file-based image stack where every slice has the same shape and data type.
     """
     def __init__(self, header, slices, w, h, dtype, readonly=False):
-        super(HomogeneousFileImageStack, self).__init__(self, w, h, dtype, slices, {'header':header,'readonly':readonly})
+        super(HomogeneousFileImageStack, self).__init__(w, h, dtype, slices, {'header':header,'readonly':readonly})
     def print_detailed_info(self, width=None): # TODO: use width
         super(HomogeneousFileImageStack, self).print_detailed_info()
         if len(self.header) == 0: print("No header information")
@@ -476,12 +476,8 @@ class FileImageSlice(ImageSlice):
 
     def _cache_data(self, im):
         if self._stack._cache_size:
+            im.flags.writeable = False
             self._stack._cache_it(self._z)
-            if im.flags.writeable:
-                # TODO: not writable != truly read-only/immutable...
-                # TODO: make copy-on-write
-                im = im.copy()
-                im.flags.writeable = False
             self._cache = im
         self._stack._update_homogeneous_set(self._z, im.shape[:2], get_im_dtype(im))
 
@@ -511,12 +507,12 @@ class FileImageStackHeader(DictionaryWrapperWithAttr):
     be created for common header values between different types.
 
     **Implementation Notes**
-    The implementor must set the class fields _imstack and _fields before calling
-    super().__init__(). These contain the image stack for which this header is connected to, the
-    known fields as a dictionary or ordered dictionary containing field-name to Field object, and
-    the data for those fields as a dictionary of field-name to data. Whenever _data or _fields are
-    changed directly you must call super()._check(). This is called for you automatically in
-    super().__init__().
+    The implementor must set the class fields _fields before calling super().__init__(). This
+    contains the image stack for which this header is connected to, the known fields as a
+    dictionary or ordered dictionary containing field-name to Field object, and the data for
+    those fields as a dictionary of field-name to data. Whenever _data or _fields are changed
+    directly you must call super()._check(). This is called for you automatically in
+    super().__init__() if check is not False.
 
     The functions self.save(), self._update_depth(d), and self._get_field_name(f) must also be
     implemented. More information about those is provided in the abstract definitions.
@@ -526,11 +522,12 @@ class FileImageStackHeader(DictionaryWrapperWithAttr):
     self.__dict__.
     """
     __metaclass__ = ABCMeta
-
-    def __init__(self, data=None):
+    def __init__(self, data=None, check=True):
+        if '_data' not in self.__dict__: self.__dict__['_data'] = None
+        if '_imstack' not in self.__dict__: self.__dict__['_imstack'] = None
         super(FileImageStackHeader, self).__init__({} if data is None else data)
-        if any((x not in self.__dict__) for x in ('_imstack', '_fields', '_data')): raise TypeError
-        self._check()
+        if '_fields' not in self.__dict__: raise TypeError
+        if check: self._check()
 
     def _check(self):
         for _key,value in self._data.items():

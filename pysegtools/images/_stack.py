@@ -67,8 +67,8 @@ class ImageStack(object):
         if self._d == 0: return "(no slices)"
         h,s,d = self._get_homogeneous_info()
         if h == Homogeneous.Both: return "%s: %dx%dx%d %s" % (type(self).__name__, s[1], s[0], self._d, im_dtype_desc(d))
-        line = "%0"+str(len(str(self._d-1)))+"%dx%d %s "
-        return type(self).__name__+": "+", ".join(line%(z,im.w,im.h,im_dtype_desc(im)) for z,im in enumerate(self._slices))
+        line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s"
+        return type(self).__name__+": "+", ".join(line%(z,im.w,im.h,im_dtype_desc(im.dtype)) for z,im in enumerate(self._slices))
     def print_detailed_info(self, width=None): # TODO: use width
         h,s,d = self._get_homogeneous_info()
         total_bytes = 0
@@ -100,7 +100,7 @@ class ImageStack(object):
             if all(shape == im.shape for im in islice(self._slices, 1, None)):
                 self._homogeneous |= Homogeneous.Shape
             else: shape = None
-            if all(dtype == im.dtype for im in  islice(self._slices, 1, None)):
+            if all(dtype == im.dtype for im in islice(self._slices, 1, None)):
                 self._homogeneous |= Homogeneous.DType
             else: dtype = None
         else:
@@ -240,7 +240,7 @@ class HomogeneousImageStack(ImageStack):
         """Get the entire stack as a single 3D image."""
         from numpy import empty
         stack = empty((self._d,) + self._shape, dtype=self._dtype)
-        for i, sec in enumerate(self): stack[i,:,:] = sec
+        for i, slc in enumerate(self): stack[i,:,:,...] = slc.data
         return stack
 
 class ImageSlice(DeferredPropertiesImageSource):
@@ -271,35 +271,46 @@ class ImageSlice(DeferredPropertiesImageSource):
     def _get_data(self):
         """
         Internal function for getting image data. Must return an ndarray with shape and dtype of
-        this slice (which should be a standardized type).
+        this slice (which should be a standardized type). The data returned should either be a copy
+        (so that modifications to it do not effect the underlying image data) or an unwritable view.
         """
         pass
 
 # Some generic image stacks that are wrappers are other image datas
 class ImageStackArray(HomogeneousImageStack):
     """
-    ImageStack that wraps a 3D array of data. All slices returned are views so the data can be
-    edited.
+    ImageStack that wraps a 3D array of data. Supports setting data slices.
     """
     def __init__(self, arr):
         from numpy import empty
         if arr.ndim not in (3,4): raise ValueError()
-        sh, dt = arr.shape, get_im_dtype(arr)
-        if sh[0] == 0: check_image(empty(sh[1:], dtype=dt))
-        else: check_image(arr[0,...])
-        self._arr = arr
-        super(ImageStackArray, self).__init__([ImageSliceFromArray(self, z) for z in xrange(sh[0])], sh[2], sh[1], dt)
+        sh = arr.shape
+        im = empty(sh[1:], dtype=arr.dtype) if sh[0]==0 else arr[0,...] # hack to allow 0-depth image stacks
+        check_image(im)
+        dt = get_im_dtype(im)
+        self.__arr = arr
+        self.__arr_readonly = arr.view()
+        self.__arr_readonly.flags.writeable = False
+        super(ImageStackArray, self).__init__(sh[2], sh[1], dt, [ImageSliceFromArray(self, z, im, dt) for z,im in enumerate(arr)])
     @ImageStack.cache_size.setter
     def set_cache_size(self, value): pass # prevent actual caching - all in memory
     @property
-    def stack(self): return self._arr # return the underlying data, not a copy
+    def stack(self): return self.__arr_readonly
 class ImageSliceFromArray(ImageSlice):
-    def __init__(self, stack, z):
+    def __init__(self, stack, z, im, dt):
         super(ImageSliceFromArray, self).__init__(stack, z)
-        self._set_props(get_im_dtype(stack._arr), stack._arr.shape[1:3])
+        self._set_props(dt, im.shape[0:2])
+        self._im = im
+        self._im_readonly = im.view()
+        self._im_readonly.flags.writeable = False
     def _get_props(self): pass
-    def _get_data(self): return self._stack._arr[self._z,:,:,...]
-
+    def _get_data(self): return self._im_readonly
+    @ImageSlice.data.setter
+    def set_data(self, im):
+        im = ImageSource.as_image_source(im)
+        if self._shape != im.shape or self._dtype != im.dtype: raise ValueError('requires all slices to be the same data type and size')
+        self._im[:,:,...] = im.data[:,:,...]
+        
 class ImageStackCollection(ImageStack):
     """ImageStack that wraps a collection of ImageSources."""
     def __init__(self, ims):
@@ -309,5 +320,9 @@ class ImageSliceFromCollection(ImageSlice):
     def __init__(self, stack, z, im):
         super(ImageSliceFromCollection, self).__init__(stack, z)
         self._im = im
-    def _get_props(self): self._set_props(get_im_dtype(self._im), self._im.shape[:2])
+    def _get_props(self): self._set_props(self._im.dtype, self._im.shape[:2])
     def _get_data(self): return self._im.data
+
+
+# Import commands
+from . import _commands #pylint: disable=unused-import

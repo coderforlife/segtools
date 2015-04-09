@@ -128,7 +128,7 @@ def is_image(im):
     """
     Returns True if `im` is an image, basically it is a ndarray of 2 or 3 dimensions where the 3rd
     dimension length is 1-5 and the data type is a basic data type (integer or float, or complex
-    for 2d images).
+    for 2d images). Does not check to see that the image has no zero-length dimensions.
     """
     ndim = 2 if im.ndim == 3 and im.shape[2] == 1 else im.ndim
     return (ndim == 2 and im.dtype.type in __basic_types+__cmplx_types or
