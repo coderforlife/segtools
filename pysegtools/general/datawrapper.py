@@ -51,12 +51,12 @@ from __future__ import unicode_literals
 
 import collections
 from sys import maxsize
-from itertools import izip
+from itertools import izip, repeat, izip_longest
 from numbers import Integral
 from abc import ABCMeta, abstractmethod
 
 __all__ = ['DictionaryWrapper', 'DictionaryWrapperWithAttr', 'ReadOnlyDictionaryWrapper',
-           'ListWrapper', 'ReadOnlyListWrapper']
+           'ListWrapper', 'ReadOnlyListWrapper', 'ListOfSame', 'DelayLoadedList']
 
 _marker = object() # unique object for detecting if argument is passed
 
@@ -371,3 +371,78 @@ class ReadOnlyListWrapper(ListWrapper):
     def reverse(self): raise AttributeError('Illegal action for readonly list')
     def sort(self, cmp=None, key=None, reverse=False): #pylint: disable=redefined-builtin
         raise AttributeError('Illegal action for readonly list')
+
+def _iter_eq(X, Y):
+    return all(x==y for x,y in izip_longest(X, Y, fillvalue=_marker))
+def _iter_lt(X, Y):
+    for x,y in izip_longest(X, Y, fillvalue=_marker):
+        if x is _marker: return True
+        if y is _marker: return False
+        if x != y: return x < y
+    return False # equal
+
+class ListOfSame(ReadOnlyListWrapper): # does allow 'deleting' though
+    """
+    A list where all elements have the same value. It allows for an infinite number of elements.
+    """
+    def __init__(self, val, len=None):
+        if len != None and len < 0: raise ValueError()
+        super(ListOfSame, self).__init__(None)
+        self.__val = val
+        self.__len = len
+    def __len__(self): return maxsize if self.__len is None else self.__len
+    def __getitem__(self, i):
+        if isinstance(i, Integral):
+            if self.__len is None and (i >= self.__len or i < -self.__len): raise ValueError()
+            return self.__val
+        elif isinstance(i, slice):
+            return [self.__val] * len(i.indices(self.__len))
+        else:
+            raise ValueError()
+    def __detitem__(self, i):
+        if not isinstance(i, (slice, Integral)): raise ValueError()
+        if self.__len is not None:
+            if isinstance(i, slice):
+                self.__len -= len(i.indices(self.__len))
+                return self.__len
+            elif i >= self.__len or i < -self.__len: raise ValueError()
+            self.__len -= 1
+    def remove(self, value):
+        if value == self.__val and self.__len != 0: self.__len -= 1
+        raise ValueError('%s is not in list' % value)
+    def __iter__(self): return repeat(self.__val, self.__len)
+    def __reversed__(self): return repeat(self.__val, self.__len)
+    def __contains__(self, value): return self.__len != 0 and value == self.__val
+    def index(self, value, start=0, stop=maxsize):
+        if not isinstance(start, Integral) or not isinstance(stop, Integral): raise TypeError('an integer is required')
+        if value == self.__val and start < self.__len and stop > start: return 0
+        raise ValueError('%s is not in list' % value)
+    def count(self, value): return len(self) if value == self.__val else 0
+    def __eq__(self, other):
+        if isinstance(other, ListOfSame):
+            return self.__val == other.__val and self.__len == other.__len
+        return _iter_eq(self, other)
+    def __lt__(self, other):
+        if isinstance(other, ListOfSame):
+            return ((self.__len == 0 and other.__len != 0) or
+                    self.__val < other.__val or
+                    (self.__val == other.__val and self.__len < other.__len))
+        return _iter_lt(self, other)
+
+class DelayLoadedList(ReadOnlyListWrapper):
+    """A read-only list where the elements are not computed/loaded until they are requested."""
+    __metaclass__ = ABCMeta
+    def __init__(self, len):
+        super(DelayLoadedList, self).__init__([_marker]*len)
+    @abstractmethod
+    def _loaditem(self, i): pass
+    def __getitem(self, i):
+        x = self._data[i]
+        if x is _marker: self._data[i] = x = self._loaditem(i)
+        return x
+    def __getitem__(self, i):
+        if isinstance(i, Integral): return self.__getitem(i)
+        elif not isinstance(i, slice): raise ValueError()
+        return [self.__getitem(i) for i in i.indices(len(self._data))]
+    def __eq__(self, other): return _iter_eq(self, other)
+    def __lt__(self, other): return _iter_lt(self, other)
