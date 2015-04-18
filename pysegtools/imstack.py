@@ -215,7 +215,7 @@ class Opt(object):
     Also included in this class are various general casting functions. They all return the actual
     casting function, possibly customized for a particular purpose.
     """
-    def __init__(self, name, desc, cast, default=_NoDefault):
+    def __init__(self, name, desc, cast=lambda x:x, default=_NoDefault):
         self._name = name
         self._desc = desc
         self._cast = cast
@@ -363,6 +363,25 @@ class Opt(object):
             if os.path.exists(x) and (not os.path.isfile(x) or not os.access(x, os.R_OK)): raise ValueError
             return x
         return _cast_readable_file
+    @staticmethod
+    def cast_writable_dir():
+        """
+        A cast that does some simple checks to see if a directory is possibly writable. No
+        guarantees that it is writable but should catch some problems. Parent directories are
+        created as necessary.
+        """
+        import os
+        from ..general.utils import make_dir
+        def _cast_writable_dir(x):
+            if x == '': x = '.'
+            x = os.path.abspath(x)
+            if os.path.exists(x):
+                if os.path.isfile(x) or not os.access(x, os.W_OK|os.X_OK): raise ValueError
+            else:
+                d = os.path.dirname(x)
+                if not make_dir(d) or not os.access(d, os.W_OK|os.X_OK): raise ValueError
+            return x
+        return _cast_writable_dir
 
 class _CommandMeta(ABCMeta):
     """The meta-class for commands, which extends ABCMeta and calls Help.register if applicable"""
