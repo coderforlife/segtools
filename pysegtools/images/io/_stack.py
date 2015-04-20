@@ -231,12 +231,13 @@ class FileImageStack(ImageStack):
     def readonly(self): return self._readonly
     @property
     def header(self): return self._header
-    def print_detailed_info(self, width=None): # TODO: use width
+    def print_detailed_info(self, width=None):
+        fill = ImageStack._get_print_fill(width)
         super(FileImageStack, self).print_detailed_info()
-        if not self.header or len(self.header) == 0: print("No header information")
+        if not self.header or len(self.header) == 0: print(fill("No header information"))
         else:
-            print("Header:")
-            for k,v in self._header.iteritems(): print("  %s = %s" % (k,v))
+            print(fill("Header:"))
+            for k,v in self._header.iteritems(): print(fill("  %s = %s" % (k,v)))
 
     # Internal slice maniplutions - primary functions to be implemented by base classes
     # Getting and setting individual slices is done in the FileImageSlice objects
@@ -451,12 +452,13 @@ class HomogeneousFileImageStack(HomogeneousImageStack, FileImageStack):
     """
     def __init__(self, header, slices, w, h, dtype, readonly=False):
         super(HomogeneousFileImageStack, self).__init__(w, h, dtype, slices, {'header':header,'readonly':readonly})
-    def print_detailed_info(self, width=None): # TODO: use width
+    def print_detailed_info(self, width=None):
+        fill = ImageStack._get_print_fill(width)
         super(HomogeneousFileImageStack, self).print_detailed_info()
-        if len(self.header) == 0: print("No header information")
+        if len(self.header) == 0: print(fill("No header information"))
         else:
-            print("Header:")
-            for k,v in self._header.iteritems(): print("  %s = %s" % (k,v))
+            print(fill("Header:"))
+            for k,v in self._header.iteritems(): print(fill("  %s = %s" % (k,v)))
     @abstractmethod
     def _delete(self, idxs): pass
     @abstractmethod
@@ -496,7 +498,7 @@ class FileImageSlice(ImageSlice):
         pass
 
     def _update(self, z):
-        """Update this slice when the Z value changes. By default this just sets the z value."""
+        """Update this slice when the Z value changes. By default this just sets the _z field."""
         self._z = z
 
 class FileImageStackHeader(DictionaryWrapperWithAttr):

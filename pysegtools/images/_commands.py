@@ -293,28 +293,33 @@ class MemMapCacheImageStack(ImageStack):
     def __init__(self, ims, tmpdir=None):
         from numpy import ndarray, cumsum
         slices = ims[:]
-        info = [(im.shape, im.dtype) for im in slices]
+        info = [(im.dtype, im.shape) for im in slices]
         d = len(slices)
         if d == 0: return
         homogeneous = all(i == info[0] for i in islice(info, 1, None))
 
         if homogeneous:
-            sh,dt = info[0]
+            dt,sh = info[0]
             self._arr = ndarray((d,)+sh, dt, self.__open((sh[0]*sh[1]*dt.itemsize)*d, tmpdir))
             for z, slc in enumerate(slices): self._arr[z,:,:,...] = slc.data
             self._arr.flags.writeable = False
-            super(MemMapCacheImageStack, self).__init__([MemMapImageSlice(self,z,im,sh,dt) for z,im in enumerate(self._arr)])
-            self._homogeneous = Homogeneous.Both
+            super(MemMapCacheImageStack, self).__init__(
+                [MemMapImageSlice(self,z,im,dt,sh) for z,im in enumerate(self._arr)])
+            self._h, self._w = sh
+            self._shape = sh
+            self._dtype = dt
+            self._homogeneous = Homogeneous.All
         else:
-            nbytes = [sh[0]*sh[1]*dt.itemsize for sh,dt in info]
+            nbytes = [sh[0]*sh[1]*dt.itemsize for dt,sh in info]
             nbytes_aligned = [(x - x % -4) for x in nbytes]
             offsets = [0] + cumsum(nbytes_aligned).tolist()
             mm = self.__open(offsets.pop(), tmpdir)
-            ims = [ndarray(sh, dt, mm, off) for (sh,dt),off in zip(info,offsets)]
+            ims = [ndarray(sh, dt, mm, off) for (dt,sh),off in zip(info,offsets)]
             for im,slc in zip(ims, slices):
                 im[:,:,...] = slc.data
                 im.flags.writeable = False
-            super(MemMapCacheImageStack, self).__init__([MemMapImageSlice(self,z,im,sh,dt) for (z,im),(sh,dt) in zip(enumerate(ims),info)])
+            super(MemMapCacheImageStack, self).__init__(
+                [MemMapImageSlice(self,z,im,dt,sh) for (z,im),(dt,sh) in zip(enumerate(ims),info)])
 
     def __open(self, size, tmpdir):
         from os import name
@@ -337,7 +342,7 @@ class MemMapCacheImageStack(ImageStack):
     def stack(self): return self._arr # only if homogeneous
 
 class MemMapImageSlice(ImageSlice):
-    def __init__(self, stack, z, im, sh, dt):
+    def __init__(self, stack, z, im, dt, sh):
         super(MemMapImageSlice, self).__init__(stack, z)
         self._set_props(dt, sh)
         self._im = im

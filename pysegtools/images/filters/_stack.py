@@ -24,9 +24,10 @@ class FilteredImageStack(ImageStack):
         self._ims = ImageStack.as_image_stack(ims)
         if isinstance(slices, type): slices = [slices(im,self,z,*args,**kwargs) for z,im in enumerate(self._ims)]
         super(FilteredImageStack, self).__init__(slices)
-    def print_detailed_info(self, width=None): # TODO: use width
-        print("Filter:      " + self.description())
-        super(FilteredImageStack, self).print_detailed_info()
+    def print_detailed_info(self, width=None):
+        fill = ImageStack._get_print_fill(width)
+        print(fill("Filter:      " + self.description()))
+        super(FilteredImageStack, self).print_detailed_info(width)
 
 class FilteredImageSlice(ImageSlice):
     """A slice from a filtered image. This base class simply stores the image source as `_input`."""
@@ -43,7 +44,4 @@ class UnchangingFilteredImageSlice(FilteredImageSlice):
     A slice that does not change the shape or data type of the original image slice. Can be used
     without UnchangingFilteredImageStack.
     """
-    def __init__(self, image, stack, z):
-        super(UnchangingFilteredImageSlice, self).__init__(image, stack, z)
-        self._set_props(self._input.dtype, self._input.shape)
-    def _get_props(self): pass
+    def _get_props(self): self._set_props(self._input.dtype, self._input.shape)

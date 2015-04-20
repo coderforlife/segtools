@@ -18,10 +18,10 @@ from .source import ImageSource, DeferredPropertiesImageSource
 __all__ = ["ImageStack", "HomogeneousImageStack", "ImageSlice", "Homogeneous"]
 
 class Homogeneous(int, Flags):
-    Neither = 0
+    None_ = 0
     Shape = 1
     DType = 2
-    Both  = 3
+    All   = 3
 
 class ImageStack(object):
     """
@@ -56,7 +56,7 @@ class ImageStack(object):
         self._d = len(slices)
         self._cache_size = 0
         self._cache = None
-        self._homogeneous = Homogeneous.Both if self._d <= 1 else None
+        self._homogeneous = Homogeneous.All if self._d <= 1 else None
 
     # General
     @property
@@ -66,37 +66,42 @@ class ImageStack(object):
         """Gets a basic representation of this class as a string."""
         if self._d == 0: return "(no slices)"
         h,s,d = self._get_homogeneous_info()
-        if h == Homogeneous.Both: return "%s: %dx%dx%d %s" % (type(self).__name__, s[1], s[0], self._d, im_dtype_desc(d))
+        if h == Homogeneous.All: return "%s: %dx%dx%d %s" % (type(self).__name__, s[1], s[0], self._d, im_dtype_desc(d))
         line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s"
         return type(self).__name__+": "+", ".join(line%(z,im.w,im.h,im_dtype_desc(im.dtype)) for z,im in enumerate(self._slices))
-    def print_detailed_info(self, width=None): # TODO: use width
+    @staticmethod
+    def _get_print_fill(width):
+        from textwrap import TextWrapper
+        return lambda x:x if width is None else TextWrapper(width=width, subsequent_indent=' '*13).fill
+    def print_detailed_info(self, width=None):
+        fill = ImageStack._get_print_fill(width)
         h,s,d = self._get_homogeneous_info()
         total_bytes = 0
-        print("Handler:     %s" % type(self).__name__)
+        print(fill("Handler:     %s" % type(self).__name__))
         if self._d == 0:
-            print("Slices:      0")
-        elif h == Homogeneous.Both:
-            print("Dimensions:  %d x %d x %d (WxHxD)" % (s[1], s[0], self._d))
-            print("Data Type:   %s" % im_dtype_desc(d))
+            print(fill("Slices:      0"))
+        elif h == Homogeneous.All:
+            print(fill("Dimensions:  %d x %d x %d (WxHxD)" % (s[1], s[0], self._d)))
+            print(fill("Data Type:   %s" % im_dtype_desc(d)))
             sec_bytes = s[1] * s[0] * d.itemsize
-            print("Bytes/Slice: %d" % sec_bytes)
+            print(fill("Bytes/Slice: %d" % sec_bytes))
             total_bytes = self._d * sec_bytes
         else:
-            print("Slices:      %d" % (self._d))
+            print(fill("Slices:      %d" % (self._d)))
             line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s  %d bytes"
             for z,im in enumerate(self._slices):
                 sec_bytes = im.w * im.h * im.dtype.itemsize
-                print(line % (z, im.w, im.h, im_dtype_desc(im), sec_bytes))
+                print(fill(line % (z, im.w, im.h, im_dtype_desc(im), sec_bytes)))
                 total_bytes += sec_bytes
-        print("Total Bytes: %d" % total_bytes)
+        print(fill("Total Bytes: %d" % total_bytes))
 
     # Homogeneous interface
     def _get_homogeneous_info(self):
-        if self._d == 0: return Homogeneous.Both, (None, None), None
-        shape = self._slices[0].shape
-        dtype = self._slices[0].dtype
+        if self._d == 0: return Homogeneous.All, (None, None), None
+        im = self._slices[0]
+        shape, dtype = im.shape, im.dtype
         if self._homogeneous is None:
-            self._homogeneous = Homogeneous.Neither
+            self._homogeneous = Homogeneous.None_
             if all(shape == im.shape for im in islice(self._slices, 1, None)):
                 self._homogeneous |= Homogeneous.Shape
             else: shape = None
@@ -114,7 +119,7 @@ class ImageStack(object):
         if Homogeneous.DType in self._homogeneous and dtype != s.dtype:
             self._homogeneous &= ~Homogeneous.DType
     @property
-    def is_homogeneous(self): return self._get_homogeneous_info()[0] != Homogeneous.Neither
+    def is_homogeneous(self): return self._get_homogeneous_info()[0] == Homogeneous.All
     @property
     def w(self): return self.shape[1]
     @property
@@ -210,18 +215,19 @@ class HomogeneousImageStack(ImageStack):
         self._dtype = dtype
         self._slc_pxls  = w * h
         self._slc_bytes = w * h * dtype.itemsize
-        self._homogeneous = Homogeneous.Both
+        self._homogeneous = Homogeneous.All
 
     def __str__(self): return "%s: %dx%dx%d %s" % (type(self).__name__, self._w, self._h, self._d, im_dtype_desc(self._dtype))
-    def print_detailed_info(self, width=None): # TODO: use width
-        print("Handler:     %s" % type(self).__name__)
-        print("Dimensions:  %d x %d x %d (WxHxD)" % (self._w, self._h, self._d))
-        print("Data Type:   %s" % im_dtype_desc(self._dtype))
+    def print_detailed_info(self, width=None):
+        fill = ImageStack._get_print_fill(width)
+        print(fill("Handler:     %s" % type(self).__name__))
+        print(fill("Dimensions:  %d x %d x %d (WxHxD)" % (self._w, self._h, self._d)))
+        print(fill("Data Type:   %s" % im_dtype_desc(self._dtype)))
         sec_bytes = self._w * self._h * self._dtype.itemsize
-        print("Bytes/Slice: %d" % sec_bytes)
-        print("Total Bytes: %d" % (self._d * sec_bytes))
+        print(fill("Bytes/Slice: %d" % sec_bytes))
+        print(fill("Total Bytes: %d" % (self._d * sec_bytes)))
 
-    def _get_homogeneous_info(self): return Homogeneous.Both, self._shape, self._dtype
+    def _get_homogeneous_info(self): return Homogeneous.All, self._shape, self._dtype
     def _update_homogeneous_set(self, z, shape, dtype): pass
     @property
     def is_homogeneous(self): return True
@@ -265,7 +271,7 @@ class ImageSlice(DeferredPropertiesImageSource):
     def data(self):
         if not self._stack._cache_size: return self._get_data()
         if not self._stack._cache_it(self._z): self._cache = self._get_data()
-        return self._cache # the cache is full on un-writeable copies already, so no .copy()
+        return self._cache # TODO
 
     @abstractmethod
     def _get_data(self):
@@ -283,7 +289,7 @@ class ImageStackArray(HomogeneousImageStack):
     """
     def __init__(self, arr):
         from numpy import empty
-        if arr.ndim not in (3,4): raise ValueError()
+        if arr.ndim not in (3,4) or arr.ndim == 4 and not (0 < arr.shape[-1] <= 5): raise ValueError()
         sh = arr.shape
         im = empty(sh[1:], dtype=arr.dtype) if sh[0]==0 else arr[0,...] # hack to allow 0-depth image stacks
         check_image(im)
@@ -291,7 +297,8 @@ class ImageStackArray(HomogeneousImageStack):
         self.__arr = arr
         self.__arr_readonly = arr.view()
         self.__arr_readonly.flags.writeable = False
-        super(ImageStackArray, self).__init__(sh[2], sh[1], dt, [ImageSliceFromArray(self, z, im, dt) for z,im in enumerate(arr)])
+        super(ImageStackArray, self).__init__(sh[2], sh[1], dt,
+            [ImageSliceFromArray(self, z, im, dt) for z,im in enumerate(arr)])
     @ImageStack.cache_size.setter
     def set_cache_size(self, value): pass # prevent actual caching - all in memory
     @property
@@ -315,7 +322,8 @@ class ImageStackCollection(ImageStack):
     """ImageStack that wraps a collection of ImageSources."""
     def __init__(self, ims):
         ims = [ImageSource.as_image_source(im) for im in ims]
-        super(ImageStackCollection, self).__init__([ImageSliceFromCollection(self, z, im) for z,im in enumerate(ims)])
+        super(ImageStackCollection, self).__init__(
+            [ImageSliceFromCollection(self, z, im) for z,im in enumerate(ims)])
 class ImageSliceFromCollection(ImageSlice):
     def __init__(self, stack, z, im):
         super(ImageSliceFromCollection, self).__init__(stack, z)

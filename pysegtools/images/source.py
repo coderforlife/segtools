@@ -71,13 +71,13 @@ class DeferredPropertiesImageSource(ImageSource):
         """Get the properies for this image source. Should call _set_props(...)."""
         pass
 
-    def _set_props(self, dtype, shape_or_w, h=None):
-        """Set the width, height, shape, and dtype properties."""
-        h, w = shape_or_w if isinstance(shape_or_w, Sequence) else (h, shape_or_w)
-        self._w = w
-        self._h = h
-        self._shape = None if h is None or w is None else (h, w)
-        self._dtype = dtype
+    def _set_props(self, dtype, shape):
+        """Set the dtype and width/height/shape properties."""
+        if shape is not None:
+            self._h, self._w = shape
+            self._shape = shape
+        if dtype is not None:
+            self._dtype = dtype
 
     @property
     def w(self):
@@ -88,10 +88,10 @@ class DeferredPropertiesImageSource(ImageSource):
         if self._h is None: self._get_props()
         return self._h
     @property
-    def shape(self):
-        if self._shape is None: self._get_props()
-        return self._shape
-    @property
     def dtype(self):
         if self._dtype is None: self._get_props()
         return self._dtype
+    @property
+    def shape(self):
+        if self._shape is None: self._get_props()
+        return self._shape

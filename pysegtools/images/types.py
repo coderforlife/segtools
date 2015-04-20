@@ -188,10 +188,13 @@ def im_complexify(im):
 def im_decomplexify(im):
     """
     Reverse of im_complexify. If the image is a complex image then it will be turned into a
-    2-channel floating-point image. Non-complex images are returned as-is.
+    2-channel floating-point image. Non-complex images are returned as a view with the same dtype.
     """
-    if im.dtype.type not in __cmplx2float: return im
-    return im.view(dtype=dtype(__cmplx2float[im.dtype.type]).newbyteorder(im.dtype.byteorder))
+    return im.view(dtype=im_decomplexify_dtype(im.dtype))
+def im_decomplexify_dtype(dtype):
+    """Same as im_decomplexify but with just the dtype."""
+    if dtype.type not in __cmplx2float: return dtype
+    return dtype(__cmplx2float[dtype.type]).newbyteorder(dtype.byteorder)
 
 
 ##### Min/Max for data types #####
