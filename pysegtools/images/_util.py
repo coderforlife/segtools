@@ -25,7 +25,7 @@ def re_search(re, s):
     re_search.match = m = re.search(s)
     return m is not None
 def itr2str(itr, sep=' '): return sep.join(type(sep)(x) for x in itr)
-def splitstr(s, cast=lambda x:x): return [cast(x) for x in s.split()]
+def splitstr(s, cast=lambda x:x, sep=None): return [cast(x) for x in s.split(sep)]
 def get_list(data, shape, cast=int, sep=None, otype=list):
     """
     Convert a string of values to a list of a particular data type. The data can also come from an

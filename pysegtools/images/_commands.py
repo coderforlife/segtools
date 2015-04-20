@@ -208,7 +208,7 @@ followed by the second-to-next, and so forth.""")
         p.newline()
         p.text("See also:")
         p.list('z', 'split')
-    def __str__(self): return ("interleaving" if self.__interleave else "combining")+(" %d images stacks"%self.__nstacks)
+    def __str__(self): return ("interleaving" if self.__interleave else "combining")+(" %d image stacks"%self.__nstacks)
     def __init__(self, args, stack):
         self.__nstacks, self.__interleave = args.get_all(*CombineCommand._opts())
         for _ in xrange(self.__nstacks): stack.pop()

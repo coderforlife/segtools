@@ -21,7 +21,7 @@ class FilteredImageStack(ImageStack):
         like the FilteredImageSlice/UnchangingFilteredImageSlice constructor) in which case the list
         of slices is created by calling the constructor for each image/z in the set of images.
         """
-        self._ims = ImageStack.as_image_stack(ims)
+        if ims is not None: self._ims = ImageStack.as_image_stack(ims)
         if isinstance(slices, type): slices = [slices(im,self,z,*args,**kwargs) for z,im in enumerate(self._ims)]
         super(FilteredImageStack, self).__init__(slices)
     def print_detailed_info(self, width=None):
