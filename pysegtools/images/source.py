@@ -30,7 +30,7 @@ class ImageSource(object):
     def shape(self): pass
     @abstractproperty
     def data(self): pass
-
+    
     @staticmethod
     def as_image_source(im):
         """
@@ -41,12 +41,19 @@ class ImageSource(object):
         if isinstance(im, ndarray): return ArrayImageSource(im)
         raise TypeError('image must be an ndarray or an ImageSource')
 
+    @staticmethod
+    def get_unwriteable_view(im):
+        """Gets an unwriteable view of an ndarray if the ndarray is not already unwriteable."""
+        if im.flags.writeable:
+            im = im.view()
+            im.flags.writable = False
+        return im
+
 class ArrayImageSource(ImageSource):
     """A simple image source that is backed by an ndarray."""
     def __init__(self, im):
         check_image(im)
-        self._im = im.view()
-        self._im.flags.writeable = False
+        self._im = ImageSource.get_unwriteable_view(im)
     @property
     def w(self): return self._im.shape[1]
     @property

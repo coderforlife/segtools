@@ -271,7 +271,7 @@ class ImageSlice(DeferredPropertiesImageSource):
     def data(self):
         if not self._stack._cache_size: return self._get_data()
         if not self._stack._cache_it(self._z): self._cache = self._get_data()
-        return self._cache # TODO
+        return ImageSource.get_unwriteable_view(self._cache)
 
     @abstractmethod
     def _get_data(self):
@@ -295,8 +295,7 @@ class ImageStackArray(HomogeneousImageStack):
         check_image(im)
         dt = get_im_dtype(im)
         self.__arr = arr
-        self.__arr_readonly = arr.view()
-        self.__arr_readonly.flags.writeable = False
+        self.__arr_readonly = ImageSource.get_unwriteable_view(arr)
         super(ImageStackArray, self).__init__(sh[2], sh[1], dt,
             [ImageSliceFromArray(self, z, im, dt) for z,im in enumerate(arr)])
     @ImageStack.cache_size.setter
@@ -308,8 +307,7 @@ class ImageSliceFromArray(ImageSlice):
         super(ImageSliceFromArray, self).__init__(stack, z)
         self._set_props(dt, im.shape[0:2])
         self._im = im
-        self._im_readonly = im.view()
-        self._im_readonly.flags.writeable = False
+        self._im_readonly = ImageSource.get_unwriteable_view(im)
     def _get_props(self): pass
     def _get_data(self): return self._im_readonly
     @ImageSlice.data.setter
