@@ -714,6 +714,8 @@ def __split_args(args):
         if len(a) >= 2 and a[0] == '-' and a[1] not in '.0123456789':
             if a[1] != '-': out.extend(['-'+x] for x in a[1:])
             else: out.append([a])
+        elif len(out) == 0:
+            _err_msg('First argument must be a command prefixed with -/--')
         else: out[-1].append(a)
     return out
 
