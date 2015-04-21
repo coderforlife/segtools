@@ -198,7 +198,9 @@ followed by the second-to-next, and so forth.""")
         p.newline()
         p.flags(cls.flags())
         p.newline()
-        p.stack_changes(consumes=("Image stacks to combine (2+)",), produces=("Combined image stack",))
+        p.text("""
+Consumes:  2+ image stacks 
+Produces:  1 image stack""")
         p.newline()
         p.text("Command format:")
         p.cmds("-C [nstacks] [interleave]")

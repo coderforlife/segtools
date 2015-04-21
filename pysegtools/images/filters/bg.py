@@ -518,11 +518,11 @@ class FillCommand(CommandEasy):
     _fill = None
     _rect = None
     @classmethod
-    def _name(cls): return 'Fill'
+    def name(cls): return 'fill'
+    @classmethod
+    def flags(cls): return ('fill',)
     @classmethod
     def _desc(cls): return 'Fill in a masked area. Besides solid colors, the fill color can be based on the non-masked area: either the mean value, mirrored, nearest, or wrapped.'
-    @classmethod
-    def _flags(cls): return ('fill',)
     @classmethod
     def _opts(cls): return (
         Opt('fill', 'The name of a color to use to fill with, or one of the special values \'mean\', \'mirror\', \'reflect\', \'nearest\', or \'wrap\'',
@@ -548,11 +548,11 @@ class FillCommand(CommandEasy):
 
 class CropCommand(CommandEasy):
     @classmethod
-    def _name(cls): return 'Crop'
+    def name(cls): return 'crop'
+    @classmethod
+    def flags(cls): return ('c','crop')
     @classmethod
     def _desc(cls): return 'Crop out the masked area so that marked areas are removed. This forces the mask to be around a rectangular region.'
-    @classmethod
-    def _flags(cls): return ('c','crop')
     @classmethod
     def _consumes(cls): return ('Image to crop','Mask to crop out')
     @classmethod
@@ -565,8 +565,12 @@ class CropCommand(CommandEasy):
         stack.push(CropImageStack(mask))
 
 class PadCommand(CommandEasy):
+    _fill = None
+    _rect = None
     @classmethod
-    def _name(cls): return 'Pad'
+    def name(cls): return 'pad'
+    @classmethod
+    def flags(cls): return ('p','pad','uncrop')
     @classmethod
     def _desc(cls): return """
 Pad an image by adding the masked region around an image. The rectangular region around the
@@ -575,8 +579,6 @@ size of the mask. This may be a bit confusing at first, but is designed to work 
 crop command so that you can crop an image then restore it using the same mask. The fill option is
 the color to fill in the entire masked area (even if it was inside the rectangle) unless rect is
 specified."""
-    @classmethod
-    def _flags(cls): return ('p','pad','uncrop')
     @classmethod
     def _opts(cls): return (
         Opt('fill', 'The name of a color to use to fill with, or one of the special values \'mean\', \'mirror\', \'reflect\', \'nearest\', or \'wrap\'',

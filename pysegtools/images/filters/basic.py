@@ -12,7 +12,7 @@ from ._stack import FilteredImageStack, FilteredImageSlice, UnchangingFilteredIm
 from .._stack import ImageStack, ImageSlice
 from ..source import ImageSource
 from ..types import check_image, get_im_dtype_and_nchan, create_im_dtype
-from ...imstack import Command, CommandEasy, Opt
+from ...imstack import Command, CommandEasy, Opt, Help
 
 __all__ = ['flip',
            'FlipImageStack',]
@@ -184,7 +184,9 @@ class CombineChannelsCommand(Command):
         p.newline()
         p.flags(cls.flags())
         p.newline()
-        p.stack_changes(consumes=("Image stacks to combine",), produces=("Image stack with each consumsed image stack as a seperate channel",))
+        p.text("""
+Consumes:  2+ image stacks 
+Produces:  1 image stack""")
         p.newline()
         p.text("Command format:")
         p.cmds("--combine-channels [nstacks]")
