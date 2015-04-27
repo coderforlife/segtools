@@ -93,11 +93,6 @@ def __get_terminal_width_nix():
     return w
 
 
-def iter_same(x):
-    """Generator/iterator that always produces the given value"""
-    yield x
-
-
 def all_subclasses(cls):
     subcls = cls.__subclasses__() # pylint: disable=no-member
     for sc in list(subcls): subcls.extend(all_subclasses(sc))
