@@ -503,7 +503,7 @@ class BackgroundMaskCommand(CommandEasy):
         Opt('rect',  'Force the background area to be around a rectangular foreground',
             Opt.cast_bool(), False),
         Opt('projection', 'Make every slice the same where a pixel is marked as background if: only all slices would have had it marked as background (all) or any slice would have had it marked as background (any)',
-            Opt.cast_lookup({'none':MaskProjection.None_,'all':MaskProjection.All,'any':MaskProjection.Any}), MaskProjection.None_),
+            Opt.cast_lookup({'none':MaskProjection.None_,'all':MaskProjection.All,'any':MaskProjection.Any}), MaskProjection.None_, 'none'),
         )
     @classmethod
     def _consumes(cls): return ('Image to calculate background mask of',)

@@ -71,7 +71,7 @@ class MedianBlur(BlurFilterImageStack):
 class BlurCommand(CommandEasy):
     @classmethod
     def _opts(cls): return (
-        Opt('size', 'The amount of blurring as an integer >=2', Opt.cast_int(lambda x:x>1)),
+        Opt('size', 'The amount of blurring as an integer >=2', Opt.cast_int(lambda x:x>1), 3),
         )
     @classmethod
     def _consumes(cls, dtype): return ('Image to be blurred',)
@@ -87,7 +87,7 @@ class GaussianBlurCommand(BlurCommand):
     def flags(cls): return ('G', 'gaussian-blur')
     @classmethod
     def _opts(cls): return (
-        Opt('sigma', 'The amount of blurring as a positive floating-point number', Opt.cast_float(lambda x:x>0)),
+        Opt('sigma', 'The amount of blurring as a positive floating-point number', Opt.cast_float(lambda x:x>0), 1.0),
         )
     def __str__(self): return 'Gaussian blur with sigma=%f'%self._sigma
     def execute(self, stack): stack.push(GaussianBlurImageStack(stack.pop(), self._sigma))

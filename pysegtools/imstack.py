@@ -215,11 +215,12 @@ class Opt(object):
     Also included in this class are various general casting functions. They all return the actual
     casting function, possibly customized for a particular purpose.
     """
-    def __init__(self, name, desc, cast=lambda x:x, default=_NoDefault):
+    def __init__(self, name, desc, cast=lambda x:x, default=_NoDefault, default_str=None):
         self._name = name
         self._desc = desc
         self._cast = cast
         self._def = default
+        self._def_str = str(self.default) if default is not _NoDefault and default_str is None else default_str
     @property
     def name(self): return self._name
     @property
@@ -232,7 +233,7 @@ class Opt(object):
     @property
     def has_default(self): return self._def is not _NoDefault
     @property
-    def full_desc(self): return self.description+("" if self._def is _NoDefault else " (default: %s)"%self.default)
+    def full_desc(self): return self.description+("" if self._def is _NoDefault else " (default: %s)"%self._def_str)
     def cast(self, x): return self._cast(x)
 
     # Various casting functions

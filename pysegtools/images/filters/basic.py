@@ -203,7 +203,7 @@ so forth.""")
         p.list('extract-channels')
     def __str__(self): return "combining channels of %d image stacks"%self.__nstacks
     def __init__(self, args, stack):
-        self.__nstacks = args.get_all(*CombineChannelsCommand._opts())[0]
+        self.__nstacks, = args.get_all(*CombineChannelsCommand._opts())
         for _ in xrange(self.__nstacks): stack.pop()
         stack.push()
     def execute(self, stack): stack.push(CombineChannelsImageStack(stack.pop() for _ in xrange(self.__nstacks)))
