@@ -372,26 +372,26 @@ class MaxPaddingForImageStack(DelayLoadedList): # "Aggressive"
 
 
 class MaskProjection(Enum):
-    No = 0
-    Conservative = 1
-    Aggressive = 2
+    None_ = 0
+    All = 1
+    Any = 2
 class BackgroundMask(FilteredImageStack):
     """Calculates the background mask for an image stack."""
-    def __init__(self, ims, color=None, rect=False, mode=MaskProjection.No):
+    def __init__(self, ims, color=None, rect=False, mode=MaskProjection.None_):
         self._color = color
         if rect:
             self._padding = {
-                MaskProjection.No          : PaddingForImageStack,
-                MaskProjection.Conservative: MinPaddingForImageStack,
-                MaskProjection.Aggressive  : MaxPaddingForImageStack,
+                MaskProjection.None_ : PaddingForImageStack,
+                MaskProjection.All   : MinPaddingForImageStack,
+                MaskProjection.Any   : MaxPaddingForImageStack,
             }[mode](ims, color)
             super(BackgroundMask, self).__init__(ims, BackgroundMaskSlice_Rect)
-        elif mode is MaskProjection.No:
+        elif mode is MaskProjection.None_:
             super(BackgroundMask, self).__init__(ims, BackgroundMaskSlice)
         else:
             self._op, self._mask = {
-                MaskProjection.Conservative:logical_and,
-                MaskProjection.Aggressive:logical_or}[mode], None
+                MaskProjection.All : logical_and,
+                MaskProjection.Any : logical_or}[mode], None
             super(BackgroundMask, self).__init__(ims, BackgroundMaskSlice_OP)
         self._dtype, self._homogeneous = bool, Homogeneous.DType
 class BackgroundMaskSlice(FilteredImageSlice):
@@ -502,8 +502,8 @@ class BackgroundMaskCommand(CommandEasy):
             Opt.cast_or(Opt.cast_equal('auto'), Opt.cast_check(is_color)), 'auto'),
         Opt('rect',  'Force the background area to be around a rectangular foreground',
             Opt.cast_bool(), False),
-        Opt('projection', 'Make every slice the same where a pixel is marked as background if: only all slices would have had it marked as background (conservative) or any slice would have had it marked as background (aggressive)',
-            Opt.cast_lookup({'no':MaskProjection.No,'no':MaskProjection.Conservative,'no':MaskProjection.Aggressive}), MaskProjection.No),
+        Opt('projection', 'Make every slice the same where a pixel is marked as background if: only all slices would have had it marked as background (all) or any slice would have had it marked as background (any)',
+            Opt.cast_lookup({'none':MaskProjection.None_,'all':MaskProjection.All,'any':MaskProjection.Any}), MaskProjection.None_),
         )
     @classmethod
     def _consumes(cls): return ('Image to calculate background mask of',)
