@@ -417,7 +417,7 @@ class HistEqCommand(Command):
     def flags(cls): return ('H','histeq','histogram-equalization')
     @classmethod
     def _opts(cls): return (
-        Opt('hist',     'The histogram to match to, specified either as an integer (for a uniform histogram with that many bins) or a readable file (or - for stdin, can have .gz/.bz2 if compressed) where one line will be read that has white-space seperated value', Opt.cast_or(Opt.cast_int(lambda x:x>=2), '-', Opt.cast_readable_file()), None, '256 if exact is true, 64 otherwise'),
+        Opt('hist',     'The histogram to match to, specified either as an integer (for a uniform histogram with that many bins) or a readable file (or - for stdin) where one line will be read that has white-space seperated value', Opt.cast_or(Opt.cast_int(lambda x:x>=2), '-', Opt.cast_readable_file()), None, '256 if exact is true, 64 otherwise'),
         Opt('use_mask', 'Only use and update the pixels where the mask is True', Opt.cast_bool(), False),
         Opt('exact',    'Force the image\'s histogram to exactly the given histogram', Opt.cast_bool(), False),
         Opt('src_hist', 'The histogram to map from, either the current slice, the entire stack, or a custom one from a file or stdin (-); must be slice if exact is true or the input data has a heterogeneous data type', Opt.cast_or('slice', 'stack', '-', Opt.cast_readable_file()), 'slice'),
@@ -442,11 +442,27 @@ Produces:  image stack with the histogram changed""")
         p.text("Options:")
         p.opts(*cls._opts())
         p.newline()
-        p.text("""          ??????????????
-Calculates the histogram of an image stack or for each slice and saves it to a file (or stdout). The
-file is written as a tab-seperated file (each bin's value is seperated by a tab, each slice is on
-its own line). If the file ends with '.gz' then it will be compressed. If a mask is used, then only
-pixels where the mask is True are counted.""")
+        p.text("""
+Changes the histogram of an image stack to match a given histogram, either approximately or exactly.
+The histogram to match can be a uniform histogram (specified with an integer for the number of bins)
+or from the first line of a file/stdin that has tab-seperated values for the bins. The file can be
+compressed and have a .gz or .bz2 ending. Ever slice is changed to the same histogram.
+
+If a mask is used, then only pixels where the mask is True are changed.
+
+If exact is used, then the output image will have a histogram that perfectly matches the given
+histogram, but takes longer and more memory.
+
+The option src_hist overrides the source histogram, allowing one to define the direct mapping of
+pixel values. This option can only be used when exact is false and the image stack has a homogeneous
+data type. The most common non-default value will be 'stack' which allows the entire stack to mapped
+at once.
+
+The order option effects the quality of results of the exact histogram equalization. Higher values
+increase accuracy of seperating the pixels from each other and placing them in the right output bins
+but take more time and memory (although, for 8-bit images, there is no memory increase and the time
+increase is minor).
+""")
         p.newline()
         p.text("See also:")
         p.list('imhist')
