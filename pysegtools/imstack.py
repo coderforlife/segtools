@@ -342,7 +342,7 @@ class Opt(object):
         directory that currently does not exist, that directory is created.
         """
         import os
-        from ..general.utils import make_dir
+        from .general.utils import make_dir
         def _cast_writable_file(x):
             if x == '': raise ValueError
             x = os.path.abspath(x)
