@@ -12,12 +12,12 @@ from ._util import String
 
 __all__ = [
     'create_im_dtype','get_im_dtype','get_im_dtype_and_nchan','im_dtype_desc','get_dtype_endian',
-    'is_image','check_image',
+    'is_image','check_image','is_single_channel_image','check_image_single_channel',
     'im_rgb_view','im_raw_view','im_complexify','im_decomplexify',
-    'get_im_min_max',
+    'get_im_min_max','get_dtype_min_max','get_dtype_min','get_dtype_max',
     ]
 
-__bit_types = [bool_,bool]
+__bit_types = [bool_,bool] # bool8?
 __int_types = sctypes['int']+[int,long]
 __uint_types = sctypes['uint']
 __float_types = sctypes['float']+[float]
@@ -142,6 +142,23 @@ def check_image(im):
     if not (ndim == 2 and im.dtype.type in __basic_types+__cmplx_types or
             ndim == 3 and 2 <= im.shape[2] <= 5 and im.dtype.type in __basic_types):
         raise ValueError('Unknown image format')
+def is_single_channel_image(im):
+    """
+    Returns True if `im` is a single-channel image, basically it is a ndarray of 2 or 3 dimensions
+    where the 3rd dimension length is can only be 1 and the data type is a basic data type (integer
+    or float but not complex). Does not check to see that the image has no zero-length dimensions.
+    """
+    if im.ndim == 3 and im.shape[2] == 1: im = im.squeeze(2)
+    return im.ndim == 2 and im.dtype.type in __basic_types
+def check_image_single_channel(im):
+    """
+    Similar to is_single_channel_image except instead of returning True/False it throws an exception
+    if it isn't an image. Also, it returns a 2D image (wityh the 3rd dimension, if 1, removed).
+    """
+    if im.ndim == 3 and im.shape[2] == 1: im = im.squeeze(2)
+    if im.ndim != 2 and im.dtype.type not in __basic_types:
+        raise ValueError('Not single-channel image format')
+    return im
 
 
 ##### View images in different ways #####
@@ -201,11 +218,14 @@ def im_decomplexify_dtype(dtype):
 __min_max_values = { __t:(iinfo(__t).min,iinfo(__t).max) for __t in __int_types+__uint_types }
 for __t in __bit_types:   __min_max_values[__t] = (__t(False),__t(True))
 for __t in __float_types: __min_max_values[__t] = (__t('0.0'),__t('1.0'))
+def get_dtype_min_max(dt): return __min_max_values[dtype(dt).type]
+def get_dtype_min(dt): return __min_max_values[dtype(dt).type][0]
+def get_dtype_max(dt): return __min_max_values[dtype(dt).type][1]
 def get_im_min_max(im):
     """Gets the min and max values for an image or an image dtype."""
-    if isinstance(im, dtype): dt = im; im = None
+    if not isinstance(im, ndarray): dt, im = dtype(im), None
     else: dt = im.dtype
-    if im is None or dt not in __float_types: return __min_max_values[dt.type]
+    if im is None or dt.kind != 'f': return __min_max_values[dt.type]
     mn, mx = im.min(), im.max()
     return (mn, mx) if mn < 0.0 or mx > 1.0 else __min_max_values[dt.type]
 
