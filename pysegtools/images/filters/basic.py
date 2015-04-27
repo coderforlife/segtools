@@ -7,15 +7,15 @@ from __future__ import unicode_literals
 from numbers import Integral
 from collections import Sequence
 from itertools import izip
-        
+
 from ._stack import FilteredImageStack, FilteredImageSlice, UnchangingFilteredImageStack, UnchangingFilteredImageSlice
 from .._stack import ImageStack, ImageSlice
 from ..source import ImageSource
-from ..types import check_image, get_im_dtype_and_nchan, create_im_dtype
+from ..types import check_image, get_im_dtype_and_nchan, create_im_dtype, get_dtype_min_max, get_dtype_max
 from ...imstack import Command, CommandEasy, Opt, Help
 
-__all__ = ['flip',
-           'FlipImageStack',]
+__all__ = ['flip','inv',
+           'FlipImageStack','InvertImageStack','ExtractChannelsImageStack','CombineChannelsImageStack']
 
 ##### 2D #####
 def flip(im, direction='v'):
@@ -24,8 +24,28 @@ def flip(im, direction='v'):
     value is a view - not a copy.
     """
     from numpy import flipud, fliplr
+    check_image(im)
     if direction not in ('v', 'h'): raise ValueError('Unsupported direction')
     return (flipud if direction == 'v' else fliplr)(im)
+
+def inv(im):
+    """
+    Inverts each image in an image stack, essentially making the lowest value the highest and vice
+    versa. Works on all image types except complex.
+    """
+    from numpy import logical_not, dtype
+    check_image(im)
+    if im.dtype.kind == 'c': raise ValueError('Cannot invert complex numbers')
+    if im.dtype.kind == 'b': return logical_not(im)
+    if im.dtype.kind == 'u': return get_dtype_max(im.dtype) - im
+    if im.dtype.kind == 'i':
+        u_dt = dtype(im.dtype.byteorder+'u'+str(im.dtype.itemsize))
+        return (get_dtype_max(u_dt)-im.view(u_dt)).view(im.dtype)
+    # im.dtype.kind == 'f'
+    mn, mx = get_im_min_max(im)
+    if mn == 0.0: return mx - im
+    return mx - im + mn
+
 
 ##### 3D #####
 class FlipImageStack(UnchangingFilteredImageStack):
@@ -37,17 +57,21 @@ class FlipImageStack(UnchangingFilteredImageStack):
         elif dir in ('x','y'):
             from numpy import flipud, fliplr
             self._flip = flipud if dir == 'y' else fliplr
-            slcs = FlipFilterImageSlice
+            slcs = FlipImageSlice
         else:
             raise ValueError()
         super(FlipImageStack, self).__init__(ims, slcs)
-        
 class DoNothingFilterImageSlice(UnchangingFilteredImageSlice):
     def _get_data(self): return self._input.data
-    
-class FlipFilterImageSlice(UnchangingFilteredImageSlice):
+class FlipImageSlice(UnchangingFilteredImageSlice):
     def _get_data(self): return self._stack._flip(self._input.data)
 
+
+class InvertImageStack(UnchangingFilteredImageStack):
+    def __init__(self, ims): super(InvertImageStack, self).__init__(ims, InvertImageSlice)
+class InvertImageSlice(UnchangingFilteredImageSlice):
+    def _get_data(self): return inv(self._input.data)
+    
 
 class ExtractChannelsImageStack(FilteredImageStack):
     def __init__(self, ims, channels):
@@ -63,12 +87,11 @@ class ExtractChannelsImageStack(FilteredImageStack):
             raise ValueError('channel number is invalid')
         super(ExtractChannelsImageStack, self).__init__(ims,
             [ExtractChannelsImageSlice(self,z,im,dt,channels) for z,(im,dt) in enumerate(zip(ims,dtypes))])
-
 class ExtractChannelsImageSlice(FilteredImageSlice):
-    def __init__(self, stack, z, im, dtype, channels):
+    def __init__(self, stack, z, im, dt, channels):
         super(ExtractChannelsImageSlice, self).__init__(stack, z, im)
         self.__channels = channels
-        self._set_props(create_im_dtype(dtype, dtype.byteorder, len(channels)), None)
+        self._set_props(create_im_dtype(dt, dt.byteorder, len(channels)), None)
     def _get_props(self):
         self._set_props(None, self._input.shape)
     def _get_data(self):
@@ -99,7 +122,6 @@ class CombineChannelsImageStack(FilteredImageStack):
         dtypes = [create_im_dtype(dt, dt.byteorder, nc) for dt,nc in zip(dtypes[0],nchans)]
         super(CombineChannelsImageStack, self).__init__(None,
             [CombineChannelsImageSlice(self,z,dt,sh) for z,(dt,sh) in enumerate(zip(dtypes,shapes))])
-
 class CombineChannelsImageSlice(ImageSlice):
     def __init__(self, stack, z, dtype, shape):
         super(CombineChannelsImageSlice, self).__init__(stack, z)
@@ -129,13 +151,29 @@ class FlipImageCommand(CommandEasy):
         Opt('dir', 'The direction of the flip: x (left-to-right), y (top-to-bottom), or z (first-to-last)', Opt.cast_in('x','y','z'), 'y'),
         )
     @classmethod
-    def _consumes(cls, dtype): return ('Image to be flipped',)
+    def _consumes(cls, dtype): return ('Image stack to be flipped',)
     @classmethod
-    def _produces(cls, dtype): return ('Flipped image',)
+    def _produces(cls, dtype): return ('Flipped image stack',)
     @classmethod
     def _see_also(cls): return ('z',)
     def __str__(self): return 'flip with dir=%s'%self._dir
-    def execute(self, stack): stack.push(FlipImageStack(stack.pop(), self._size))
+    def execute(self, stack): stack.push(FlipImageStack(stack.pop(), self._dir))
+
+class InvertImageCommand(CommandEasy):
+    @classmethod
+    def name(cls): return 'invert'
+    @classmethod
+    def _desc(cls): return 'Inverts the images in the image stack, making dark light and light dark.'
+    @classmethod
+    def flags(cls): return ('i', 'invert')
+    @classmethod
+    def _consumes(cls, dtype): return ('Image stack to be inverted',)
+    @classmethod
+    def _produces(cls, dtype): return ('Inverted image stack',)
+    @classmethod
+    def _see_also(cls): return ('bw','scale')
+    def __str__(self): return 'invert'
+    def execute(self, stack): stack.push(InvertImageStack(stack.pop()))
 
 class ExtractChannelsCommand(CommandEasy):
     @staticmethod
