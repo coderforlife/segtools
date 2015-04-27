@@ -342,6 +342,7 @@ class HistEqImageSlice(UnchangingFilteredImageSlice):
     def __init__(self, image, stack, z, mask):
         super(HistEqImageSlice, self).__init__(image, stack, z)
         self._mask = mask
+        if image.dtype.kind is 'c' or (image.ndim > 2 and image.shape[2] != 1): raise ValueError('only single-channel images can be histogramed')
         if mask is not None and mask.shape != image.shape: raise ValueError('mask must be same shape as image')
     @property
     def mask(self): return None if self._mask is None else self._mask.data
@@ -471,7 +472,13 @@ Exact Histogram Equalization References:
         p.text("See also:")
         p.list('imhist')
     def __str__(self):
-        pass
+        '%shistogram equalization with %s%s%s' % (
+            'exact ' if self.__exact else '',
+            ('bins from %s'%('stdin' if self.__hist=='-' else self.__hist)) if isinstance(self.__hist, String) else '%s equal bins'%self.__hist,
+            ' using a mask' if self.__use_mask else '',
+            ' across entire stack' if self.__src_hist is True else ('' if self.__src_hist is None else (' using source histogram from %s'%('stdin' if self.__src_hist=='-' else self.__src_hist))),
+            (' (order=%d)'%self.__exact) if isinstance(self.__exact, Integer) else '',
+            )
     def __init__(self, args, stack):
         self.__hist,self.__use_mask,self.__exact,self.__src_hist,order = args.get_all(*HistEqCommand._opts())
         stack.pop()
