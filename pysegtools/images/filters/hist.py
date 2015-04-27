@@ -372,7 +372,7 @@ class HistCommand(Command):
         p.flags(cls.flags())
         p.newline()
         p.text("""
-Consumes:  image stack to take the histogram of
+Consumes:  image stack to take the histogram of 
            possibly a mask""")
         p.newline()
         p.text("Command format:")
@@ -433,7 +433,7 @@ class HistEqCommand(Command):
         p.flags(cls.flags())
         p.newline()
         p.text("""
-Consumes:  image stack to change the histogram of
+Consumes:  image stack to change the histogram of 
            possibly a mask
 Produces:  image stack with the histogram changed""")
         p.newline()
