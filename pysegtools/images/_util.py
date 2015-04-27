@@ -46,6 +46,11 @@ def _bool(x):
         if x.lower() in ('false', 'f', '0'): return False
         if x.lower() in ('true',  't', '1'): return True
     return bool(x)
+def dtype_cast(x, dtype):
+    """Casts a value using a dtype specification."""
+    a = array([x], dtype.base)
+    if a.shape[1:] != dtype.shape: raise ValueError('Invalid value "' + v + '" for tag "' + k_ + '"')
+    return a[0] if a.ndim == 1 else tuple(a[0])
 
 
 ##### struct utilities #####
