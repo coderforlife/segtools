@@ -244,7 +244,7 @@ class Opt(object):
         or TypeError and returns that value. If all raise errors, a ValueError is raised. The casts
         can be functions or strings (which are automatically wrapped in a cast_equal function).
         """
-        casts = [cast_equal(c) if isinstance(c, String) else c for c in casts]
+        casts = [Opt.cast_equal(c) if isinstance(c, String) else c for c in casts]
         def _cast_or(x):
             for c in casts:
                 try: return c(x)

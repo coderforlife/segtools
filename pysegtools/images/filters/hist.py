@@ -465,9 +465,9 @@ but take more time and memory (although, for 8-bit images, there is no memory in
 increase is minor).
 
 Exact Histogram Equalization References:
-1. Coltuc D, Bolon P, 1999, "Strict ordering on discrete images and applications"
-2. Coltuc D, Bolon P, Chassery J-M, 2006, "Exact histogram specification", IEEE Transcations on Image Processing 15(5):1143-1152
 """)
+        p.list('Coltuc D, Bolon P, 1999, "Strict ordering on discrete images and applications"',
+               'Coltuc D, Bolon P, Chassery J-M, 2006, "Exact histogram specification", IEEE Transcations on Image Processing 15(5):1143-1152')
         p.newline()
         p.text("See also:")
         p.list('imhist')
