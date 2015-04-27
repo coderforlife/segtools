@@ -4,9 +4,12 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 from numbers import Integral
+from itertools import repeat
+from sys import stdin, stdout
+from StringIO import StringIO
 
 from numpy import dtype, int32, int64, float64, finfo
-from numpy import array, empty, zeros, linspace, tile, repeat, vstack
+from numpy import array, empty, zeros, linspace, tile, repeat, vstack, savetxt, loadtxt
 from numpy import add, left_shift, floor, sqrt
 from numpy import lexsort, argpartition, histogram, unique, spacing, count_nonzero
 
@@ -14,6 +17,7 @@ from ._stack import UnchangingFilteredImageStack, UnchangingFilteredImageSlice
 from .._stack import ImageStack
 from ...imstack import Command, Opt, Help
 from ..types import get_im_min_max, get_dtype_min_max, get_dtype_max, get_dtype_min, check_image_single_channel
+from .._util import String
 
 __all__ = ['imhist', 'histeq_trans', 'histeq_apply', 'histeq', 'histeq_exact']
 
@@ -312,10 +316,10 @@ class HistEqImageStack(UnchangingFilteredImageStack):
                 if h_src is True:
                     self._h_dst = h_dst
                     self._T = None
-                    self._histeq = lambda im,mk: histeq_apply(im, self._get_trans(), mask=mk):
+                    self._histeq = lambda im,mk: histeq_apply(im, self._get_trans(), mask=mk)
                 else:
                     T = histeq_trans(h_src, h_dst, ims.dtype)
-                    self._histeq = lambda im,mk: histeq_apply(im, T, mask=mk):
+                    self._histeq = lambda im,mk: histeq_apply(im, T, mask=mk)
             else:
                 self._histeq = lambda im,mk: histeq(im, h_dst, None, mk)
         if (h_dst if isinstance(h_dst, Integral) else len(h_dst)) < 2: raise ValueError('Histogram too small')
@@ -323,11 +327,10 @@ class HistEqImageStack(UnchangingFilteredImageStack):
             mask = ImageStack.as_image_stack(mask)
             if mask.dtype != bool: raise ValueError('mask must be of bool/logical type')
             if len(mask) != len(ims): raise ValueError('mask must be same shape as image')
-            super(HistEqImageStack, self).__init__(ims,
-                [HistEqImageSlice(im, self, z, mk) for z,(im,mk) in enumerate(ims, mask)])
         else:
-            super(HistEqImageStack, self).__init__(ims,
-                [HistEqImageSlice(im, self, z, None) for z,im in enumerate(ims)])
+            mask = repeat(None)
+        super(HistEqImageStack, self).__init__(ims,
+            [HistEqImageSlice(im, self, z, mk) for z,(im,mk) in enumerate(ims, mask)])
     def _get_trans(self):
         if self._T is None:
             h_src = zeros(256, int64)
@@ -346,8 +349,134 @@ class HistEqImageSlice(UnchangingFilteredImageSlice):
 
 
 ##### Commands #####
+    
 class HistCommand(Command):
-    pass
+    @classmethod
+    def name(cls): return 'histogram'
+    @classmethod
+    def flags(cls): return ('imhist','hist')
+    @classmethod
+    def _opts(cls): return (
+        Opt('output_file', 'The file to output the histogram to or - for stdout', Opt.cast_or('-', Opt.cast_writable_file())),
+        Opt('nbins',       'The number of bins to use in the histogram', Opt.cast_int(lambda x:x>=2), 256),
+        Opt('per_slice',   'Calculate the histogram for each slice instead of the entire stack', Opt.cast_bool(), False),
+        Opt('use_mask',    'Only take the histogram of the pixels given in the mask', Opt.cast_bool(), False),
+        )
+    @classmethod
+    def print_help(cls, width):
+        p = Help(width)
+        p.title("Histogram Calculation")
+        p.text("""Calculate the histogram and save to a file.""")
+        p.newline()
+        p.flags(cls.flags())
+        p.newline()
+        p.text("""
+Consumes:  image stack to take the histogram of
+           possibly a mask""")
+        p.newline()
+        p.text("Command format:")
+        p.cmds("--hist output_file [nbins] [per_slice] [use_mask]")
+        p.newline()
+        p.text("Options:")
+        p.opts(*cls._opts())
+        p.newline()
+        p.text("""
+Calculates the histogram of an image stack or for each slice and saves it to a file (or stdout). The
+file is written as a tab-seperated file (each bin's value is seperated by a tab, each slice is on
+its own line). If the file ends with '.gz' then it will be compressed. If a mask is used, then only
+pixels where the mask is True are counted.""")
+        p.newline()
+        p.text("See also:")
+        p.list('histeq')
+    def __str__(self):
+        return 'saving histogram of %d bins%s to %s%s' % (
+            self.__nbins, ' per slice' if self.__per_slice else '',
+            self.__file, ' using a mask' if self.__use_mask else '')
+    def __init__(self, args, stack):
+        self.__file,self.__nbins,self.__per_slice,self.__use_mask = args.get_all(*HistCommand._opts())
+        stack.pop()
+        if self.__use_mask: stack.pop()
+    def execute(self, stack):
+        ims = stack.pop()
+        nbins = self.__nbins
+        mask = stack.pop() if self.__use_mask else repeat(None)
+        if self.__per_slice:
+            H = empty((nbins, len(ims)), int64)
+            for i,(im,mk) in enumerate(zip(ims,mask)):
+                H[:,i] = imhist(im, nbins, mk)
+        else:
+            H = zeros(nbins, int64)
+            for im,mk in zip(ims,mask):
+                H += imhist(im, nbins, mk)
+        savetxt(stdout if self.__file == '-' else self.__file, H, '%u', '\t')
 
 class HistEqCommand(Command):
-    pass
+    @classmethod
+    def name(cls): return 'histogram equalization'
+    @classmethod
+    def flags(cls): return ('H','histeq','histogram-equalization')
+    @classmethod
+    def _opts(cls): return (
+        Opt('hist',     'The histogram to match to, specified either as an integer (for a uniform histogram with that many bins) or a readable file (or - for stdin, can have .gz/.bz2 if compressed) where one line will be read that has white-space seperated value', Opt.cast_or(Opt.cast_int(lambda x:x>=2), '-', Opt.cast_readable_file()), None, '256 if exact is true, 64 otherwise'),
+        Opt('use_mask', 'Only use and update the pixels where the mask is True', Opt.cast_bool(), False),
+        Opt('exact',    'Force the image\'s histogram to exactly the given histogram', Opt.cast_bool(), False),
+        Opt('src_hist', 'The histogram to map from, either the current slice, the entire stack, or a custom one from a file or stdin (-); must be slice if exact is true or the input data has a heterogeneous data type', Opt.cast_or('slice', 'stack', '-', Opt.cast_readable_file()), 'slice'),
+        Opt('order',    'The order of the exact histogram, from 2 to 6 (higher values have higher accuracy but take more time and memory), only used if exact is true', Opt.cast_int(lambda x:x>=2 and x<=6), 6),
+        )
+    @classmethod
+    def print_help(cls, width):
+        p = Help(width)
+        p.title("Histogram Equalization")
+        p.text("""Change the histogram of an image to match a given histogram.""")
+        p.newline()
+        p.flags(cls.flags())
+        p.newline()
+        p.text("""
+Consumes:  image stack to change the histogram of
+           possibly a mask
+Produces:  image stack with the histogram changed""")
+        p.newline()
+        p.text("Command format:")
+        p.cmds("--histeq [hist] [use_mask] [exact] [src_hist] [order]")
+        p.newline()
+        p.text("Options:")
+        p.opts(*cls._opts())
+        p.newline()
+        p.text("""          ??????????????
+Calculates the histogram of an image stack or for each slice and saves it to a file (or stdout). The
+file is written as a tab-seperated file (each bin's value is seperated by a tab, each slice is on
+its own line). If the file ends with '.gz' then it will be compressed. If a mask is used, then only
+pixels where the mask is True are counted.""")
+        p.newline()
+        p.text("See also:")
+        p.list('imhist')
+    def __str__(self):
+        pass
+    def __init__(self, args, stack):
+        self.__hist,self.__use_mask,self.__exact,self.__src_hist,order = args.get_all(*HistEqCommand._opts())
+        stack.pop()
+        if self.__use_mask: stack.pop()
+        if self.__exact and self.__src_hist != 'slice': raise ValueError('When exact is true, src_hist must be \'slice\'')
+        if order != 6:
+            if not self.__exact: raise ValueError('When exact is false, order cannot be used')
+            self.__exact = order
+        if self.__hist is None: self.__hist = 256 if self.__exact else 64
+        if self.__src_hist == 'slice': self.__src_hist = None
+        elif self.__src_hist == 'stack': self.__src_hist = True
+
+    @staticmethod
+    def __get_hist(h):
+        if isinstance(h, String):
+            if fname == '-': l = stdin.readline()
+            else:
+                with open(fname, 'r') as f: l = f.readline()
+            h = loadtxt(StringIO(l.trim()))
+            if h.ndim == 0 or len(h) < 2: raise ValueError('not enough data for histogram')
+        return h
+
+    def execute(self, stack):
+        ims = stack.pop()
+        mask = stack.pop() if self.__use_mask else None
+        h_dst = HistEqCommand.__get_hist(self.__hist)
+        h_src = HistEqCommand.__get_hist(self.__src_hist)
+        stack.push(HistEqImageStack(ims, h_dst, h_src, mask, self.__exact))
