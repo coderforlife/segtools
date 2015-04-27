@@ -22,7 +22,7 @@ def cast_num_pattern(s):
 oPattern = Opt('pattern','numerical pattern with number signs (#) to be replaced by integers',cast_num_pattern)
 oStart = Opt('start','non-negative integer to start counting at',Opt.cast_int(lambda x:x>=0),0)
 oStep = Opt('step','positive integer to count by',Opt.cast_int(lambda x:x>=1),1)
-oStop = Opt('stop','non-negative integer to stop counting at (it is included)',Opt.cast_or(Opt.cast_equal(None),Opt.cast_int(lambda x:x>=0)),None)
+oStop = Opt('stop','non-negative integer to stop counting at (it is included)',Opt.cast_int(lambda x:x>=0),None)
 
 def _pattern_desc(pattern,start,step,stop=None):
     if start==0 and step==1 and stop is None: return "'%s'" % pattern

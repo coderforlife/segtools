@@ -485,7 +485,7 @@ class PadImageSlice(FilteredImageSlice):
 
 ##### Commands #####
 
-_cast_fill = Opt.cast_or(Opt.cast_in('mean', 'mirror', 'reflect', 'nearest', 'wrap'), Opt.cast_check(is_color))
+_cast_fill = Opt.cast_or('mean', 'mirror', 'reflect', 'nearest', 'wrap', Opt.cast_check(is_color))
 
 class BackgroundMaskCommand(CommandEasy):
     _color = None
@@ -499,7 +499,7 @@ class BackgroundMaskCommand(CommandEasy):
     @classmethod
     def _opts(cls): return (
         Opt('color', 'The current background color (see --help color) or \'auto\' to calculate it per-slice',
-            Opt.cast_or(Opt.cast_equal('auto'), Opt.cast_check(is_color)), 'auto'),
+            Opt.cast_or('auto', Opt.cast_check(is_color)), 'auto'),
         Opt('rect',  'Force the background area to be around a rectangular foreground',
             Opt.cast_bool(), False),
         Opt('projection', 'Make every slice the same where a pixel is marked as background if: only all slices would have had it marked as background (all) or any slice would have had it marked as background (any)',

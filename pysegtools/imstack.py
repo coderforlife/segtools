@@ -241,8 +241,10 @@ class Opt(object):
     def cast_or(*casts):
         """
         Takes other casting functions and calls them in order until one does not raise a ValueError
-        or TypeError and returns that value. If all raise errors, a ValueError is raised.
+        or TypeError and returns that value. If all raise errors, a ValueError is raised. The casts
+        can be functions or strings (which are automatically wrapped in a cast_equal function).
         """
+        casts = [cast_equal(c) if isinstance(c, String) else c for c in casts]
         def _cast_or(x):
             for c in casts:
                 try: return c(x)
