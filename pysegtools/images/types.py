@@ -13,7 +13,7 @@ from ._util import String
 __all__ = [
     'create_im_dtype','get_im_dtype','get_im_dtype_and_nchan','im_dtype_desc','get_dtype_endian',
     'is_image','check_image','is_single_channel_image','check_image_single_channel',
-    'im_rgb_view','im_raw_view','im_complexify','im_decomplexify',
+    'im_rgb_view','im_raw_view','im_complexify','im_decomplexify','im_decomplexify_dtype','im_complexify_dtype',
     'get_im_min_max','get_dtype_min_max','get_dtype_min','get_dtype_max',
     ]
 
@@ -221,16 +221,25 @@ def im_complexify(im, force=False):
             im += mn
             im /= mx
     return im.view(dtype=dtype(__float2cmplx[im.dtype.type]).newbyteorder(im.dtype.byteorder)).squeeze(2)
+def im_complexify_dtype(dt, force=False):
+    """Same as im_complexify but with just the dtype (which is assumed to have 2 channels)."""
+    dt = dt.base # removes channel information, if there
+    if dt.type in __cmplx_types: return dt
+    if dt.type not in __float2cmplx:
+        if not force: raise ValueError('Image cannot be represented as a complex type')
+        dt = min((promote_types(dt, f) for f in __float2cmplx), key=lambda dt:dt.itemsize)
+    return __float2cmplx[dt.type]
+    
 def im_decomplexify(im):
     """
     Reverse of im_complexify. If the image is a complex image then it will be turned into a
     2-channel floating-point image. Non-complex images are returned as a view with the same dtype.
     """
     return im.view(dtype=im_decomplexify_dtype(im.dtype))
-def im_decomplexify_dtype(dtype):
+def im_decomplexify_dtype(dt):
     """Same as im_decomplexify but with just the dtype."""
-    if dtype.type not in __cmplx2float: return dtype
-    return dtype(__cmplx2float[dtype.type]).newbyteorder(dtype.byteorder)
+    if dt.type not in __cmplx2float: return dt
+    return dtype(__cmplx2float[dt.type]).newbyteorder(dt.byteorder)
 
 
 ##### Min/Max for data types #####
