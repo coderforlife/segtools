@@ -151,9 +151,9 @@ class FlipImageCommand(CommandEasy):
         Opt('dir', 'The direction of the flip: x (left-to-right), y (top-to-bottom), or z (first-to-last)', Opt.cast_in('x','y','z'), 'y'),
         )
     @classmethod
-    def _consumes(cls, dtype): return ('Image stack to be flipped',)
+    def _consumes(cls): return ('Image stack to be flipped',)
     @classmethod
-    def _produces(cls, dtype): return ('Flipped image stack',)
+    def _produces(cls): return ('Flipped image stack',)
     @classmethod
     def _see_also(cls): return ('z',)
     def __str__(self): return 'flip with dir=%s'%self._dir
@@ -167,9 +167,9 @@ class InvertImageCommand(CommandEasy):
     @classmethod
     def flags(cls): return ('i', 'invert')
     @classmethod
-    def _consumes(cls, dtype): return ('Image stack to be inverted',)
+    def _consumes(cls): return ('Image stack to be inverted',)
     @classmethod
-    def _produces(cls, dtype): return ('Inverted image stack',)
+    def _produces(cls): return ('Inverted image stack',)
     @classmethod
     def _see_also(cls): return ('bw','scale')
     def __str__(self): return 'invert'
@@ -224,7 +224,7 @@ class CombineChannelsCommand(Command):
         p.newline()
         p.text("""
 Consumes:  2+ image stacks 
-Produces:  1 image stack""")
+Produces:  1 combined image stack""")
         p.newline()
         p.text("Command format:")
         p.cmds("--combine-channels [nstacks]")

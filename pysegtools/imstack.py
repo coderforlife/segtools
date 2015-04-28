@@ -374,7 +374,7 @@ class Opt(object):
         created as necessary.
         """
         import os
-        from ..general.utils import make_dir
+        from .general.utils import make_dir
         def _cast_writable_dir(x):
             if x == '': x = '.'
             x = os.path.abspath(x)
@@ -528,16 +528,17 @@ class CommandEasy(Command):
         p.title(t)
         if d: p.text(d); p.newline();
         p.flags(fs)
-        p.newline(); 
-        p.text("Command format:")
-        s = sorted(fs, key=len)[-1]
-        s = ('--' if len(s) > 1 else '-')+s
-        if os: s += " " + (" ".join('['+o.name+']' if o.has_default else o.name for o in os))
-        p.cmds(s)
+        if os:
+            p.newline()
+            p.text("Command format:")
+            s = sorted(fs, key=len)[-1]
+            s = ('--' if len(s) > 1 else '-')+s
+            s += " " + (" ".join('['+o.name+']' if o.has_default else o.name for o in os))
+            p.cmds(s)
         if os: p.newline(); p.text("Options:"); p.opts(*os) #pylint: disable=star-args
         if co or pr: p.newline(); p.stack_changes(consumes=co, produces=pr)
-        if ex: p.newline(); p.list(*ex) #pylint: disable=star-args
-        if sa: p.newline(); p.list(*sa) #pylint: disable=star-args
+        if ex: p.newline(); p.text("Examples:"); p.list(*ex) #pylint: disable=star-args
+        if sa: p.newline(); p.text("See also:"); p.list(*sa) #pylint: disable=star-args
     def __new__(cls, args, stack):
         for _ in xrange(len(cls._consumes())): stack.pop()
         for _ in xrange(len(cls._produces())): stack.push()
