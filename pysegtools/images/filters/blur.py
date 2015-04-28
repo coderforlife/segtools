@@ -37,7 +37,7 @@ def mean_blur(im, size=3):
 def median_blur(im, size=3):
     """Blur an image using a median filter. Works on color types by blurring each channel seperately."""
     from scipy.ndimage.filters import median_filter
-    return _filter(im, partial(median_blur, size=size))
+    return _filter(im, partial(median_filter, size=size))
 
 ##### 3D #####
 class BlurFilterImageStack(UnchangingFilteredImageStack):
