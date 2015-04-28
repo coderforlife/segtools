@@ -192,15 +192,34 @@ __cmplx2float = {__c:dtype('f'+str(dtype(__c).itemsize//2)) for __c in __cmplx_t
 __cmplx2float = {__c:__f.type for __c,__f in __cmplx2float.iteritems() if __f.kind == 'f'}
 __float2cmplx = {__f:dtype('c'+str(dtype(__f).itemsize* 2)) for __f in __float_types}
 __float2cmplx = {__f:__c.type for __f,__c in __float2cmplx.iteritems() if __c.kind == 'c'}
-def im_complexify(im):
+def im_complexify(im, force=False):
     """
     View an image as complex numbers. The image must be a 2-channel image of one of the supported
     float-point types, otherwise an exception will occur. If the image is already complex, it is
     returned as-is.
+
+    If force is True, then greater effort is taken to make the image a complex image. It still needs
+    to be a 2-channel image but the channels can be floats or integers that aren't normally
+    supported. There are some differences with the returned data as well:
+     * The returned image is a copy, not a view
+     * If the input image was integers, the output is scaled so that the values are 0.0 to 1.0
+     * im_decomplexify will not restore the image to the same type it came from
+     * There is a chance for a loss of precision, e.g. the largest complex type cannot fit two of
+       the largest integral types
     """
     shp = im.shape
     if (len(shp) == 3 and shp[2] == 1 or len(shp) == 2) and im.dtype.type in __cmplx_types: return im
-    if len(shp) != 3 or shp[2] != 2 or im.dtype.type not in __float2cmplx: raise ValueError('Image is not able to be represented as a complex type')
+    good_shape = len(shp) == 3 and shp[2] == 2
+    if not good_shape or im.dtype.type not in __float2cmplx:
+        if not force or not good_shape: raise ValueError('Image cannot be represented as a complex type')
+        o_dt = im.dtype
+        dt = min((promote_types(o_dt, f) for f in __float2cmplx), key=lambda dt:dt.itemsize)
+        im = im.astype(dt)
+        if   o_dt.kind == 'u': im /= get_dtype_max(o_dt)
+        elif o_dt.kind == 'i':
+            mn, mx = get_dtype_min_max(o_dt)
+            im += mn
+            im /= mx
     return im.view(dtype=dtype(__float2cmplx[im.dtype.type]).newbyteorder(im.dtype.byteorder)).squeeze(2)
 def im_decomplexify(im):
     """
