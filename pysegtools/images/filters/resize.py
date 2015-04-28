@@ -106,7 +106,7 @@ class ResizeImageSlice(FilteredImageSlice):
         from scipy.version import version
         sh, f = self._input.shape, self._stack._factor
         sh = tuple((int(round(i*f)) for i in sh)
-                   if splitstr(version, int, '.') < [0,13,0] else
+                   if splitstr(version, int, '.') >= [0,13,0] else
                    (int(i*f) for i in sh))
         self._set_props(self._input.dtype, sh)
     def _get_data(self):
