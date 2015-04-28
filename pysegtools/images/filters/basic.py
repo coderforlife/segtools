@@ -8,14 +8,17 @@ from numbers import Integral
 from collections import Sequence
 from itertools import izip
 
+from numpy import flipud, fliplr
+
 from ._stack import FilteredImageStack, FilteredImageSlice, UnchangingFilteredImageStack, UnchangingFilteredImageSlice
 from .._stack import ImageStack, ImageSlice
 from ..source import ImageSource
 from ..types import check_image, get_im_dtype_and_nchan, create_im_dtype, get_dtype_min_max, get_dtype_max
 from ...imstack import Command, CommandEasy, Opt, Help
 
-__all__ = ['flip','inv',
-           'FlipImageStack','InvertImageStack','ExtractChannelsImageStack','CombineChannelsImageStack']
+__all__ = ['flip','rotate','inv',
+           'FlipImageStack','RotateImageStack','InvertImageStack',
+           'ExtractChannelsImageStack','CombineChannelsImageStack']
 
 ##### 2D #####
 def flip(im, direction='v'):
@@ -23,10 +26,19 @@ def flip(im, direction='v'):
     Flips an image either vertically (default) or horizontally (by giving an 'h'). The returned
     value is a view - not a copy.
     """
-    from numpy import flipud, fliplr
     check_image(im)
     if direction not in ('v', 'h'): raise ValueError('Unsupported direction')
     return (flipud if direction == 'v' else fliplr)(im)
+
+def rotate(im, direction='cw'):
+    """
+    Rotates an image either 90 degrees clockwise, 90 degrees counter-clockwise, or a full 180
+    degrees. A view may be returned in some cases. The direction can be 'cw', 'ccw', or 'full'.
+    """
+    check_image(im)
+    if direction not in ('cw', 'ccw', 'full'): raise ValueError('Unsupported direction')
+    if direction == 'full': return flipud(fliplr(im))
+    return (flipud if direction == 'ccw' else fliplr)(im.T)
 
 def inv(im):
     """
@@ -55,7 +67,6 @@ class FlipImageStack(UnchangingFilteredImageStack):
         if dir == 'z':
             slcs = [DoNothingFilterImageSlice(im,self,z) for z,im in enumerate(reversed(ims))]
         elif dir in ('x','y'):
-            from numpy import flipud, fliplr
             self._flip = flipud if dir == 'y' else fliplr
             slcs = FlipImageSlice
         else:
@@ -67,6 +78,18 @@ class FlipImageSlice(UnchangingFilteredImageSlice):
     def _get_data(self): return self._stack._flip(self._input.data)
 
 
+class RotateImageStack(UnchangingFilteredImageStack):
+    def __init__(self, ims, dir='cw'):
+        """dir can be cw, cww, or full"""
+        self._dir = dir
+        if dir not in ('cw', 'ccw', 'full'): raise ValueError()
+        self._rot = (lambda im:flipud(fliplr(im))) if dir == 'full' else (
+           (lambda im:flipud(im.T)) if dir == 'ccw' else (lambda im:fliplr(im.T)))
+        super(FlipImageStack, self).__init__(ims, RotateImageSlice)
+class RotateImageSlice(UnchangingFilteredImageSlice):
+    def _get_data(self): return self._stack._rot(self._input.data)
+
+    
 class InvertImageStack(UnchangingFilteredImageStack):
     def __init__(self, ims): super(InvertImageStack, self).__init__(ims, InvertImageSlice)
 class InvertImageSlice(UnchangingFilteredImageSlice):
@@ -140,6 +163,7 @@ class CombineChannelsImageSlice(ImageSlice):
 
 ##### Commands #####
 class FlipImageCommand(CommandEasy):
+    _dir = None
     @classmethod
     def name(cls): return 'flip'
     @classmethod
@@ -155,9 +179,30 @@ class FlipImageCommand(CommandEasy):
     @classmethod
     def _produces(cls): return ('Flipped image stack',)
     @classmethod
-    def _see_also(cls): return ('z',)
+    def _see_also(cls): return ('z','rotate')
     def __str__(self): return 'flip with dir=%s'%self._dir
     def execute(self, stack): stack.push(FlipImageStack(stack.pop(), self._dir))
+
+class RotateImageCommand(CommandEasy):
+    _dir = None
+    @classmethod
+    def name(cls): return 'rotate'
+    @classmethod
+    def _desc(cls): return 'Rotates the images in the image stack, either 90 degrees clockwise, 90 degrees count-clockwise, or a full 180 degrees.'
+    @classmethod
+    def flags(cls): return ('R', 'rotate')
+    @classmethod
+    def _opts(cls): return (
+        Opt('dir', 'The direction of the flip: cw, ccw, or full', Opt.cast_in('cw','cww','full'), 'cw'),
+        )
+    @classmethod
+    def _consumes(cls): return ('Image stack to be rotated',)
+    @classmethod
+    def _produces(cls): return ('Rotated image stack',)
+    @classmethod
+    def _see_also(cls): return ('flip',)
+    def __str__(self): return 'rotate with dir=%s'%self._dir
+    def execute(self, stack): stack.push(RotateImageStack(stack.pop(), self._dir))
 
 class InvertImageCommand(CommandEasy):
     @classmethod
