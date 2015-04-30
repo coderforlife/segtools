@@ -8,7 +8,7 @@ from numbers import Integral
 from collections import Sequence
 from itertools import izip
 
-from numpy import flipud, fliplr
+from numpy import flipud, fliplr, rot90
 
 from ._stack import FilteredImageStack, FilteredImageSlice, UnchangingFilteredImageStack, UnchangingFilteredImageSlice
 from .._stack import ImageStack, ImageSlice
@@ -36,9 +36,8 @@ def rotate(im, direction='cw'):
     degrees. A view may be returned in some cases. The direction can be 'cw', 'ccw', or 'full'.
     """
     check_image(im)
-    if direction not in ('cw', 'ccw', 'full'): raise ValueError('Unsupported direction')
-    if direction == 'full': return flipud(fliplr(im))
-    return (flipud if direction == 'ccw' else fliplr)(im.T)
+    try: return rot90(im, ('ccw', 'full', 'cw').index() + 1)
+    except ValueError: raise ValueError('Unsupported direction')
 
 def inv(im):
     """
@@ -78,16 +77,17 @@ class FlipImageSlice(UnchangingFilteredImageSlice):
     def _get_data(self): return self._stack._flip(self._input.data)
 
 
-class RotateImageStack(UnchangingFilteredImageStack):
+class RotateImageStack(FilteredImageStack):
     def __init__(self, ims, dir='cw'):
         """dir can be cw, cww, or full"""
         self._dir = dir
-        if dir not in ('cw', 'ccw', 'full'): raise ValueError()
-        self._rot = (lambda im:flipud(fliplr(im))) if dir == 'full' else (
-           (lambda im:flipud(im.T)) if dir == 'ccw' else (lambda im:fliplr(im.T)))
-        super(FlipImageStack, self).__init__(ims, RotateImageSlice)
-class RotateImageSlice(UnchangingFilteredImageSlice):
-    def _get_data(self): return self._stack._rot(self._input.data)
+        try: self._k = ('ccw', 'full', 'cw').index() + 1
+        except ValueError: raise ValueError('Unsupported direction')
+        super(RotateImageStack, self).__init__(ims, RotateImageSlice)
+class RotateImageSlice(FilteredImageSlice):
+    def _get_props(self):
+        self._set_props(self._input.dtype, self._input.shape[::(-1 if (self._stack._k&1) else 1)])
+    def _get_data(self): return rot90(self._input.data, self._stack._k)
 
     
 class InvertImageStack(UnchangingFilteredImageStack):
