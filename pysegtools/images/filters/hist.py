@@ -8,7 +8,7 @@ from itertools import repeat
 from sys import stdin, stdout
 from StringIO import StringIO
 
-from numpy import dtype, int32, int64, float64, finfo
+from numpy import dtype, int64, intp, float64, finfo
 from numpy import array, empty, zeros, linspace, tile, repeat, vstack, savetxt, loadtxt
 from numpy import add, left_shift, floor, sqrt
 from numpy import lexsort, argpartition, histogram, unique, spacing, count_nonzero
@@ -83,10 +83,7 @@ def __histeq_apply(im, T):
     im,o_dt = __as_unsigned(im)
     nlevels = get_dtype_max(im)
     if o_dt.kind != 'f' and nlevels == len(T)-1: idx = im # perfect fit, we don't need to scale the indices
-    else:
-        # scale the indices
-        idx_dt = int64 if im.size > get_dtype_max(int32) else int32
-        idx = (im*(float(len(T)-1)/nlevels)).round(out=empty(im.shape, dtype=idx_dt))
+    else: idx = (im*(float(len(T)-1)/nlevels)).round(out=empty(im.shape, dtype=intp)) # scale the indices
     return __restore_signed(T.take(idx),o_dt)
 
 def histeq_apply(im, T, mask=None):
@@ -128,10 +125,7 @@ def __histeq(im, h_dst, h_src):
     T = (err.argmin(0)*(nlevels/(nbins_dst-1.0))).round(out=empty(nbins_src, dtype=im.dtype))
 
     if o_dt.kind != 'f' and nlevels == len(T)-1: idx = im # perfect fit, we don't need to scale the indices
-    else:
-        # scale the indices
-        idx_dt = int64 if im.size > get_dtype_max(int32) else int32
-        idx = (im*(float(len(T)-1)/nlevels)).round(out=empty(im.shape, dtype=idx_dt))
+    else: idx = (im*(float(len(T)-1)/nlevels)).round(out=empty(im.shape, dtype=intp)) # scale the indices
     return __restore_signed(T.take(idx),o_dt)
 
 def histeq(im, h_dst=64, h_src=None, mask=None):
