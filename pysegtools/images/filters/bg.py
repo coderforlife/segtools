@@ -9,7 +9,7 @@ from itertools import islice
 
 from numpy import zeros, ones, empty, array, repeat, vstack, hstack, dstack
 from numpy import roll, flipud, fliplr, transpose
-from numpy import mean, nonzero, sign, logical_and, logical_or, argsort
+from numpy import mean, nonzero, sign, logical_and, logical_or, equal, argsort
 
 from ._stack import FilteredImageStack, FilteredImageSlice, UnchangingFilteredImageStack, UnchangingFilteredImageSlice
 from ..types import check_image
@@ -45,10 +45,11 @@ def get_bg_padding(im, bg_color=None):
     shp = im.shape
     w,h = shp[1]-1, shp[0]-1
     t,l,b,r = 0, 0, h, w
-    while t < h and (im[t,:,...] == bg_color).all(): t += 1
-    while b > t and (im[b,:,...] == bg_color).all(): b -= 1
-    while l < w and (im[:,l,...] == bg_color).all(): l += 1
-    while r > l and (im[:,r,...] == bg_color).all(): r -= 1
+    mask = empty(max(w,h), dtype=bool)
+    while t < h and equal(im[t,:,...], bg_color, out=mask[:w]).all(): t += 1
+    while b > t and equal(im[b,:,...], bg_color, out=mask[:w]).all(): b -= 1
+    while l < w and equal(im[:,l,...], bg_color, out=mask[:h]).all(): l += 1
+    while r > l and equal(im[:,r,...], bg_color, out=mask[:h]).all(): r -= 1
     return (t,l,h-b,w-r)
 
 def get_bg_mask(im, bg_color=None):
@@ -74,7 +75,7 @@ def get_bg_mask(im, bg_color=None):
         fg = binary_fill_holes(~flat)
         bg_color = mode(im[~fg])[0][0]
         #bg_color = unique(im[~fg], return_counts=True)...?
-    return ~binary_fill_holes((im[:,:] != bg_color).any(2))
+    return ~binary_fill_holes((im != bg_color).any(2))
 
 def padding2mask(im, padding):
     """
@@ -226,8 +227,9 @@ def fill(im, mask=None, fill='black'):
         src_y, src_x = fg_idx[0][i], fg_idx[1][i]
         src_y, src_x = 2*src_y-dst_y-sign(src_y-dst_y), 2*src_x-dst_x-sign(src_x-dst_x)
         valids = logical_and(logical_and(src_y>=0,src_y<h), logical_and(src_x>=0,src_x<w))
-        di = di[valids[di]]
-        for DY,DX,SY,SX in zip(dst_y[di], dst_x[di], src_y[di], src_x[di]): im[DY, DX] = im[SY, SX]
+        di = di.compress(valids.take(di))
+        for DY,DX,SY,SX in zip(dst_y.take(di), dst_x.take(di), src_y.take(di), src_x.take(di)):
+            im[DY, DX] = im[SY, SX]
         
     elif fill == 'mirror':
         from scipy.spatial import cKDTree
@@ -238,12 +240,13 @@ def fill(im, mask=None, fill='black'):
         dst_y, dst_x = bg_idx
         src_y, src_x = 2*fg_idx[0][i]-dst_y, 2*fg_idx[1][i]-dst_x
         valids = logical_and(logical_and(src_y>=0,src_y<h), logical_and(src_x>=0,src_x<w))
-        di = di[valids[di]]
+        di = di.compress(valids.take(di))
         # At this point we need to set every src pixel to its dst pixel's value
         # However, this needs to be done starting close to the foreground so that we get mirrors-of-mirrors
         ##im[dst_y[di], dst_x[di]] = im[src_y[di], src_x[di]] # doesn't work since it doesn't go in the right order
         # This is the straight forward way to go in order
-        for DY,DX,SY,SX in zip(dst_y[di], dst_x[di], src_y[di], src_x[di]): im[DY, DX] = im[SY, SX]
+        for DY,DX,SY,SX in zip(dst_y.take(di), dst_x.take(di), src_y.take(di), src_x.take(di)):
+            im[DY, DX] = im[SY, SX]
         # This one works but is slower (at least for small images)
         ##from numpy import ceil, log2, arange, split, sum
         ##pow2s = 2**arange(int(ceil(log2(dist[di[-1]]))))
@@ -289,7 +292,6 @@ def crop(im, padding=None):
 
 def pad(im, padding):
     """Pad an image with 0s. The amount of padding is given by top, left, bottom, and right."""
-    # TODO: could use "pad" function instead
     check_image(im)
     if (len(padding) != 4 or any(not isinstance(x, Integral) or x<0 for x in padding)
           or x[0]+x[2] >= h or x[1]+x[3] >= w):

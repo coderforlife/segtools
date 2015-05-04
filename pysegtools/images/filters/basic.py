@@ -120,7 +120,7 @@ class ExtractChannelsImageSlice(FilteredImageSlice):
     def _get_data(self):
         im = self._input.data
         if im.ndim == 2: im = im[:,:,None]
-        return im[:,:,self.__channels]
+        return im.take(self.__channels, axis=2)
 
 
 class CombineChannelsImageStack(FilteredImageStack):
