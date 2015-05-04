@@ -118,22 +118,38 @@ class ImageStack(object):
             self._homogeneous &= ~Homogeneous.Shape
         if Homogeneous.DType in self._homogeneous and dtype != s.dtype:
             self._homogeneous &= ~Homogeneous.DType
+    def _has_homogeneous_prop(self, H, attr):
+        return self._homogeneous is not None and H in self._homogeneous and hasattr(self, a)
+
     @property
-    def is_homogeneous(self): return self._get_homogeneous_info()[0] == Homogeneous.All
+    def is_homogeneous(self): return Homogeneous.All == self._get_homogeneous_info()[0]
+    @property
+    def is_shape_homogeneous(self): return Homogeneous.Shape in self._get_homogeneous_info()[0]
+    @property
+    def is_dtype_homogeneous(self): return Homogeneous.DType in self._get_homogeneous_info()[0]
     @property
     def w(self): return self.shape[1]
     @property
     def h(self): return self.shape[0]
     @property
     def shape(self):
+        if self._has_homogeneous_prop(Homogeneous.Shape, '_shape'): return self._shape
         h = self._get_homogeneous_info()
         if Homogeneous.Shape not in h[0]: raise AttributeError('property unavailable on heterogeneous image stacks')
         return h[1]
     @property
     def dtype(self):
+        if self._has_homogeneous_prop(Homogeneous.DType, '_dtype'): return self._dtype
         h = self._get_homogeneous_info()
         if Homogeneous.DType not in h[0]: raise AttributeError('property unavailable on heterogeneous image stacks')
         return h[2]
+    @property
+    def stack(self):
+        """Get the entire stack as a single 3D image."""
+        from numpy import empty
+        stack = empty((self._d,) + self.shape, dtype=self.dtype)
+        for i, slc in enumerate(self): stack[i,:,:,...] = slc.data
+        return stack
 
     ## Caching of slices ##
     # Note that much of the caching is in ImageSlice or subclasses
@@ -240,14 +256,6 @@ class HomogeneousImageStack(ImageStack):
     def shape(self): return self._shape
     @property
     def dtype(self): return self._dtype
-
-    @property
-    def stack(self):
-        """Get the entire stack as a single 3D image."""
-        from numpy import empty
-        stack = empty((self._d,) + self._shape, dtype=self._dtype)
-        for i, slc in enumerate(self): stack[i,:,:,...] = slc.data
-        return stack
 
 class ImageSlice(DeferredPropertiesImageSource):
     """
