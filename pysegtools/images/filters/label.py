@@ -10,11 +10,11 @@ from abc import ABCMeta, abstractmethod
 
 import numpy as np
 from numpy import zeros, empty, asarray, ascontiguousarray, concatenate, dtype, int8, uint8, intp
-from numpy import unique, lexsort, not_equal
+from numpy import unique, lexsort, equal, not_equal, place
 
 from ..types import check_image, get_dtype_max, get_im_dtype_and_nchan, get_im_dtype, create_im_dtype
 from ._stack import FilteredImageStack, FilteredImageSlice
-from ...imstack import Command, CommandEasy, Opt, Help
+from ...imstack import CommandEasy, Opt, Help
 
 __all__ = ['label','relabel','consecutively_number','shrink_integer',
            'LabelImageStack','RelabelImageStack','ConsecutivelyNumberImageStack']
@@ -90,12 +90,15 @@ def relabel(im, structure=None):
     from scipy.ndimage.measurements import label
     #check_image(im) # not needed, consecutively_number does it for us
     im, N = consecutively_number(im)
+    mask = empty(im.shape, dtype=bool)
+    lbl = empty(im.shape, dtype=intp)
     for i in xrange(1, N+1):
-        l,n = label(im==i, structure, intp)
+        n = label(equal(im, i, out=mask), structure, lbl)
         for j in xrange(2, n+1):
             N += 1
-            im[l==j] = N
+            place(im, equal(lbl, j, out=mask), N)
     return im, N
+
 
 def consecutively_number(im):
     """
@@ -174,12 +177,10 @@ def _shrink_int_dtype_raw(mn, mx, min_dt):
 
 
 ##### Image Stacks #####
-class __LabeledImageStack(FilterImageStack):
+class __LabeledImageStack(FilteredImageStack):
     def __init__(self, ims, slcs):
         super(__LabeledImageStack, self).__init__(ims, slcs)
-        self._dtype = intp TODO: does not include channels
-        self._homogeneous = Homogeneous.DType
-class __LabeledImageSlice(FilterImageSlice):
+class __LabeledImageSlice(FilteredImageSlice):
     def _get_props(self):
         _, nchans = get_im_dtype_and_nchan(self._input._dtype)
         self._set_props(create_im_dtype(intp, channels=nchans), self._input.shape)
@@ -200,7 +201,7 @@ class __LabeledImageStackWithStruct(__LabeledImageStack):
         else:
             super(__LabeledImageStackWithStruct, self).__init__(ims, imslc)
             self._shape = ims.shape
-            self._homogeneous = Homogeneous.All
+            self._homogeneous = Homogeneous.Shape
     @abstractmethod
     def _calc_labels(self, ims): pass
     def _calc_labels_full(self):
@@ -226,7 +227,7 @@ class __LabelImageSlice(__LabeledImageSlice):
         return self._labelled
 
 
-class LabelImageStack(__LabeledImageStackWithStructure):
+class LabelImageStack(__LabeledImageStackWithStruct):
     def __init__(self, ims, per_slice=True, structure=None):
         super(LabelImageStack, self).__init__(ims, per_slice, structure)
     _calc_label = lambda im,s: label(im, s)
@@ -234,7 +235,7 @@ class LabelImageStack(__LabeledImageStackWithStructure):
         from scipy.ndimage.measurements import label
         ims = ims != 0
         return label(ims.any(3) if ims.ndim == 4 else ims, self._structure, intp)
-class RelabelImageStack(__LabeledImageStackWithStructure):
+class RelabelImageStack(__LabeledImageStackWithStruct):
     def __init__(self, ims, per_slice=True, structure=None):
         super(RelabelImageStack, self).__init__(ims, per_slice, structure)
     _calc_label = relabel
@@ -246,11 +247,13 @@ class RelabelImageStack(__LabeledImageStackWithStructure):
         ims, N = consecutively_number(ims)
         ims = ims.reshape(shape)
         # Re-label
+        mask = empty(ims.shape, dtype=bool)
+        lbl = empty(ims.shape, dtype=intp)
         for i in xrange(1, N+1):
-            L,n = label(ims==i, self._structure, intp)
+            n = label(equal(ims, i, out=mask), self._structure, lbl)
             for j in xrange(2, n+1):
                 N += 1
-                ims[L==j] = N
+                place(ims, equal(lbl, j, out=mask), N)
         return ims, N
 
 
@@ -315,7 +318,7 @@ class ConsecutivelyNumberImageSlice(__LabeledImageSlice):
         return out
 
 
-class ShrinkIntegerImageStack(FilterImageStack):
+class ShrinkIntegerImageStack(FilteredImageStack):
     def __init__(self, ims, min_dt=None, per_slice=True):
         if min_dt is not None:
             min_dt = dtype(min_dt)
@@ -343,7 +346,7 @@ class ShrinkIntegerImageStack(FilterImageStack):
                     min_dt = uint8 if mn >= 0 and any(u for u in kinds) else int8
                 self.__dtype = _shrink_int_dtype_raw(mn, mx, min_dt)
         return self.__dtype
-class ShrinkIntegerImagePerSlice(FilterImageSlice):
+class ShrinkIntegerImagePerSlice(FilteredImageSlice):
     def _get_props(self):
         dt = _shrink_int_dtype(self._input.data, self._stack._min_dt)
         _, nchans = get_im_dtype_and_nchan(self._input._dtype)
@@ -352,7 +355,7 @@ class ShrinkIntegerImagePerSlice(FilterImageSlice):
         im = shrink_integer(self._input.data, self._stack._min_dt)
         self._set_props(get_im_dtype(im), im.shape[:2])
         return im
-class ShrinkIntegerImageSlice(FilterImageSlice):
+class ShrinkIntegerImageSlice(FilteredImageSlice):
     def _get_props(self):
         _, nchans = get_im_dtype_and_nchan(self._input._dtype)
         self._set_props(create_im_dtype(self._stack._calc_dtype(), channels=nchans), self._input.shape)
