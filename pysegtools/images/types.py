@@ -35,13 +35,14 @@ if not issubclass(__int_types[0], numbers.Integral):
 
 ##### dtype functions #####
 __re_im_dtype = re.compile(r'^(([0-9]+\*)?([UIFC])|RGBA?)([0-9]+)(-BE)?$', re.IGNORECASE)
-def create_im_dtype(base, big_endian=False, channels=1):
+def create_im_dtype(base, big_endian=None, channels=1):
     """
     Creates an image data type given a base type, endian-ness, and number of channels. When creating
     or loading an array, the number of channels will automatically become part of the array shape
     and the array will take on the base data type (so its dtype will lose the channels information).
-    Big endian can instead be specified as <, > or =. Additionally, this accepts all strings that
-    im_dtype_desc can produce in which case the last two arguments are ignored.
+    Big endian can be specified as True/False or <, > or =. If not given it defaults to the endian
+    given in the base dtype. Additionally, this accepts all strings that im_dtype_desc can produce
+    in which case the last two arguments are ignored.
     """
     if isinstance(base, String):
         result = __re_im_dtype.search(base)
@@ -64,6 +65,7 @@ def create_im_dtype(base, big_endian=False, channels=1):
     if base in __cmplx_types:
         if channels != 1: raise ValueError('Complex types must use 1 channel')
     elif base not in __basic_types: raise ValueError('Image base type not known')
+    if big_endian is None: big_endian = get_dtype_endian(base)
     endian = big_endian if isinstance(big_endian, String) else ('>' if big_endian else '<')
     return dtype((base, channels)).newbyteorder(endian)
 def get_im_dtype(im_or_dtype):
