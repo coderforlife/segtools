@@ -544,7 +544,7 @@ class CommandEasy(Command):
         for _ in xrange(len(cls._produces())): stack.push()
         self = super(CommandEasy, cls).__new__()
         self._vals = vals = args.get_all_kw(*cls._opts()).iteritems() #pylint: disable=protected-access
-        for name, val in vals: setattr(self, '_'+name, val)
+        for name, val in vals: setattr(self, '_'+name.replace(' ', '_').replace('-', '_'), val)
     def __init__(self, args, stack): super(CommandEasy, self).__init__(self, args, stack)
     @abstractmethod
     def __str__(self): pass
