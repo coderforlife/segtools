@@ -49,6 +49,7 @@ def get_mat_entry_sp(filename, name=None, return_data=False):
         return (name, (shape, get_target_dtype(None, cls)))
 
 def get_mat_entry_h5py(filename, name=None, return_data=False):
+    # TODO: x.value is deprecated as of h5py v2.1
     from h5py import File as HDF5File
     with HDF5File(filename, 'r') as f: # IOError if it doesn't exist or is the wrong format
         x = find_non_special(f, special='#') if name is None else f[name]
@@ -85,7 +86,12 @@ def iminfo_mat(filename, name=None):
         name, (shape, dtype) = get_mat_entry_sp(filename, name, False) # TODO: does not detect complex matricies (limitation of whosmat)
     except NotImplementedError:
         # Try v7.3 file which is an HDF5 file, we have to use h5py for this
-        name, (shape, dtype) = get_mat_entry_h5py(filename, name, False)
+        try:
+            name, (shape, dtype) = get_mat_entry_h5py(filename, name, False)
+        except ImportError:
+            import sys
+            print("h5py library not found which is required to read MATLAB files v7.3+", file=sys.stderr)
+            raise
     shape = shape[:2] + [x for x in shape[2:] if x != 1] # squeeze high dimensions
     if dtype is None or len(shape) not in (2,3) or len(shape) == 3 and dtype.kind == 'c': raise ValueError('MAT file matrix has unsupported shape or data type for images')
     return tuple(shape[:2]), create_im_dtype(dtype, '=', shape[2] if len(shape) == 3 else 1)

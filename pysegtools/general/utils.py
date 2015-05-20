@@ -3,23 +3,6 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-def check_reqs(scipy=True, numpy=True, PIL=True, psutil=False):
-    """Checks to see if the required 3rd-party modules are available for import."""
-    if numpy:  check_req('numpy')
-    if scipy:  check_req('scipy')
-    if PIL:    check_req('PIL', 'Pillow')
-    if psutil: check_req('psutil')
-def check_req(name, module_name=None):
-    if module_name is None: module_name = name
-    import importlib
-    try:
-        importlib.import_module(name)
-    except ImportError:
-        import sys
-        print("Could not import the required module %s" % name, file=sys.stderr)
-        print("Try running `pip %s` or `easy_install %s` to install it" % (module_name, module_name), file=sys.stderr)
-        sys.exit(1)
-
 
 def make_dir(d):
     """Makes a directory tree. If the path exists as a regular file already False is returned."""

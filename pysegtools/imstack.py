@@ -600,6 +600,7 @@ class Help(object):
         print(f18("  -h  --help [x]  display help about a command, filter, or format (all other arguments will be ignored)"))
         print(f18("  -v  --verbose   display all information about processing of commands"))
         print(f18("                  double -v/--verbose increases information output"))
+        print(f18("  --check         checks the Python and module versions for compatibility (all other arguments will be ignored)"))
         print("")
         print(fill("You may specify any set of commands and arguments via a file using @argfile which will read that file in as POSIX-style command arguments (including supporting # for comments)."))
         print("")
