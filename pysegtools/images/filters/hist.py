@@ -11,7 +11,7 @@ from StringIO import StringIO
 from numpy import dtype, int64, intp, float64, finfo
 from numpy import array, empty, zeros, linspace, tile, repeat, vstack, savetxt, loadtxt
 from numpy import add, left_shift, floor, sqrt
-from numpy import lexsort, argpartition, histogram, unique, spacing, count_nonzero
+from numpy import lexsort, histogram, unique, spacing, count_nonzero
 
 from ._stack import UnchangingFilteredImageStack, UnchangingFilteredImageSlice
 from .._stack import ImageStack
@@ -158,6 +158,10 @@ def histeq(im, h_dst=64, h_src=None, mask=None):
         return im
     return __histeq(im, h_dst, h_src)
 
+def __n_argmax(a, n):
+    # argpartition is way faster but was not introduced until numpy v1.8 and we want to work with v1.7
+    return (a.argpartition(-n) if hasattr(a, 'argpartition') else a.argsort())[-n:]
+
 def histeq_exact(im, h_dst=256, mask=None, order=6):
     """
     List histeq except the histogram of the output image is exactly as given in h_dst. This is
@@ -203,8 +207,7 @@ def histeq_exact(im, h_dst=256, mask=None, order=6):
     if len(h_dst) < 2: raise ValueError('Invalid histogram')
     # Since there could be fractional amounts, make sure they are added up and put somewhere
     H_whole = floor(h_dst)
-    R = n - H_whole.sum()
-    R = argpartition((h_dst-H_whole), -R)[-R:]
+    R = __n_argmax(h_dst-H_whole, int(n-H_whole.sum()))
     h_dst = H_whole.astype(int64, copy=False)
     h_dst[R] += 1
     del R, H_whole
