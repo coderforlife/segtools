@@ -1,0 +1,17 @@
+import os
+import numpy
+from distutils.extension import Extension
+from distutils.ccompiler import get_default_compiler
+dirname = os.path.dirname(__file__)
+compiler_name = get_default_compiler() # TODO: this isn't the compiler that will necessarily be used, but is a good guess...
+compiler_opt = {
+        'msvc'    : ['/D_SCL_SECURE_NO_WARNINGS','/EHsc','/O2','/DNPY_NO_DEPRECATED_API=7','/bigobj'],
+        'unix'    : ['-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'], # gcc/clang (whatever is system default)
+        'mingw32' : ['-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'],
+        'cygwin'  : ['-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'],
+    }
+
+def make_ext(modname, pyxfilename):
+    return Extension(name=modname, sources=[pyxfilename], language="c++",
+                     extra_compile_args=compiler_opt.get(compiler_name, []),
+                     include_dirs=[dirname,numpy.get_include()])
