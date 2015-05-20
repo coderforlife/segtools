@@ -58,7 +58,7 @@ def _get_cython_funcs():
             _relabel3          = relabel3
             __have_cython_funcs = True
         except ImportError as ex:
-            warn('Cannot load optimized label functions. Install Cython. In the mean time, some things might be slow.')
+            warn('Cannot load optimized label functions. Install Cython. In the mean time, some things might be slow.', RuntimeWarning)
             __have_cython_funcs = False
     return __have_cython_funcs
 def _squeeze_last(a): return a.squeeze(-1) if a.shape[-1] == 1 else a

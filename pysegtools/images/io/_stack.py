@@ -592,7 +592,8 @@ class FileImageStackHeader(DictionaryWrapperWithAttr):
             if k not in self._fields or self._fields[k].opt:
                 del self._data[k]
             else:
-                pass # TODO: produce a warning
+                from warnings import warn
+                warn('attempting to clear required field', RuntimeWarning)
     def pop(self, key, default=None):
         if self._imstack._readonly: raise AttributeError('header is readonly')
         _key, key = key, self._get_field_name(key)
