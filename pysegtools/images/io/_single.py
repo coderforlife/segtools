@@ -5,6 +5,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from numpy import sctypes, dtype
 from numpy import bool_, uint8,uint16,uint32, int8,int16,int32, float32,float64 #float16
 from sys import byteorder
 from ..types import create_im_dtype as d, check_image, get_im_dtype_and_nchan
@@ -35,20 +36,27 @@ __pil_mode_to_dtype = {
     'F;32F':d(float32),'F;32BF':d(float32,True),'F;32NF':d(float32,__native),
     'F;64F':d(float64),'F;64BF':d(float64,True),'F;64NF':d(float64,__native),
 }
-__dtype_to_pil_mode = { # mode, rawmode (little endian), rawmode (big endian)
-    # Multi-channel and bit images are special cases
-    uint8:  ('L','L','L'),
-    uint16: ('I;16','I;16','I;16B'),
-    uint32: ('I',   'I;32','I;32B'),
-    int8:   ('I','I;8S', 'I;8S'  ),
-    int16:  ('I','I;16S','I;16BS'),
-    int32:  ('I','I;32S','I;32BS'),
-    #float16:('F','F;16F','F;16BF'), # F;16 can only come from integers...
-    float32:('F','F;32F','F;32BF'),
-    float64:('F','F;64F','F;64BF'),
-}
 del d
-
+__dtype_to_pil_mode = {
+    # mode, rawmode (little endian), rawmode (big endian)
+    # Multi-channel and bit images are special cases
+    #float16:('F','F;16F','F;16BF'), # F;16 can only come from integers...
+}
+# Build __dtype_to_pil_mode
+for t in sctypes['uint']:
+    nb = dtype(t).itemsize
+    if   nb == 1: __dtype_to_pil_mode[t] = ('L','L','L')
+    elif nb == 2: __dtype_to_pil_mode[t] = ('I;16','I;16','I;16B')
+    elif nb == 4: __dtype_to_pil_mode[t] = ('I','I;32','I;32B')
+    else: nb = str(nb*8); __dtype_to_pil_mode[t] = ('I','I;'+nb,'I;'+nb+'B')
+for t in sctypes['int']:
+    nb = dtype(t).itemsize
+    if nb == 1: __dtype_to_pil_mode[t] = ('I','I;8S','I;8S')
+    else: nb = str(nb*8); __dtype_to_pil_mode[t] = ('I','I;'+nb+'S','I;'+nb+'BS')
+for t in sctypes['float']:
+    nb = dtype(t).itemsize
+    if nb < 4: continue
+    nb = str(nb*8); __dtype_to_pil_mode[t] = ('F','F;'+nb+'F','F;'+nb+'BF')
 
 def iminfo(filename):
     """

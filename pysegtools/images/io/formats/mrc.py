@@ -49,7 +49,7 @@ __dtype2mode = {
     2:{int16:MRCMode.Short2, float32:MRCMode.Float2},
     3:{uint8:MRCMode.Byte3},
 }
-__mode2dtype = { # MRCMode.Byte handled special
+_mode2dtype = { # MRCMode.Byte handled special
     MRCMode.Short:  (int16, 1),
     MRCMode.Float:  (float32, 1),
     MRCMode.Short2: (int16, 2),
@@ -171,7 +171,7 @@ Supported image types:""")
 class MRCSlice(FileImageSlice):
     def __init__(self, stack, header, z):
         super(MRCSlice, self).__init__(stack, z)
-        self._set_props(header._dtype, header.nx, header.ny)
+        self._set_props(header._dtype, (header.nx, header.ny))
         self._file = stack._file
         self._off = stack._get_off(z)
     def _get_props(self): pass
@@ -308,8 +308,8 @@ class MRCHeader(FileImageStackHeader):
         if mode in (MRCMode.Byte, MRCMode._Byte):
             stamp, flags = self._data['imodStamp'], self._data['imodFlags']
             return create_im_dtype(int8 if stamp == IMOD and MRCFlags.SignedByte in flags else uint8)
-        elif mode in __mode2dtype:
-            dt = __mode2dtype[mode]
+        elif mode in _mode2dtype:
+            dt = _mode2dtype[mode]
             return create_im_dtype(dt[0], endian, dt[1])
         raise ValueError('MRC file is invalid (mode is %d)' % mode)
 

@@ -25,8 +25,8 @@ class FilteredImageStack(ImageStack):
         if isinstance(slices, type): slices = [slices(im,self,z,*args,**kwargs) for z,im in enumerate(self._ims)]
         super(FilteredImageStack, self).__init__(slices)
     def print_detailed_info(self, width=None):
-        fill = ImageStack._get_print_fill(width)
-        print(fill("Filter:      " + self.description()))
+        #fill = ImageStack._get_print_fill(width)
+        #print(fill("Filter:      " + str(self)))
         super(FilteredImageStack, self).print_detailed_info(width)
 
 class FilteredImageSlice(ImageSlice):

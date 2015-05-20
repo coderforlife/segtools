@@ -72,7 +72,7 @@ class ImageStack(object):
     @staticmethod
     def _get_print_fill(width):
         from textwrap import TextWrapper
-        return lambda x:x if width is None else TextWrapper(width=width, subsequent_indent=' '*13).fill
+        return (lambda x:x) if width is None else TextWrapper(width=width, subsequent_indent=' '*13).fill
     def print_detailed_info(self, width=None):
         fill = ImageStack._get_print_fill(width)
         h,s,d = self._get_homogeneous_info()
@@ -91,7 +91,7 @@ class ImageStack(object):
             line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s  %d bytes"
             for z,im in enumerate(self._slices):
                 sec_bytes = im.w * im.h * im.dtype.itemsize
-                print(fill(line % (z, im.w, im.h, im_dtype_desc(im), sec_bytes)))
+                print(fill(line % (z, im.w, im.h, im_dtype_desc(im.dtype), sec_bytes)))
                 total_bytes += sec_bytes
         print(fill("Total Bytes: %d" % total_bytes))
 
@@ -100,17 +100,15 @@ class ImageStack(object):
         if self._d == 0: return Homogeneous.All, (None, None), None
         im = self._slices[0]
         shape, dtype = im.shape, im.dtype
-        if self._homogeneous is None:
-            self._homogeneous = Homogeneous.None_
+        if self._homogeneous is None: self._homogeneous = Homogeneous.None_
+        if Homogeneous.Shape not in self._homogeneous:
             if all(shape == im.shape for im in islice(self._slices, 1, None)):
                 self._homogeneous |= Homogeneous.Shape
             else: shape = None
+        if Homogeneous.DType not in self._homogeneous:
             if all(dtype == im.dtype for im in islice(self._slices, 1, None)):
                 self._homogeneous |= Homogeneous.DType
             else: dtype = None
-        else:
-            if Homogeneous.Shape not in self._homogeneous: shape = None
-            if Homogeneous.DType not in self._homogeneous: dtype = None
         return self._homogeneous, shape, dtype
     def _update_homogeneous_set(self, z, shape, dtype):
         s = self._slices[-1 if z == 0 else 0]

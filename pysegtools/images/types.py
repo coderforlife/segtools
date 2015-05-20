@@ -61,11 +61,12 @@ def create_im_dtype(base, big_endian=None, channels=1):
             channels = 1 if grps[1] is None else int(grps[1][:-1])
             if channels == 0 or channels > 4: raise ValueError('Invalid number of channels')
             base = bool if nbytes == 0 else dtype(grps[2].lower()+str(nbytes))
-    if isinstance(base, dtype): base = dtype.type
+    if isinstance(base, dtype):
+        if big_endian is None: big_endian = get_dtype_endian(base)
+        base = base.type
     if base in __cmplx_types:
         if channels != 1: raise ValueError('Complex types must use 1 channel')
     elif base not in __basic_types: raise ValueError('Image base type not known')
-    if big_endian is None: big_endian = get_dtype_endian(base)
     endian = big_endian if isinstance(big_endian, String) else ('>' if big_endian else '<')
     return dtype((base, channels)).newbyteorder(endian)
 def get_im_dtype(im_or_dtype):
@@ -119,7 +120,7 @@ def im_dtype_desc(im_or_dtype):
     return ('%d*%s'%(nchan,base)) if nchan > 1 else base
 def get_dtype_endian(dt):
     """Get a '<' or '>' from a dtype's byteorder (which can be |, =, <, or >)."""
-    endian = dt.byteorder
+    endian = dtype(dt).byteorder
     if endian == '|': return '<' # | means N/A (single byte), report as little-endian
     elif endian == '=': return '<' if byteorder == 'little' else '>' # is native byte-order
     return endian
