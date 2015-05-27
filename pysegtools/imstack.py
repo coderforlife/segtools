@@ -102,6 +102,7 @@ class PseudoStack(Stack):
         self._stack_count -= len(set(inds))
 
 
+_NoDefault = object()
 class Args(object):
     """
     A collection of command arguments which can include both positional and named arguments. This
@@ -149,6 +150,22 @@ class Args(object):
     def get(self, key, default=None):
         key, val = self.__get(key)
         return default if key is None else val
+    def pop(self, key, default=_NoDefault):
+        key, val = self.__get(key)
+        if key is None:
+            if default is not _NoDefault: return default
+            raise ValueError("Value required for argument '%s'" % o.name)
+        if isinstance(key, Integral): del self._args[key]
+        else: del self._kwargs[key]
+        return val
+    def pop_opt(self, opt, default=_NoDefault):
+        key, val = self.__get(opt.name)
+        if key is not None: del self._kwargs[key]
+        try: return opt.default if key is None else opt.cast(val)
+        except (LookupError):
+            if default is not _NoDefault: return default
+            raise ValueError("Value required for argument '%s'" % o.name)
+        except (ValueError, TypeError): raise ValueError("Argument '%s' does not support value '%s'" % (o.name, val))
     def __get_all(self, *opts):
         """
         Get all arguments as an iterator of key,val pairs like __get would return along with the
@@ -203,7 +220,6 @@ class Args(object):
     def values(self): return self._args + self._kwargs.values()
     def items(self):  return list(enumerate(self._args)) + self._kwargs.items()
 
-_NoDefault = object()
 class Opt(object):
     """
     An option for a command. The `name` is used to look for named arguments. The `desc` is for

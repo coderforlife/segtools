@@ -5,10 +5,10 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-__all__ = ['iminfo', 'imread', 'imsave', 'FileImageStack', 'FileCollectionStack']
+__all__ = ['FileImageSource', 'FileImageStack', 'FileCollectionStack']
 
-from ._single import iminfo, imread, imsave
+from ._single import FileImageSource
 from ._stack import FileImageStack
 from ._collection import FileCollectionStack
 
-from . import formats
+from . import handlers

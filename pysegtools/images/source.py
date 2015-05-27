@@ -46,7 +46,7 @@ class ImageSource(object):
         """Gets an unwriteable view of an ndarray if the ndarray is not already unwriteable."""
         if im.flags.writeable:
             im = im.view()
-            im.flags.writable = False
+            im.flags.writeable = False
         return im
 
 class ArrayImageSource(ImageSource):

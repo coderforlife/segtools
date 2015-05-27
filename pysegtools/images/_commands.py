@@ -335,7 +335,7 @@ class MemMapCacheImageStack(ImageStack):
             return mmap(self.__file.fileno(), size, access=ACCESS_WRITE)
 
     @ImageStack.cache_size.setter
-    def set_cache_size(self, value): pass # prevent built-in caching - this is a cache!
+    def cache_size(self, value): pass # prevent built-in caching - this is a cache!
     def close():
         self.__file.close()
         self.__file = None

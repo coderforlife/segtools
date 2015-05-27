@@ -7,33 +7,29 @@ from __future__ import unicode_literals
 
 from abc import ABCMeta, abstractmethod
 from collections import Iterable, OrderedDict
-from numbers import Integral
+from io import open
 from itertools import repeat, izip
-from numpy import ndarray, ceil
+from numbers import Integral
+from weakref import proxy
 import functools
+
+from numpy import ndarray, ceil
 
 from .._stack import ImageStack, HomogeneousImageStack, ImageSlice, Homogeneous
 from .._util import String
 from ..types import is_image, get_im_dtype
 from ..source import ImageSource
+from ._single import FileImageSource
 from ...imstack import Help
 from ...general.datawrapper import DictionaryWrapperWithAttr
-from ...general.enum import Enum
 from ...general.utils import all_subclasses
 
-__all__ = ['FileImageStack','HomogeneousFileImageStack','FileImageSlice','FileImageStackHeader','Field','FixedField','NumericField','MatchQuality']
+__all__ = ['FileImageStack','HomogeneousFileImageStack','FileImageSlice','FileImageStackHeader','Field','FixedField','NumericField']
 
 def slice_len(start, stop, step): return max(int(ceil((stop-start)/step)), 0) #max((stop-start+step-(1 if step>0 else -1))//step, 0)
 def check_int(i):
     if int(i) == i: return int(i)
     raise ValueError()
-
-class MatchQuality(int, Enum):
-    NotAtAll = 0
-    Unlikely = 25
-    Maybe = 50
-    Likely = 75
-    Definitely = 100
 
 class _FileImageStackMeta(ABCMeta):
     """The meta-class for file image stacks, which extends ABCMeta and calls Help.register if applicable"""
@@ -48,7 +44,7 @@ class FileImageStack(ImageStack):
     A stack of 2D image slices on disk. This is either backed by a file format that already has
     multiple slices (like MRC, MHA/MHD, and TIFF) or a collection of seperate 2D image files.
 
-    When loading an image stack only the header(s) is/are loaded. THe image data is not read until
+    When loading an image stack only the header(s) is/are loaded. The image data is not read until
     accessed.
 
     In addtion to getting slices in ImageStack we add setting, inserting, and deleting slices.
@@ -60,147 +56,184 @@ class FileImageStack(ImageStack):
     __metaclass__ = _FileImageStackMeta
 
     @classmethod
-    def open(cls, filename, readonly=False, **options):
+    def is_handler(cls, handler, read=True):
+        """Checks that the given string is a valid handler for image stack files."""
+        return any(handler == cls.name() and (read and cls._can_read() or not read and cls._can_write())
+                   for cls in all_subclasses(cls))
+
+    @classmethod
+    def handlers(cls, read=True):
+        """Get a list of all image stack handlers except the special file-collection stack."""
+        handlers = []
+        for cls in all_subclasses(cls):
+            h = cls.name()
+            if h is not None and (read and cls._can_read() or not read and cls._can_write()):
+                handlers.append(h)
+        return handlers
+
+    @classmethod
+    def __open_handlers(cls, readonly=False, handler=None):
+        for cls in all_subclasses(cls):
+            if cls._can_read() and (readonly or cls._can_write()) and \
+               (handler is None or handler == cls.name()):
+                yield cls
+
+    @classmethod
+    def open(cls, filename, readonly=False, handler=None, **options):
         """
         Opens an existing image-stack file or series of images as a stack. If 'filename' is a
         string then it is treated as an existing file. Otherwise it needs to be an iterable of
-        file names. Extra options are only supported by some file formats.
+        file names. The interpretation of handler is dependent on which form is given as well.
+        Extra options are only supported by some handlers.
         """
         if isinstance(filename, String):
-            highest_cls, highest_mq = None, MatchQuality.NotAtAll
-            for cls in all_subclasses(cls):
-                if not cls._can_read() or not (readonly or cls._can_write()): continue
-                with open(filename, 'r') as f: mq = cls._openable(f, **options)
-                if mq > highest_mq: highest_cls, highest_mq = cls, mq
-                if mq == MatchQuality.Definitely: break
-            if highest_mq == MatchQuality.NotAtAll: raise ValueError('Unknown file format')
-            return highest_cls.open(filename, readonly, **options)
+            for cls in cls.__open_handlers(readonly, handler):
+                with open(filename, 'rb') as f:
+                    if cls._openable(filename, f, readonly, **options):
+                        return cls.open(filename, readonly, **options)
+            raise ValueError('Unable to find image stack handler for file "'+filename+'"')
         elif isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
-            return FileCollectionStack.open(filename, readonly, **options)
+            return FileCollectionStack.open(filename, readonly, handler, **options)
         else: raise ValueError()
 
     @classmethod
-    def openable(cls, filename, readonly=False, **options):
+    def openable(cls, filename, readonly=False, handler=None, **options):
         """
         Checks if an existing image-stack file or series of images as a stack can be opened with
-        the given arguments. If 'filename' is a string then it is treated as an existing file.
+        the given options. If 'filename' is a string then it is treated as an existing file.
         Otherwise it needs to be an iterable of file names. Extra options are only supported by
-        some file formats.
+        some handlers.
         """
         try:
             if isinstance(filename, String):
-                for cls in all_subclasses(cls):
-                    with open(filename, 'r') as f:
-                        if cls._can_read() and (readonly or cls._can_write()) \
-                           and cls._openable(f, **options) > MatchQuality.NotAtAll: return True
-            elif isinstance(filename, Iterable): return True
+                for cls in cls.__open_handlers(readonly, handler):
+                    with open(filename, 'rb') as f:
+                        if cls._openable(filename, f, readonly, **options): return True
+            elif isinstance(filename, Iterable):
+                from ._collection import FileCollectionStack
+                return FileCollectionStack.openable(filename, readonly, handler, **options)
         except StandardError: pass
         return False
 
     @classmethod
-    def create(cls, filename, ims, **options):
+    def __create_handlers(cls, writeonly=False, handler=None):
+        for cls in all_subclasses(cls):
+            if cls._can_write() and (writeonly or cls._can_read()) and \
+               (handler is None or handler == cls.name()):
+                yield cls
+    
+    @classmethod
+    def create(cls, filename, ims, writeonly=False, handler=None, **options):
         """
         Creates an image-stack file or writes to a series of images as a stack. If 'filename' is a
         string then it is treated as a new file. Otherwise it needs to be an iterable of file names
         (even empty) or None in which case a collection of files are used to write to. Extra options
-        are only supported by some file formats. When filenames is None or an empty iterable
+        are only supported by some file handlers. When filenames is None or an empty iterable
         then you need to give a "pattern" option with an extension and %d in it.
 
         The new stack is created from the given iterable of ndarrays or ImageSources. While some
-        formats can be created with no images given, many do require at least one image to be
-        created so that at least the dtype and shape is known. Some formats may only allow
-        homogeneous image stacks, however selection of a format is purely on file extension and
+        handlers can be created with no images given, many do require at least one image to be
+        created so that at least the dtype and shape is known. Some handlers may only allow
+        homogeneous image stacks, however selection of a handler is purely on file extension and
         options given.
+        
+        Note that the "writeonly" flag is only used for optimization and may not always been
+        honored. It is your word that you will not use any functions that get data from the
+        stack.
         """
         ims = [ImageSource.as_image_source(im) for im in ims]
         if isinstance(filename, String):
             from os.path import splitext
-            ext = splitext(filename)[1].lower().lstrip('.')
-            highest_cls, highest_mq = None, MatchQuality.NotAtAll
-            for cls in all_subclasses(cls):
-                if not cls._can_write(): continue
-                mq = cls._creatable(filename, ext, **options)
-                if mq > highest_mq: highest_cls, highest_mq = cls, mq
-                if mq == MatchQuality.Definitely: break
-            if highest_mq == MatchQuality.NotAtAll: raise ValueError('Unknown file extension')
-            return highest_cls.create(filename, ims, **options)
+            ext = splitext(filename)[1].lower()
+            for cls in cls.__create_handlers(writeonly, handler):
+                if cls._creatable(filename, ext, writeonly, **options):
+                    return cls.create(filename, ims, **options)
+            raise ValueError('Unknown file extension or options')
         elif filename is None or isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
-            return FileCollectionStack.create(filename, ims, **options)
+            return FileCollectionStack.create(filename, ims, writeonly, handler, **options)
         else: raise ValueError()
 
     @classmethod
-    def creatable(cls, filename, **options):
+    def creatable(cls, filename, writeonly=False, handler=None, **options):
         """
         Checks if a filename can written to as a new image stack. The filename needs to either be a
         string or an iterable of file names (even empty) or None. Extra options are only supported
-        by some file formats. When filenames is None or an empty iterable then you need to give a
+        by some file handlers. When filenames is None or an empty iterable then you need to give a
         "pattern" option with an extension and %d in it.
         """
         try:
             if isinstance(filename, String):
                 from os.path import splitext
-                ext = splitext(filename)[1].lower().lstrip('.')
-                return any(cls._can_write() and cls._creatable(filename, ext, **options)>MatchQuality.NotAtAll #pylint: disable=star-args
-                           for cls in all_subclasses(cls))
-            elif filename is None or isinstance(filename, Iterable): return True
+                ext = splitext(filename)[1].lower()
+                return any(cls._creatable(filename, ext, writeonly, **options)
+                           for cls in cls.__create_handlers(writeonly, handler))
+            elif filename is None or isinstance(filename, Iterable):
+                from ._collection import FileCollectionStack
+                return FileCollectionStack.creatable(filename, writeonly, handler, **options)
         except StandardError: pass
         return False
 
     @classmethod
-    def formats(cls, read=True):
-        frmts = []
-        for cls in all_subclasses(cls):
-            f = cls.name()
-            if f is not None and (read and cls._can_read or not read and cls._can_write):
-                frmts.append(f)
-        return frmts
-
-    @classmethod
-    def _openable(cls, f, **opts): #pylint: disable=unused-argument
+    def _openable(cls, filename, f, readonly, **opts): #pylint: disable=unused-argument
         """
-        [To be implemented by format, default is nothing is openable]
+        [To be implemented by handler, default is nothing is openable]
 
-        Return how likely a readable file-like object is openable as a FileImageStack given the
-        dictionary of options. Returns a MatchQuality rating. If this returns anything besides
-        NotAtAll then the class must provide a static/class method like:
+        Return if a file is openable as a FileImageStack given the filename, file object, and
+        dictionary of options. If this returns True then the class must provide a static/class
+        method like:
             `open(filename_or_file, readonly, **options)`
         Option keys are always strings, values can be either strings or other values (but strings
-        must be accepted for any value and you must convert, if possible). An exception should be
-        thrown if there any unknown option keys or option values cannot be used.
+        must be accepted for any value and you must convert, if possible). While _openable should
+        return False if there any unknown option keys or option values cannot be used, open should
+        throw exceptions.
         """
-        return MatchQuality.NotAtAll
+        return False
 
     @classmethod
-    def _creatable(cls, filename, ext, **opts): #pylint: disable=unused-argument
+    def _creatable(cls, filename, ext, writeonly, **opts): #pylint: disable=unused-argument
         """
-        [To be implemented by format, default is nothing is creatable]
+        [To be implemented by handler, default is nothing is creatable]
 
-        Return how likely a filename/ext (without .) is creatable as a FileImageStack given the
-        dictionary of options. Returns a MatchQuality rating. If this returns anything besides
-        NotAtAll then the class must provide a static/class method like:
-            `create(filename, list_of_ImageSources, **options)`
+        Return if a filename/ext (ext always lowercase and includes .) is creatable as a
+        FileImageStack given the dictionary of options. If this returns True then the class must
+        provide a static/class method like:
+            `create(filename, list_of_ImageSources, writeonly, **options)`
         Option keys are always strings, values can be either strings or other values (but strings
-        must be accepted for any value and you must convert, if possible). An exception should be
-        thrown if there any unknown option keys or option values cannot be used.
+        must be accepted for any value and you must convert, if possible). While _creatable should
+        return False if there any unknown option keys or option values cannot be used, create should
+        throw exceptions.
+
+        Note that the "writeonly" flag is only used for optimization and may not always been
+        honored. It is the word of the caller they will not use any functions that get data from
+        the stack. The handler may ignore this and treat it as read/write.
         """
-        return MatchQuality.NotAtAll
+        return False
 
     @classmethod
     def _can_read(cls):
-        """[To be implemented by format, default is readable]"""
+        """
+        [To be implemented by handler, default is readable]
+
+        Returns True if this handler can, under any circumstances, read image stacks.
+        """
         return True
 
     @classmethod
     def _can_write(cls):
-        """[To be implemented by format, default is writable]"""
+        """
+        [To be implemented by handler, default is writable]
+
+        Returns True if this handler can, under any circumstances, write image stacks.
+        """
         return True
 
     @classmethod
     def name(cls):
         """
-        [To be implemented by format, default causes the format to not be registered]
+        [To be implemented by handler, default causes the handler to not have a help page, be
+        unusable by name, and not be listed, but still can handle things]
 
         Return the name of this image stack handler to be displayed in help outputs.
         """
@@ -209,7 +242,7 @@ class FileImageStack(ImageStack):
     @classmethod
     def print_help(cls, width):
         """
-        [To be implemented by format, default prints nothing]
+        [To be implemented by handler, default prints nothing]
 
         Prints the help page of this image stack handler.
         """
@@ -218,7 +251,7 @@ class FileImageStack(ImageStack):
     def __init__(self, header, slices, readonly=False):
         super(FileImageStack, self).__init__(slices)
         self._header = header
-        header._imstack = self
+        header._imstack = proxy(self)
         self._readonly = bool(readonly)
 
     # General
@@ -466,14 +499,15 @@ class HomogeneousFileImageStack(HomogeneousImageStack, FileImageStack):
 
 class FileImageSlice(ImageSlice):
     """
-    A image slice from an image stack. These must be implemented for specific formats. The
+    A image slice from an image stack. These must be implemented for specific handlers. The
     implementor must either call _set_props during initialization or implement a non-trivial
     _get_props function (the trivial one would be def _get_props(self): pass).
     """
     def __init__(self, stack, z): super(FileImageSlice, self).__init__(stack, z)
 
     @ImageSlice.data.setter
-    def set_data(self, im):
+    def data(self, im):
+        if self._stack._readonly: raise ValueError('cannot set data for readonly image stack')
         self._cache_data(self._set_data(ImageSource.as_image_source(im)))
 
     def _cache_data(self, im):
@@ -487,7 +521,7 @@ class FileImageSlice(ImageSlice):
     def _set_data(self, im):
         """
         Internal function for setting image data. The image is an ImageSource object. If the image
-        data is not acceptable (for example, the shape or dtype is not acceptable for this format)
+        data is not acceptable (for example, the shape or dtype is not acceptable for this handler)
         then an exception should be thrown. In the case of an exception, it must be thrown before
         any changes are made to this FileImageSlice properties or the data on disk.
 
@@ -504,9 +538,9 @@ class FileImageSlice(ImageSlice):
 class FileImageStackHeader(DictionaryWrapperWithAttr):
     """
     The header of an image stack. This is primarily a dictionary with built-in checking of names and
-    values based on the image stack type. In general this provides image-format specific information
-    and cannot be reliably queried between image stack types. One day a generalized "converter" may
-    be created for common header values between different types.
+    values based on the image stack type. In general this provides image-handler specific
+    information and cannot be reliably queried between image stack types. One day a generalized
+    "converter" may be created for common header values between different types.
 
     **Implementation Notes**
     The implementor must set the class fields _fields before calling super().__init__(). This
@@ -674,7 +708,7 @@ class NumericField(Field):
             raise ValueError('value not in range')
         return v
 
-# Import formats and commands
-#from . import formats (doesn't work, next line is roughly equivalent) 
-__import__(('.'.join(__name__.split('.')[:-1]+['formats'])), globals(), locals()) #pylint: disable=unused-import
-from . import _commands             #pylint: disable=unused-import
+# Import handlers and commands
+#from . import handlers (doesn't work, next line is roughly equivalent) 
+__import__(('.'.join(__name__.split('.')[:-1]+['handlers'])), globals(), locals()) #pylint: disable=unused-import
+from . import _commands #pylint: disable=unused-import

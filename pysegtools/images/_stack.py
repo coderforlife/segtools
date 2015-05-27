@@ -6,10 +6,12 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 from abc import ABCMeta, abstractmethod
-from numpy import ndarray
 from collections import Iterable, OrderedDict
 from itertools import islice
 from numbers import Integral
+from weakref import proxy
+
+from numpy import ndarray
 
 from ..general.enum import Flags
 from .types import is_image, check_image, get_im_dtype, im_dtype_desc
@@ -264,7 +266,7 @@ class ImageSlice(DeferredPropertiesImageSource):
     __metaclass__ = ABCMeta
 
     def __init__(self, stack, z):
-        self._stack = stack
+        self._stack = proxy(stack)
         self._z = z
         self._cache = None
 
@@ -305,7 +307,7 @@ class ImageStackArray(HomogeneousImageStack):
         super(ImageStackArray, self).__init__(sh[2], sh[1], dt,
             [ImageSliceFromArray(self, z, im, dt) for z,im in enumerate(arr)])
     @ImageStack.cache_size.setter
-    def set_cache_size(self, value): pass # prevent actual caching - all in memory
+    def cache_size(self, value): pass # prevent actual caching - all in memory
     @property
     def stack(self): return self.__arr_readonly
 class ImageSliceFromArray(ImageSlice):
@@ -317,7 +319,7 @@ class ImageSliceFromArray(ImageSlice):
     def _get_props(self): pass
     def _get_data(self): return self._im_readonly
     @ImageSlice.data.setter
-    def set_data(self, im):
+    def data(self, im):
         im = ImageSource.as_image_source(im)
         if self._shape != im.shape or self._dtype != im.dtype: raise ValueError('requires all slices to be the same data type and size')
         self._im[:,:,...] = im.data[:,:,...]

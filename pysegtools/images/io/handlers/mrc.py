@@ -1,5 +1,10 @@
 #pylint: disable=protected-access
 
+"""MRC image file stack plugin"""
+# This implements the IMOD variant of MRC files and supports all features of the format (except some
+# features just added according to the mailing list but not published yet). This is implemented in
+# pure Python using numpy to read the image data.
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -13,7 +18,7 @@ from ....general.datawrapper import ListWrapper, ReadOnlyListWrapper
 from ....general.enum import Enum, Flags
 from ...types import create_im_dtype, get_im_dtype_and_nchan, get_dtype_endian
 from ..._util import Unicode, pack, unpack, unpack1
-from .._stack import HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader, Field, FixedField, MatchQuality
+from .._stack import HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader, Field, FixedField
 from .._util import copy_data, openfile, imread_raw, imsave_raw, file_remove_ranges
 
 __all__ = ['MRC']
@@ -77,28 +82,28 @@ class MRC(HomogeneousFileImageStack):
         return MRC(h, h._open(f, readonly), readonly)
 
     @classmethod
-    def _openable(cls, f, **opts):
-        if len(opts) != 0: return MatchQuality.NotAtAll
+    def _openable(cls, filename, f, readonly, **opts):
+        if len(opts) != 0: return False
         f.seek(0)
         raw = memoryview(f.read(HDR_LEN))
-        if len(raw) != HDR_LEN: return MatchQuality.NotAtAll
+        if len(raw) != HDR_LEN: return False
         map_, en = unpack('<ii', raw[208:216])
         endian = '<'
         if map_ == MAP_:
             if en == MRCEndian.Big or en == MRCEndian.BigAlt: endian = '>'
-            elif en != MRCEndian.Little and en != MRCEndian.LittleAlt: return MatchQuality.NotAtAll
+            elif en != MRCEndian.Little and en != MRCEndian.LittleAlt: return False
         nx, ny, nz, mode = unpack(endian+'4i', raw[:16])
-        if nx <= 0 or ny <= 0 or nz < 0 or mode not in MRCMode: return MatchQuality.NotAtAll
+        if nx <= 0 or ny <= 0 or nz < 0 or mode not in MRCMode: return False
         mapc, mapr, maps = unpack(endian+'3i', raw[64:76])
-        if mapc != 1 or mapr != 2 or maps != 3: return MatchQuality.NotAtAll
+        if mapc != 1 or mapr != 2 or maps != 3: return False
         nxt = unpack1(endian+'i', raw[92:96])
         stamp, flags = unpack(endian+'2i', raw[152:160])
         nlbl = unpack1(endian+'i', raw[220:])
-        if nxt < 0 or nlbl < 0 or nlbl > LBL_COUNT or (stamp == IMOD and flags not in MRCFlags): return MatchQuality.NotAtAll
-        return MatchQuality.Definitely if map_ == MAP_ else MatchQuality.Likely
+        if nxt < 0 or nlbl < 0 or nlbl > LBL_COUNT or (stamp == IMOD and flags not in MRCFlags): return False
+        return True
 
     @classmethod
-    def create(cls, f, ims, **options):
+    def create(cls, f, ims, writeonly=False, **options):
         """
         Creates a new MRC file. Provide a filename or a file-like object. You must provide a shape as
         a height and width tuple and a dtype image type. No extra options are supported.
@@ -113,11 +118,8 @@ class MRC(HomogeneousFileImageStack):
         return s
 
     @classmethod
-    def _creatable(cls, filename, ext, **opts):
-        if len(opts) != 0: return MatchQuality.NotAtAll
-        if ext in ('mrc',): return MatchQuality.Definitely
-        elif ext in ('st','ali','preali','rec'): return MatchQuality.Likely
-        else: return MatchQuality.NotAtAll # although other extensions are used, we don't want something like "PNG" to make it here
+    def _creatable(cls, filename, ext, writeonly, **opts):
+        return len(opts) == 0 and ext in ('.mrc','.st','.ali','.preali','.rec')
 
     @classmethod
     def name(cls): return "MRC"
@@ -126,7 +128,9 @@ class MRC(HomogeneousFileImageStack):
         from ....imstack import Help
         p = Help(width)
         p.title("MRC")
-        p.text("""MRC file are common 3D images used by the program IMOD.
+        p.text("""
+MRC file are common 3D images used by the program IMOD. When saving the file extensions .mrc, .st,
+.ali, .preali, and .rec are recognized as MRC files.
 
 Limitations: all slices are required to be the same image type and shape.
 

@@ -6,12 +6,14 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import os, sys, io
-from numpy import fromfile, nditer, empty, prod
+from numpy import fromfile as npy_fromfile, nditer, empty, prod
 from numbers import Integral
 
 from .._util import String
 from ...general.gzip import GzipFile
 from ...general.enum import Flags
+
+__is_py3 = sys.version_info[0] == 3
 
 class FileMode(int, Flags):
     """
@@ -51,17 +53,63 @@ class FileMode(int, Flags):
         if FileMode.Binary in mode: m += 'b'
         return m
 
-__is_py3 = sys.version_info[0] == 3
+def __as_file(f):
+    f.flush()
+    fd2 = os.dup(f.fileno())
+    f2 = os.fdopen(fd2, f.mode)
+    orig_pos = os.lseek(fd2, 0, os.SEEK_CUR)
+    f2.seek(f.tell())
+    return f2, orig_pos
+
+def __close_file(f, f2, orig_pos):
+    position = f2.tell()
+    f2.close()
+    os.lseek(f.fileno(), orig_pos, os.SEEK_SET)
+    f.seek(position)
+    
+def fromfile(f, dt=float, count=-1, sep=''):
+    """Wrapper for numpy.fromfile that handles io.FileIO objects in Python 2"""
+    if __is_py3 or isinstance(f, (basestring,file)): return npy_fromfile(f, dt, count, sep)
+    f2, orig_pos = __as_file(f)
+    arr = npy_fromfile(f2, dt, count, sep)
+    __close_file(f, f2, orig_pos)
+    return arr
+
+def tofile(arr, f, sep='', format='%s'):
+    """Wrapper for ndarray.tofile that handles io.FileIO objects in Python 2"""
+    if __is_py3 or isinstance(f, (basestring,file)): arr.tofile(f, sep, format); return
+    f2, orig_pos = __as_file(f)
+    arr.tofile(f2, sep, format)
+    __close_file(f, f2, orig_pos)
+
+def any_in(a, b): return any(x in b for x in a)
+def check_file_obj(f, read, write, seek, binary=True, append=False):
+    """
+    Checks a file object to make sure it is readable, writable, and/or seekable. Also checks that it
+    is binary or text and that it is appending or acting normally. This accepts io objects and
+    file-like that have a mode attribute with the contents "[rwa]+?[bt]?".
+    """
+    if hasattr(f, 'closed') and f.closed: return False
+    if isinstance(f, io.IOBase):
+        return ((not read or f.readable()) and (not write or f.writable()) and
+                (not seekable or f.seekable()) and (binary != isinstance(f,io.TextIOBase)) and
+                (not hasattr(f, 'mode') or append == ('a' in f.mode)))
+    return (hasattr(f, 'mode') and (not read or any_in('r+', f.mode)) and (not write or any_in('wa+' in f.mode)) and
+            (not seekable or hasattr(f, 'seek')) and (binary == ('b' in f.mode)) and (append == ('a' in f.mode)))
+
 def isfileobj(f):
     """
-    Checks if f is an object that can be given to fromfile and tofile. This includes strings of
-    filenames and file objects (from open()). Not included are file-like objects which cannot be
-    directly used by fromfile and tofile.
+    Checks if an object can be used with fromfile and tofile defined above. In Python 2, file-like
+    objects will return True but cannot directly be used with numpy.fromfile or ndarray.tofile. They
+    must be used with the wrapper functions defined above.
+
+    File-like objects must define 'fileno', 'flush', 'tell', and 'seek' functions and a 'mode'
+    attribute.
     """
-    if sys.version_info[0] == 3:
-        return isinstance(f, (String, io.FileIO)) or (isinstance(f, io.BufferedIOBase) and hasattr(f, 'raw') and isinstance(f.raw, io.FileIO))
-    else:
-        return isinstance(f, (String, file))
+    if isinstance(f, str if __is_py3 else (basestring,file)): return True
+    if any(not hasattr(f,a) for a in ('fileno','flush','tell','seek','mode')): return False
+    try: return int(f.fileno()) >= 0
+    except IOError: return False
 
 def openfile(f, mode, compression=None, comp_level=9, off=None):
     """
@@ -111,8 +159,7 @@ def imsave_raw(f, im):
     """Save the raw image data to a file or file-like object."""
     frtrn = im.flags.f_contiguous and not im.flags.c_contiguous
     if isfileobj(f):
-        if frtrn: im.T.tofile(f)
-        else: im.tofile(f)
+        tofile(im.T if frtrn else im, f)
     else:
         for c in nditer(im,flags=['external_loop','buffered'],buffersize=max(16777216//im.itemsize,1),order='F' if frtrn else 'C'):
             f.write(c.data)
@@ -127,7 +174,7 @@ def imread_ascii_raw(f, shape, dtype, order='C'):
         if hasattr(dtype, 'shape') and dtype.shape:
             shape += dtype.shape
             dtype = dtype.base
-        im = fromfile(f,dtype,count=prod(shape),sep=' ').reshape(shape,order=order)
+        im = fromfile(f, dtype, count=prod(shape), sep=' ').reshape(shape, order=order)
     else:
         im = empty(shape, dtype, order)
         im_r = im.ravel()
@@ -157,7 +204,7 @@ def imskip_ascii_raw(f, shape, dtype):
         if hasattr(dtype, 'shape') and dtype.shape:
             shape += dtype.shape
             dtype = dtype.base
-        fromfile(f,dtype,count=prod(shape),sep=' ')
+        fromfile(f, dtype, count=prod(shape), sep=' ')
     else:
         i = 0
         total = prod(shape+dtype.shape)
@@ -174,8 +221,7 @@ def imsave_ascii_raw(f, im):
     """Save the raw image data to a file or file-like object using the the textual respresention of the values."""
     frtrn = im.flags.f_contiguous and not im.flags.c_contiguous
     if isfileobj(f):
-        if frtrn: im.T.tofile(f, sep=' ')
-        else: im.tofile(f, sep=' ')
+        tofile(im.T if frtrn else im, f, sep=' ')
     else:
         # TODO
         for c in nditer(im,flags=['external_loop','buffered'],buffersize=max(16777216//im.itemsize,1),order='F' if frtrn else 'C'):
@@ -187,7 +233,7 @@ def get_file_size(f):
     else:
         try:
             return os.fstat(f.fileno()).st_size
-        except OSError:
+        except StandardError:
             f.seek(0, io.SEEK_END)
             return f.tell()
 
