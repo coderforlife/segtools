@@ -4,6 +4,8 @@
 # aren't implemented well. Hopefully in newer versions of PIL these special handlings won't get in
 # the way.
 
+# TODO: support paletting!
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -19,7 +21,7 @@ from .._stack import FileImageStack, FileImageSlice, FileImageStackHeader, Fixed
 from .._single import FileImageSource
 from .._util import check_file_obj
 from ...types import get_im_dtype_and_nchan
-from ..._util import String
+from ..._util import String, _bool
 
 from distutils.version import StrictVersion
 if not hasattr(Image, 'PILLOW_VERSION') or StrictVersion(Image.PILLOW_VERSION) < StrictVersion('2.0'):
@@ -127,10 +129,8 @@ class _PILSource(object):
     def _open_pil_image(self, f, filename, **options):
         """
         Opens a PIL image object from the file object and filename with the given options. Can be
-        overriden by subclasses to handle options. Default implementation does not support any
-        options.
+        overriden by subclasses to handle options. Default implementation does nothing with options.
         """
-        if len(options) > 0: raise ValueError("No options are supported")
         return self._open(f, filename)
     def _save_pil_image(self, f, filename, im, **options):
         """
@@ -141,6 +141,34 @@ class _PILSource(object):
         im.encoderinfo = options
         im.encoderconfig = ()
         self._save(im, f, filename)
+
+    def _parse_open_options(self, **options):
+        """
+        Parse the options list for options this format supports while opening. Return both the
+        parsed options and the remaining unused in seperate dictionaries. Make sure to call
+        recusively.
+        """
+        return {}, options
+
+    def _parse_save_options(self, **options):
+        """
+        Parse the options list for options this format supports while saving. Return both the
+        parsed options and the remaining unused in seperate dictionaries. Make sure to call
+        recusively.
+        """
+        return {}, options
+
+    def _parse_options(self, open, save, **options):
+        """
+        Parse the options list for options this format supports while opening and saving. Do not
+        override this function, instead override _parse_open_options and _parse_save_options.
+        """
+        if open: open_options, options = self._parse_open_options(**options)
+        else: open_options = {}
+        if save: save_options, options = self._parse_save_options(**options)
+        else: save_options = {}
+        if len(options) > 0: raise ValueError("Unsupported options given")
+        return open_options, save_options
 
     def _copy(self, im, filename, readonly, open_options, save_options):
         """
@@ -155,18 +183,17 @@ class _PILSource(object):
         c.save_options = save_options
         return c
     
-    def open(self, file, readonly, open_options={}, save_options={}, **options):
+    def open(self, file, readonly, **options):
         """
-        Opens a file object/filename image with the given options. If subclasses support options
-        they must override this function and split the options into options that are meant for
-        _open_pil_image and _save_pil_image function calls. No options may be left outside of those
-        groups. Returns a copy of this template object that has the image object and other
-        attributes.
+        Opens a file object/filename image with the given options. Returns a copy of this template
+        object that has the image object and other attributes.
         """
         if hasattr(self, 'im'): raise RuntimeError("Not a template PILSource object")
         if not self.readable: raise ValueError("Cannot read from file format")
         if not readonly and not self.writable: raise ValueError("Cannot write to file format")
-        if len(options) > 0: raise ValueError("No options are supported")
+
+        open_options, save_options = self._parse_options(True, not readonly, **options)
+
         if isinstance(file, String):
             filename, f = file, open(file, 'rb')
             try:
@@ -187,7 +214,7 @@ class _PILSource(object):
     def openable(self, filename, prefix, readonly, **options):
         """
         Checks if a file is openable. Prefix is the first 16 bytes from the file. This should not be
-        overriden. Instead override open or _open_pil_image.
+        overriden. Instead override _parse_[open_|save_]options or _open_pil_image.
         """
         if not (self.readable and (readonly or self.writable) and self.accept(prefix)): return False
         try:
@@ -195,17 +222,17 @@ class _PILSource(object):
             return True
         except (SyntaxError, IndexError, TypeError, ValueError, EOFError, struct.error): return False
 
-    def create(self, filename, im, writeonly, open_options={}, save_options={}, **options):
+    def create(self, filename, im, writeonly, **options):
         """
-        Creates a new image file. If subclasses support options they must override this function and
-        split the options into options that are meant for _open_pil_image and _save_pil_image
-        function calls. No options may be left outside of those groups. Returns a copy of this
-        template object that has the image object and other attributes. im is an ImageSource.
+        Creates a new image file. Returns a copy of this template object that has the image object
+        and other attributes. im is an ImageSource.
         """
         if hasattr(self, 'im'): raise RuntimeError("Not a template PILSource object")
         if not self.writable: raise ValueError("Cannot write to file format")
         if not writeonly and not self.readable: raise ValueError("Cannot read from file format")
         if len(options) > 0: raise ValueError("No options are supported")
+
+        open_options, save_options = self._parse_options(not writeonly, True, **options)
 
         # Save image
         pil = imsrc2pil(im)
@@ -214,7 +241,7 @@ class _PILSource(object):
         # Open image
         if writeonly:
             # if writeonly we have to cache the dtype and shape properties
-            s = self._copy(None, filename, False, open_options, save_options)
+            s = self._copy(None, filename, False, {}, save_options)
             s._dtype = im.dtype
             s._shape = im.shape
             return s
@@ -226,10 +253,12 @@ class _PILSource(object):
     
     def creatable(self, writeonly, **options):
         """
-        Checks if a file is creatable. Unlike openable, subclasses must override this to support
-        options.
+        Checks if a file is creatable. UnlikeThis should not be overriden. Instead override
+        _parse_[open_|save_]options.
         """
-        return self.writable and (not writeonly or self.readable) and len(options) == 0
+        try: open_options, save_options = self._parse_options(not writeonly, True, **options)
+        except StandardError: return False
+        return self.writable and (not writeonly or self.readable)
 
     # Only available after open/create
     def close(self):
@@ -313,13 +342,125 @@ def _openable_source(sources, frmt, f, filename, readonly, **options):
 
 
 ########## Image Source ##########
+# There are various other options that I am not supporting here due to rarity or being able to add
+# them post-saving, but they could be added as needed.
+# Some examples of good things to add would be:
+#  * saving dpi and icc-profile (lots of formats support these two options)
+#  * GIF/PNG's saving param transparency
+#  * JPEG2000's opening params mode/reduce/layers and tons of saving params I don't understand
+#  * JPEG/WebP exif data
+class _EPSSource(_PILSource):
+    def _parse_open_options(self, scale=1, **options):
+        open_options, options = super(_EPSSource, self)._parse_open_options(**options)
+        scale = int(scale)
+        if scale < 1: raise ValueError('Invalid scale')
+        open_options['scale'] = scale
+        return open_options, options
+    def _open_pil_image(self, f, filename, scale=1, **options):
+        im = super(_EPSSource, self)._open_pil_image(f, filename, **options)
+        if scale != 1: im.load(scale=scale)
+        return im
+class _GIFSource(_PILSource):
+    def _parse_open_options(self, local=False, **options):
+        open_options, options = super(_GIFSource, self)._parse_open_options(**options)
+        open_options['local'] = _bool(local)
+        return open_options, options
+    def _open_pil_image(self, f, filename, local=False, **options):
+        im = super(_GIFSource, self)._open_pil_image(f, filename, **options)
+        if local and im.tile[0][0] == 'gif':
+            tag, (x0, y0, x1, y1), offset, extra = im.tile[0]
+            im.size = (x1-x0, y1-y0)
+            im.tile = [(tag, (0,0) + im.size, offset, extra)]
+        return im
+class _ICNSSource(_PILSource):
+    def _parse_open_options(self, size=None, **options):
+        open_options, options = super(_ICNSSource, self)._parse_open_options(**options)
+        if size is not None:
+            if isinstance(size, String): size = size.split(',')
+            size = tuple(int(i) for i in size)
+            if len(size) == 1: size = (size[0], size[0], 1)
+            elif len(size) == 2: size = size + (1,)
+            if len(size) != 3 or size[0] < 1 or size[1] < 1 or size[2] not in (1,2): raise ValueError('Invalid size')
+            open_options['size'] = size
+        return open_options, options
+    def _open_pil_image(self, f, filename, size=None, **options):
+        im = super(_ICNSSource, self)._open_pil_image(f, filename, **options)
+        if size is not None:
+            if size not in list(im.info['sizes']): raise ValueError('Size not found in file')
+            im.size = size
+        return im
+class _JPEGSource(_PILSource):
+    def _parse_save_options(self, quality=75, optimize=False, progressive=False, **options):
+        save_options, options = super(_JPEGSource, self)._parse_save_options(**options)
+        quality = int(quality)
+        if quality < 1 or quality > 100: raise ValueError('Invalid quality')
+        save_options['quality'] = quality
+        if _bool(optimize): save_options['optimize'] = True
+        if _bool(progressive): save_options['progressive'] = True
+        return save_options, options
+class _PALMSource(_PILSource):
+    def _parse_save_options(self, bpp=4, **options):
+        save_options, options = super(_PNGSource, self)._parse_save_options(**options)
+        bpp = int(bpp)
+        if bpp not in (1, 2, 4): raise ValueError('Invalid bpp')
+        save_options['bpp'] = bpp
+        return save_options, options
+class _PNGSource(_PILSource):
+    def _parse_save_options(self, compression=6, optimize=False, **options):
+        save_options, options = super(_PNGSource, self)._parse_save_options(**options)
+        compression = int(compression)
+        if compression < 0 or compression > 9: raise ValueError('Invalid compression')
+        save_options['compression'] = compression
+        if _bool(optimize): save_options['optimize'] = True
+        return save_options, options
+class _TIFFSource(_PILSource):
+    compressions = {
+        "none":"raw",
+        "ccitt-1d":"tiff_ccitt",
+        "ccitt-group-3":"group3",
+        "ccitt-group-4":"group4",
+        "lzw":"tiff_lzw",
+        #"tiff_jpeg"     # obsolete, rare
+        "jpeg":"jpeg",   # uncommon
+        "deflate":"tiff_adobe_deflate", # uncommon
+        #"tiff_raw_16"   # undocumented? COMPRESSION_CCITTRLEW?
+        "packbits":"packbits",
+        "thunderscan":"tiff_thunderscan", # rare, proprietary
+        #"tiff_deflate"  # obsolete/experimental, uncommon
+        #"tiff_sgilog"   # experimental, rare
+        #"tiff_sgilog24" # experimental, rare
+    }
+    def _parse_save_options(self, compression="packbits", **options):
+        save_options, options = super(_TIFFSource, self)._parse_save_options(**options)
+        compression = compression.lower()
+        if compression not in _TIFFSource.compressions: raise ValueError('Invalid compression')
+        save_options['compression'] = _TIFFSource.compressions[compression]
+        return save_options, options
+class _WEBPSource(_PILSource):
+    def _parse_save_options(self, quality=80, lossless=False, **options):
+        save_options, options = super(_WEBPSource, self)._parse_save_options(**options)
+        quality = int(quality)
+        if quality < 1 or quality > 100: raise ValueError('Invalid quality')
+        save_options['quality'] = quality
+        if _bool(lossless): save_options['lossless'] = True
+        return save_options, options
+
 _sources, _read_formats, _write_formats = None, None, None
 def _init_source():
     from types import ClassType
     from PIL.ImageFile import StubImageFile
     global _sources, _read_formats, _write_formats
     if _mode2dtype is None: _init_pil()
-    _source_classes = { }
+    _source_classes = {
+            'EPS' : _EPSSource,
+            'GIF' : _GIFSource,
+            'ICNS': _ICNSSource,
+            'JPEG': _JPEGSource,
+            'PALM': _PALMSource,
+            'PNG' : _PNGSource,
+            'TIFF': _TIFFSource,
+            'WEBP': _WEBPSource,
+        }
 
     stub_formats = set(frmt for frmt,(clazz,accept) in Image.OPEN.iteritems() if
                        isinstance(clazz,(type,ClassType)) and issubclass(clazz,StubImageFile))
@@ -401,6 +542,8 @@ will fail.
 Extensions listed below are used to determine the format to save as if not explicit, during loading
 the contents of the file are always used to determine the format.
 
+Details on image formats and options can be found in the PILLOW documentation: http://pillow.readthedocs.org/en/latest/handbook/image-file-formats.html
+
 Supported image formats (read/write):""")
         p.list(*sorted(cls.__add_exts(cls.formats(True, True))))
         p.newline()
@@ -409,6 +552,22 @@ Supported image formats (read/write):""")
         p.newline()
         p.text("""Supported image formats [write-only]:""")
         p.list(*sorted(cls.__add_exts(cls.formats(False, True))))
+        p.newline()
+        p.text("""
+Some formats support additional options when loading or saving. Not all options available in PIL
+are available with this plugin.""")
+        p.newline()
+        p.text("""Supported loading options:""")
+        p.list("EPS:  scale (positive integer)",
+               "GIF:  local (boolean)",
+               "ICNS: size (1-3 comma seperated integers)")
+        p.newline()
+        p.text("""Supported saving options:""")
+        p.list("JPEG: quality (1-100), optimize (bool), progressive (bool)",
+               "PALM: bpp (1, 2, or 4)",
+               "PNG:  compression (1-9), optimize (bool)",
+               "TIFF: compression (one of: none, CCITT-1D, CCITT-Group-3, CCITT-Group-4, LZW, JPEG, deflate, packbits (default), thunderscan)",
+               "WEBP: quality (1-100), lossless (bool)")
         p.newline()
         p.text("See also:")
         p.list('PIL-Stack')
@@ -440,10 +599,10 @@ Supported image formats (read/write):""")
         self._source.rename(self._rename, filename)
 
 ########## Image Stack ##########
-## TODO: PSD: random access except can never return to 0 (which is the "full image"?)
+# TODO: support local for GIF-stack?
 # TODO: header can change per-slice:
-# Definitely: DCX, MIC, TIFF
-# Maybe: GIF, SPIDER
+#       definitely: DCX, MIC, TIFF
+#       maybe: GIF, SPIDER
 class _PILStack(_PILSource):
     def __init__(self, frmt, open, accept, save=None):
         super(_PILStack, self).__init__(frmt, open, accept, None)
@@ -519,7 +678,7 @@ class _MICStack(_RandomAccessPILStack):
     def depth(self): return len(self.im.images)
     @classmethod
     def is_stack(self): return self.im.category == Image.CONTAINER
-class _TIFFStack(_RandomAccessPILStack):
+class _TIFFStack(_TIFFSource, _RandomAccessPILStack):
     # Not quite random-access because we don't know the depth until we have gone all the way
     # through once. Also, internally, it does use increment and reset but is fast since it can skip
     # all of the image data.
@@ -539,11 +698,19 @@ class _TIFFStack(_RandomAccessPILStack):
         h.update(self.im.tag)
         h.update(self.im.info)
         return h
-
-
-class _PSDStack(_PILStack):
+class _PSDStack(_RandomAccessPILStack):
+    # PIL reads the PSD image "oddly". The entire merged image is in frame=0. The others are the
+    # layers in order. However, once you go to any other frame you can never return 0. So what we
+    # are going to do is say if the image is opened as a 2D image then we will so the entire merged
+    # image. If we open it as a stack we will only go for the other layers (and not the merged image
+    # ever). Another problem is that PIL doesn't seem to always be able to extract the layers, but I
+    # might be using a too-new version of Photoshop...
     @classmethod
-    def depth(self): return len(self.im.layers)+1
+    def depth(self): return len(self.im.layers)
+    def seek(self, idx):
+        if idx >= self.depth: raise ValueError('Slice index out of range')
+        try: pil.seek(idx+1) # +1 for skipping the entire merged image
+        except EOFError: raise ValueError('Slice index out of range')
 
 _stacks = None
 def _init_stack():
@@ -604,7 +771,8 @@ in the manner they were intended to be.
 
 Currently there is no support for writing a PIL-supported image stack format.
 
-This supports the option 'format' to force one of the supported formats listed below.
+This supports the option 'format' to force one of the supported formats listed below. Additional
+options are supported as per the non-stack variants. See the PIL topic.
 
 Supported image formats:""")
         p.list(*sorted(cls.formats()))
@@ -612,7 +780,6 @@ Supported image formats:""")
         p.text("See also:")
         p.list('PIL')
         
-
     @classmethod
     def formats(cls):
         if _stacks is None: _init_stack()
