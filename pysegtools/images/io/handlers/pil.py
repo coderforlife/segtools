@@ -234,8 +234,9 @@ class _PILSource(object):
 
     # Only available after open/create
     def close(self):
-        if hasattr(self, 'im') and hasattr(self.im, 'close'): self.im.close()
-        del self.im
+        if hasattr(self, 'im'):
+            if hasattr(self.im, 'close'): self.im.close()
+            del self.im
     @property
     def header_info(self):
         h = {'format':self.im.format}
@@ -271,6 +272,16 @@ class _PILSource(object):
             if reopen:
                 self.file.seek(0)
                 self.im = self._open_pil_image(self.file, "", **self.open_options)
+    def rename(self, renamer, filename):
+        if not self.filename: raise ValueError('no filename')
+        reopen = self.im is not None
+        if reopen: self.im.close()
+        self.filename = filename
+        renamer(filename)
+        if reopen:
+            f = open(filename, 'rb')
+            try: self.im = self._open_pil_image(f, filename, **self.open_options)
+            except StandardError: f.close(); raise
 
 def _get_prefix(file):
     if isinstance(file, String):
@@ -410,14 +421,15 @@ Supported image formats (read/write):""")
 
     def __init__(self, source):
         self._source = source
-        super(PIL, self).__init__(source.readonly)
+        super(PIL, self).__init__(source.filename, source.readonly)
     def close(self): self._source.close()
     def _get_props(self): self._set_props(self._source.dtype, self._source.shape)
     def _get_data(self): return self._source.data
     def _set_data(self, im):
         self._source.set_data(im)
         self._set_props(self._source.dtype, self._source.shape)
-
+    def _set_filename(self, filename):
+        self._source.rename(self._rename, filename)
 
 ########## Image Stack ##########
 ## TODO: PSD: random access except can never return to 0 (which is the "full image"?)

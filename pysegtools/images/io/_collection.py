@@ -110,28 +110,25 @@ class FileCollectionStack(FileImageStack):
 
     def __init__(self, h, read, write, filenames, starting_files=(), handler=None, **options):
         readonly = read and not write
-        slices = [FileSlice(self, f, FileImageSource.open(f,readonly,handler,**options), z) 
+        slices = [FileSlice(self, FileImageSource.open(f,readonly,handler,**options), z) 
                   for z,f in enumerate(starting_files)]
         super(FileCollectionStack, self).__init__(h, slices, readonly)
         self._writeonly = write and not read
         self._handler = handler
         self._orig_files = filenames
 
-
-###### TODO: update for the new system
-##    @staticmethod
-##    def __rename(slices, filenames):
-##        """
-##        Rename all slices given by "shifting" them into the filenames given. The first slice is
-##        given the first filename in filenames and so forth, when filenames is depleted the next
-##        slice take the filename from the first slice (which has already been renamed). You can
-##        think of the used filenames as filenames + [s._filename for s in slices].
-##        """
-##        for s in slices:
-##            src, dst = s._filename, filenames.pop(0)
-##            os.rename(src, dst)
-##            filenames.append(src)
-##            s._filename = dst
+    @staticmethod
+    def __rename(slices, filenames):
+        """
+        Rename all slices given by "shifting" them into the filenames given. The first slice is
+        given the first filename in filenames and so forth, when filenames is depleted the next
+        slice take the filename from the first slice (which has already been renamed). You can
+        think of the used filenames as filenames + [s._source.filename for s in slices].
+        """
+        for s in slices:
+            fn = s._source.filename
+            s._source.filename = filenames.pop(0)
+            filenames.append(fn)
 
     def _insert(self, idx, ims):
         # Note: the renaming may run into problems on Windows because if the file exists the rename
@@ -149,27 +146,25 @@ class FileCollectionStack(FileImageStack):
             start, step = self._header.start, self._header.step
             start, stop = start+(idx+len(filenames))*step, start+end*step
             filenames.extend(self._header.pattern % i for i in xrange(start, stop, step))
-##        FileCollectionStack.__rename(reversed(self._slices[idx:self._d]), reversed(filenames))
+        FileCollectionStack.__rename(reversed(self._slices[idx:self._d]), reversed(filenames))
         wo, hndlr, opts = self._writeonly, self._handler, self._header.options
-        self._insert_slices(idx, [FileSlice(self, f, FileImageSource.create(f,im,wo,hndlr,**opts), z)
+        self._insert_slices(idx, [FileSlice(self, FileImageSource.create(f,im,wo,hndlr,**opts), z)
                                   for z,im,f in izip(xrange(idx,idx+len(ims)), ims, filenames)])
-##        for s, im in izip(self._slices[idx:end], ims): s._cache_data(im.data)
+## TODO:       for s, im in izip(self._slices[idx:end], ims): s._cache_data(im.data)
 
     def _delete(self, idx):
-        pass
-##        for start, stop in idx:
-##            # This could be done in a slightly better way by going from the lowest start to the
-##            # highest like how file_remove_ranges does it (instead of highest to lowest like is
-##            # easier). This would only reduce the number of renames while complicating the process.
-##            filenames = [s._filename for s in self._slices[start:stop]]
-##            for f in filenames: os.remove(f)
-##            FileCollectionStack.__rename(self._slices[stop:], filenames)
-##            self._delete_slices(start, stop)
+        for start, stop in idx:
+            # This could be done in a slightly better way by going from the lowest start to the
+            # highest like how file_remove_ranges does it (instead of highest to lowest like is
+            # easier). This would only reduce the number of renames while complicating the process.
+            filenames = [s._filename for s in self._slices[start:stop]]
+            for f in filenames: os.remove(f)
+            FileCollectionStack.__rename(self._slices[stop:], filenames)
+            self._delete_slices(start, stop)
 
 class FileSlice(FileImageSlice):
-    def __init__(self, stack, filename, source, z):
+    def __init__(self, stack, source, z):
         super(FileSlice, self).__init__(stack, z)
-        self._filename = filename
         self._source = source
     def _get_props(self): self._set_props(self._source.dtype, self._source.shape)
     def _get_data(self):
@@ -214,8 +209,9 @@ class FileCollectionStackHeader(FileImageStackHeader):
         super(FileCollectionStackHeader, self).__init__(data)
     def save(self):
         if self._imstack._readonly: raise AttributeError('header is readonly')
-###### TODO: update for the new system
     def _update_depth(self, d):
-        fs = self._data['files']; l = len(fs)
-        self._data['files'] = fs[:d] if d<=l else fs + tuple(s._filename for s in self._imstack._slices[l:])
+        fs = self._data['files']
+        if d <= len(fs): fs = fs[:d]
+        else: fs = fs + tuple(s._source.filename for s in self._imstack._slices[len(fs):])
+        self._data['files'] = fs
     def _get_field_name(self, f): return f if f in self._fields else None

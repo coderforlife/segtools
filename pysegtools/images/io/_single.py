@@ -7,6 +7,8 @@ from __future__ import unicode_literals
 
 from abc import ABCMeta, abstractproperty, abstractmethod
 from io import open
+from os.path import abspath
+import os
 
 from ..source import ImageSource, DeferredPropertiesImageSource
 from ...imstack import Help
@@ -124,7 +126,7 @@ class FileImageSource(DeferredPropertiesImageSource):
         Return if a file is openable as a FileImageSource given the filename, file object, and
         dictionary of options. If this returns True then the class must provide a static/class
         method like:
-            `open(filename_or_file, readonly, **options)`
+            `open(filename, readonly, **options)`
         Option keys are always strings, values can be either strings or other values (but strings
         must be accepted for any value and you must convert, if possible). While _openable should
         return False if there any unknown option keys or option values cannot be used, open should
@@ -189,9 +191,10 @@ class FileImageSource(DeferredPropertiesImageSource):
         """
         pass
 
-    # General
-    def __init__(self, readonly=False):
+    def __init__(self, filename, readonly=False):
+        self._filename = abspath(filename)
         self._readonly = bool(readonly)
+
     def close(self): pass
     def __delete__(self): self.close()
     @property
@@ -205,6 +208,33 @@ class FileImageSource(DeferredPropertiesImageSource):
     @property
     def data(self):
         return ImageSource.get_unwriteable_view(self._get_data())
+
+    @property
+    def filename(self):
+        return self._filename
+    @filename.setter
+    def filename(self, filename):
+        filename = abspath(abspath)
+        if self._filename != filename:
+            self._set_filename(filename)
+            self._filename = filename
+
+    @abstractmethod
+    def _set_filename(self, filename):
+        """
+        Internal function for setting the filename - basically means the physical storage of this
+        image needs to change. Anything that needs to happen in response to the file moving needs
+        to be done now, including renaming the file itself, which means this function is minimally
+        `self._rename(filename)`.
+        """
+        pass
+
+    def _rename(self, filname):
+        # TODO: renaming may run into problems on Windows because if the file exists the rename
+        # will fail. A solution is to delete the file first. Also, what if the new file name
+        # exists and is a directory or unremovable?
+        #os.remove(filename)
+        os.rename(self._filename, filename)
 
     @data.setter
     def set_data(self, im):
