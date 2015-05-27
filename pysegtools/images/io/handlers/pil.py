@@ -10,21 +10,15 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import struct
-from sys import byteorder
-from os import SEEK_CUR
 from io import open
-from types import ClassType
 from abc import ABCMeta, abstractproperty, abstractmethod
 
-from PIL import Image, ImageFile
-
-from numpy import dtype, sctypes, array
-from numpy import bool_, uint8,uint16,uint32, int8,int16,int32, float32,float64 #float16
+from PIL import Image
 
 from .._stack import FileImageStack, FileImageSlice, FileImageStackHeader, FixedField
 from .._single import FileImageSource
 from .._util import check_file_obj
-from ...types import check_image, get_im_dtype_and_nchan
+from ...types import get_im_dtype_and_nchan
 from ..._util import String
 
 from distutils.version import StrictVersion
@@ -32,12 +26,17 @@ if not hasattr(Image, 'PILLOW_VERSION') or StrictVersion(Image.PILLOW_VERSION) <
     raise ImportError
 
 ########## PIL dtypes ##########
-_native = byteorder!='little'
+_native = None
 _mode2dtype = None
 _dtype2mode = None
 def _init_pil():
+    from sys import byteorder
+    from numpy import sctypes, dtype
+    from numpy import bool_, uint8,uint16,uint32, int8,int16,int32, float32,float64 #float16
     from ...types import create_im_dtype as d
-    global _mode2dtype, _dtype2mode
+    global _native, _mode2dtype, _dtype2mode
+    _native = byteorder!='little'
+    
     Image.init()
     # Add common extensions for the SPIDER format
     Image.register_extension("SPIDER", ".spi")
@@ -251,8 +250,14 @@ class _PILSource(object):
     def shape(self): return self._shape if self.im is None else tuple(reversed(self.im.size))
     @property
     def data(self): # return ndarray
-        dt = self.dtype
-        return array(self.im.getdata(), dtype=dt).reshape(tuple(reversed(dt.shape+self.im.size)))
+        from numpy import frombuffer
+        dt = self.dtype # the resulting dtype
+        if self.im.mode == 'P':
+            a = frombuffer(self.im.palette.tobytes(), dtype=dt).take(
+                frombuffer(self.im.tobytes(), dtype=uint8), axis=0)
+        else:
+            a = frombuffer(self.im.tobytes(), dtype=dt)
+        return a.reshape(tuple(reversed(dt.shape+self.im.size)))
     def set_data(self, im): # im is an ImageSource
         reopen = self.im is not None # if writeonly don't reopen image
         if reopen: self.im.close()
@@ -284,6 +289,7 @@ class _PILSource(object):
             except StandardError: f.close(); raise
 
 def _get_prefix(file):
+    from os import SEEK_CUR
     if isinstance(file, String):
         with open(file, 'rb') as f: return f.read(16)
     data = file.read(16)
@@ -309,19 +315,21 @@ def _openable_source(sources, frmt, f, filename, readonly, **options):
 ########## Image Source ##########
 _sources, _read_formats, _write_formats = None, None, None
 def _init_source():
+    from types import ClassType
+    from PIL.ImageFile import StubImageFile
     global _sources, _read_formats, _write_formats
     if _mode2dtype is None: _init_pil()
     _source_classes = { }
 
     stub_formats = set(frmt for frmt,(clazz,accept) in Image.OPEN.iteritems() if
-                       isinstance(clazz,(type,ClassType)) and issubclass(clazz,ImageFile.StubImageFile))
+                       isinstance(clazz,(type,ClassType)) and issubclass(clazz,StubImageFile))
     stub_formats.add('MPEG') # MPEG is not registered properly as a stub
     _read_formats = frozenset(Image.OPEN) - stub_formats
     _write_formats = frozenset(Image.SAVE) - stub_formats
     _sources = {
         frmt:_source_classes.get(frmt,_PILSource)(frmt,clazz,accept,Image.SAVE.get(frmt))
         for frmt,(clazz,accept) in Image.OPEN.iteritems()
-        if not isinstance(clazz,(type,ClassType)) or not issubclass(clazz,ImageFile.StubImageFile)
+        if not isinstance(clazz,(type,ClassType)) or not issubclass(clazz,StubImageFile)
         }
     # Add write-only formats
     _sources.update({frmt:_source_classes.get(frmt,_PILSource)(frmt,None,None,Image.SAVE[frmt])
@@ -539,6 +547,7 @@ class _PSDStack(_PILStack):
 
 _stacks = None
 def _init_stack():
+    from types import ClassType
     global _stacks
     if _mode2dtype is None: _init_pil()
     _stack_classes = {
