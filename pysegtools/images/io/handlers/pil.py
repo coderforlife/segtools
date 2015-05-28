@@ -281,8 +281,11 @@ class _PILSource(object):
     @property
     def header_info(self):
         """Gets the header info for a 2D image. In stacks, this gets the current slice's header."""
-        h = {'format':self.im.format}
-        h.update(self.im.info)
+        if self.im is None:
+            h = {'format':self.format}
+        else:
+            h = {'format':self.im.format}
+            h.update(self.im.info)
         return h
     @property
     def is_stack(self): return False
@@ -455,6 +458,10 @@ class _PNGSource(_PILSource):
     #    h = super(_PNGSource, self).header_info
     #    h.update(self.im.text) 
     #    return h
+def _get_tiff_tags(im):
+    def _unwrap(x):
+        return x[0] if isinstance(x, tuple) and len(x) == 1 else x
+    return {k:_unwrap(v) for k,v in im.tag.named().iteritems()} 
 class _TIFFSource(_PILSource):
     compressions = {
         "none":"raw",
@@ -481,7 +488,7 @@ class _TIFFSource(_PILSource):
     @property
     def header_info(self):
         h = super(_TIFFSource, self).header_info
-        h.update(self.im.tag.named())
+        h.update(_get_tiff_tags(self.im))
         return h
 class _WEBPSource(_PILSource):
     def _parse_save_options(self, quality=80, lossless=False, **options):
@@ -554,7 +561,7 @@ class PIL(FileImageSource):
             from os.path import splitext
             format = Image.EXTENSION.get(splitext(filename)[1].lower())
             if format is None: raise ValueError('Unknown file extension')
-        return _sources[format].create(filename, im, writeonly, **options)
+        return PIL(_sources[format].create(filename, im, writeonly, **options))
 
     @classmethod
     def _creatable(cls, filename, ext, writeonly, format=None, **options):
@@ -651,7 +658,6 @@ are available with this plugin.""")
 
 ########## Image Stack ##########
 # TODO: support local for GIF-stack?
-# TODO: header can change per-slice: GIF
 class _PILStack(_PILSource):
     """Class handling general stacks"""
     _z = 0
@@ -681,28 +687,33 @@ class _PILStack(_PILSource):
         if self._z == z: return
         if self._z > z:
             # we need to go all the way to the end and then reset to the beginning
-            try:
-                while True: self.im.seek(self._z); self._z += 1
-            except (EOFError, ValueError): pass
-            self.im.seek(0); self._z = 0
+            #try:
+            #    while True:
+            #        self._z += 1
+            #        self.im.seek(self._z)
+            #except (EOFError, ValueError): pass
+            self._z = 0
+            self.im.seek(0)
         while self._z != z:
-            try: self.im.seek(self._z); self._z += 1
-            except (EOFError, ValueError): raise ValueError('Slice index out of range')
+            try:
+                self._z += 1
+                self.im.seek(self._z)
+            except (EOFError, ValueError):
+                self._z -= 1
+                raise ValueError('Slice index out of range')
+    def _for_each_slice(self, func):
+        lst, start_z = [], self._z
+        self.seek(0)
+        while True:
+            try: lst.append(func()); self.seek(self._z+1)
+            except (EOFError, ValueError) as ex: break
+        try: self.seek(start_z)
+        except StandardError: pass
+        return lst
     def slices(self, stack):
         # Default behavior for slices is to read all of them store them. This is pretty bad, but
         # nothing we can really do. The good thing is many formats have a better solution.
-        slices, z, start_z = [], 0, self._z
-        self.seek(0)
-        while True:
-            try:
-                self.im.seek(z)
-                slices.append(_PILSlice(stack, self, z))
-                z += 1
-            except (EOFError, ValueError): break
-        self._z = z-1
-        try: self.seek(start_z)
-        except StandardError: pass
-        return slices
+        return self._for_each_slice(lambda:_PILSlice(stack, self, self._z))
 class _PILSlice(FileImageSlice):
     def __init__(self, stack, pil, z):
         super(_PILSlice, self).__init__(stack, z)
@@ -774,19 +785,7 @@ class _PILStackWithSliceHeaders(_PILStack):
         return h_stack
 
 class _GIFStack(_PILStackWithSliceHeaders):
-    def _get_all_hdrs(self):
-        headers, z, start_z = [], 0, self._z
-        self.seek(0)
-        while True:
-            try:
-                self.im.seek(z)
-                headers.append(self._get_hdr())
-                z += 1
-            except (EOFError, ValueError): break
-        self._z = z-1
-        try: self.seek(start_z)
-        except StandardError: pass
-        return headers
+    def _get_all_hdrs(self): return self._for_each_slice(self._get_hdr)
     
 class _RandomAccessPILStack(_PILStack):
     """
@@ -825,10 +824,11 @@ class _RandomAccessPILStackWithSliceHeaders(_PILStackWithSliceHeaders, _RandomAc
         d = self.depth
         if d == 0: return []
         headers = [None]*d
+        self.im.seek(0)
         for z in xrange(d):
-            self.seek(z)
+            self.im.seek(z)
             headers[z] = self._get_hdr()
-        self.seek(self._z)
+        self.im.seek(self._z)
         return headers
 
 class _IMStack(_RandomAccessPILStack):
@@ -863,7 +863,7 @@ class _TIFFStack(_RandomAccessPILStackWithSliceHeaders):
         return self.__depth
     def _get_hdr(self):
         h = super(_TIFFStack, self)._get_hdr()
-        h.update(self.im.tag.named())
+        h.update(_get_tiff_tags(self.im))
         return h
 class _PSDStack(_RandomAccessPILStack):
     # PIL reads the PSD image "oddly". The entire merged image is in frame=0. The others are the
