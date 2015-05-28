@@ -4,8 +4,6 @@
 # aren't implemented well. Hopefully in newer versions of PIL these special handlings won't get in
 # the way.
 
-# TODO: support paletting!
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -91,6 +89,7 @@ def _init_pil():
 
 ########## PIL interaction class ##########
 def imsrc2pil(im):
+    from numpy import uint8
     im = im.data
     st, sh = im.strides[0], im.shape[1::-1]
     dt, nchan = get_im_dtype_and_nchan(im)
@@ -132,12 +131,14 @@ class _PILSource(object):
         overriden by subclasses to handle options. Default implementation does nothing with options.
         """
         return self._open(f, filename)
-    def _save_pil_image(self, f, filename, im, **options):
+    def _save_pil_image(self, f, filename, im, palette=False, **options):
         """
         Saves a PIL image object to the file object and filename with the given options. Subclasses
         can override this to deal with the options. Otherwise options are just passed to the image's
-        "encoderinfo".
+        "encoderinfo" (except "palette" which is used to convert the palette of the image).
         """
+        if palette is not False:
+            im = im.quantize() if palette is True else im.quantize(colors=palette)
         im.encoderinfo = options
         im.encoderconfig = ()
         self._save(im, f, filename)
@@ -150,13 +151,27 @@ class _PILSource(object):
         """
         return {}, options
 
-    def _parse_save_options(self, **options):
+    def _parse_save_options(self, palette=False, **options):
         """
         Parse the options list for options this format supports while saving. Return both the
         parsed options and the remaining unused in seperate dictionaries. Make sure to call
         recusively.
         """
-        return {}, options
+        if palette is not True and palette is not False:
+            if isinstance(palette, String):
+                pal_lower = palette.lower()
+                if   pal_lower in ('true', 't'): palette = True
+                elif pal_lower in ('false','f'): palette = False
+                elif palette.isdigit():
+                    palette = int(palette)
+                    if palette < 1 or palette > 256: raise ValueError('Invalid palette')
+                else: raise ValueError('Invalid palette')
+            elif isinstance(palette, Integral):
+                from numbers import Integral
+                palette = int(palette)
+                if palette < 1 or palette > 256: raise ValueError('Invalid palette')
+            else: raise ValueError('Invalid palette')
+        return {'palette':palette}, options
 
     def _parse_options(self, open, save, **options):
         """
@@ -217,10 +232,8 @@ class _PILSource(object):
         overriden. Instead override _parse_[open_|save_]options or _open_pil_image.
         """
         if not (self.readable and (readonly or self.writable) and self.accept(prefix)): return False
-        try:
-            self.open(filename, readonly, **options).close()
-            return True
-        except (SyntaxError, IndexError, TypeError, ValueError, EOFError, struct.error): return False
+        try: self.open(filename, readonly, **options).close(); return True
+        except (SyntaxError, IndexError, TypeError, ValueError, EOFError, struct.error) as ex: return False
 
     def create(self, filename, im, writeonly, **options):
         """
@@ -478,25 +491,25 @@ def _init_source():
 
 class PIL(FileImageSource):
     @staticmethod
-    def __parse_opts(slice, options): # no ** here on options because we want to modify them
+    def __parse_opts(slice=None, **options):
         if slice is not None:
             # Slice was given, must be a stack-able type
             if _stacks is None: _init_stacks()
             slice = int(slice)
             if slice < 0: raise ValueError('Slice must be a non-negative integers')
             options['slice'] = slice
-            return _stacks
+            return _stacks, options
         if _sources is None: _init_source()
-        return _sources
+        return _sources, options
             
     @classmethod
-    def open(cls, f, readonly, format=None, slice=None, **options):
-        sources = PIL.__parse_opts(slice, options)
+    def open(cls, f, readonly, format=None, **options):
+        sources, options = PIL.__parse_opts(**options)
         return PIL(_open_source(sources, format, f, readonly, **options))
 
     @classmethod
-    def _openable(cls, filename, f, readonly, format=None, slice=None, **options):
-        try: sources = PIL.__parse_opts(slice, options)
+    def _openable(cls, filename, f, readonly, format=None, **options):
+        try: sources, options = PIL.__parse_opts(**options)
         except ValueError: return False
         return _openable_source(sources, format, f, filename, readonly, **options)
 
@@ -535,9 +548,11 @@ you may specify the option 'slice' to select which frame to use when loading the
 them. If this option is given for a format that doesn't support slices, the slice is out of bounds,
 or when saving, the file will fail to load.
 
-When saving, only a small amount of effort will be made to convert the image to a data-type that the
-format supports (mainly making RGB into palletted). If the format does not support the data-type it
-will fail.
+When saving, only some formats will internally try to convert the image to a data-type that the
+they support (mainly making RGB into palletted). If the format does not support the data-type it
+will fail. To force the image to become palletted, use the 'pallette' option, which can be 'true'
+to use the PIL function quantize or an integer 1-256 to choose the number of colors that quantize
+will use. When reading, palletted images are always converted.
 
 Extensions listed below are used to determine the format to save as if not explicit, during loading
 the contents of the file are always used to determine the format.
@@ -606,8 +621,8 @@ are available with this plugin.""")
 class _PILStack(_PILSource):
     def __init__(self, frmt, open, accept, save=None):
         super(_PILStack, self).__init__(frmt, open, accept, None)
-    def open(self, f, filename, readonly, slice=None, **options):
-        s = super(_PILStack, self).open(f, filename, readonly, **options)
+    def open(self, file, readonly, slice=None, **options):
+        s = super(_PILStack, self).open(file, readonly, **options)
         if not s.is_stack: raise ValueError("File is not a stack")
         if slice is not None: s.seek(slice)
         return s
@@ -638,6 +653,7 @@ class _PILSlice(FileImageSlice):
         self._data = pil.data
     def _get_props(self): pass
     def _get_data(self): return self._data
+    def _set_data(self): pass # this can never be called
 
 class _RandomAccessPILStack(_PILStack):
     # A PIL stack for formats that allow random-access of slices. Each format exposes the total
@@ -647,7 +663,7 @@ class _RandomAccessPILStack(_PILStack):
     def depth(self): return 0
     def seek(self, idx):
         if idx >= self.depth: raise ValueError('Slice index out of range')
-        try: pil.seek(idx)
+        try: self.im.seek(idx)
         except EOFError: raise ValueError('Slice index out of range')
     def slices(self, stack):
         return [_RandomAccessPILSlice(stack, self, z) for z in xrange(self.depth)]
@@ -661,6 +677,7 @@ class _RandomAccessPILSlice(FileImageSlice):
     def _get_data(self):
         self._pil.seek(self._z)
         return self._pil.data
+    def _set_data(self): pass # this can never be called
 
 class _IMStack(_RandomAccessPILStack):
     @property
@@ -688,14 +705,14 @@ class _TIFFStack(_TIFFSource, _RandomAccessPILStack):
         if self._depth is None:
             z = 0
             while True:
-                try: pil.seek(z); z += 1
+                try: self.im.seek(z); z += 1
                 except EOFError: break
             self._depth = z
         return self._depth
     @property
     def header_info(self):
         h = {'format':self.im.format}
-        h.update(self.im.tag)
+        #h.update(self.im.tag)
         h.update(self.im.info)
         return h
 class _PSDStack(_RandomAccessPILStack):
@@ -709,7 +726,7 @@ class _PSDStack(_RandomAccessPILStack):
     def depth(self): return len(self.im.layers)
     def seek(self, idx):
         if idx >= self.depth: raise ValueError('Slice index out of range')
-        try: pil.seek(idx+1) # +1 for skipping the entire merged image
+        try: self.im.seek(idx+1) # +1 for skipping the entire merged image
         except EOFError: raise ValueError('Slice index out of range')
 
 _stacks = None
@@ -735,7 +752,7 @@ class PILStack(FileImageStack):
     @classmethod
     def open(cls, f, readonly=False, format=None, **options):
         if _stacks is None: _init_stack()
-        return PIL(_open_source(_stacks, format, f, readonly, **options))
+        return PILStack(_open_source(_stacks, format, f, readonly, **options))
     
     @classmethod
     def _openable(cls, filename, f, readonly, format=None, **options):
@@ -789,11 +806,13 @@ Supported image formats:""")
         self._stack = stack
         super(PILStack, self).__init__(PILHeader(stack), stack.slices(self), True)
     def close(self): self._stack.close()
-    
+    def _delete(self, idxs): pass # not possible since it is always read-only
+    def _insert(self, idx, ims): pass
+        
 class PILHeader(FileImageStackHeader):
     _fields = None
     def __init__(self, stack, **options):
-        data = stack.header_info()
+        data = stack.header_info
         data['options'] = options
         self._fields = {k:FixedField(lambda x:x,v,False) for k,v in data.iteritems()}
         super(PILHeader, self).__init__(data)
