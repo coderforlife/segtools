@@ -355,13 +355,13 @@ def _openable_source(sources, frmt, f, filename, readonly, **options):
 
 
 ########## Image Source ##########
-# There are various other options that I am not supporting here due to rarity or being able to add
-# them post-saving, but they could be added as needed.
+# TODO: There are various other options that I am not supporting here due to rarity or being able to
+# add them post-saving, but they could be added as needed.
 # Some examples of good things to add would be:
 #  * saving dpi and icc-profile (lots of formats support these two options)
 #  * GIF/PNG's saving param transparency
+#  * JPEG/WebP saving exif data
 #  * JPEG2000's opening params mode/reduce/layers and tons of saving params I don't understand
-#  * JPEG/WebP exif data
 class _EPSSource(_PILSource):
     def _parse_open_options(self, scale=1, **options):
         open_options, options = super(_EPSSource, self)._parse_open_options(**options)
@@ -629,6 +629,13 @@ class _PILStack(_PILSource):
         
     @property
     def is_stack(self): return True
+    @property
+    def header_info(self): return {}
+    @property
+    def header_stack_info(self):
+        h = {'format':self.im.format}
+        h.update(self.im.info)
+        return h
     def seek(self, idx):
         z = 0
         while z != idx:
@@ -695,7 +702,7 @@ class _MICStack(_RandomAccessPILStack):
     def depth(self): return len(self.im.images)
     @classmethod
     def is_stack(self): return self.im.category == Image.CONTAINER
-class _TIFFStack(_TIFFSource, _RandomAccessPILStack):
+class _TIFFStack(_RandomAccessPILStack):
     # Not quite random-access because we don't know the depth until we have gone all the way
     # through once. Also, internally, it does use increment and reset but is fast since it can skip
     # all of the image data.
@@ -710,7 +717,7 @@ class _TIFFStack(_TIFFSource, _RandomAccessPILStack):
             self._depth = z
         return self._depth
     @property
-    def header_info(self):
+    def header_stack_info(self):
         h = {'format':self.im.format}
         #h.update(self.im.tag)
         h.update(self.im.info)
@@ -812,7 +819,7 @@ Supported image formats:""")
 class PILHeader(FileImageStackHeader):
     _fields = None
     def __init__(self, stack, **options):
-        data = stack.header_info
+        data = stack.header_stack_info
         data['options'] = options
         self._fields = {k:FixedField(lambda x:x,v,False) for k,v in data.iteritems()}
         super(PILHeader, self).__init__(data)

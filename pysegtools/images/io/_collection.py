@@ -12,6 +12,7 @@ import os
 from ._stack import FileImageStack, FileImageSlice, FileImageStackHeader, Field, NumericField
 from ._single import FileImageSource
 from ..types import get_im_dtype
+from ..source import ImageSource
 from .._util import String, Unicode
 from ...imstack import Opt
 
@@ -147,10 +148,13 @@ class FileCollectionStack(FileImageStack):
             start, stop = start+(idx+len(filenames))*step, start+end*step
             filenames.extend(self._header.pattern % i for i in xrange(start, stop, step))
         FileCollectionStack.__rename(reversed(self._slices[idx:self._d]), reversed(filenames))
-        wo, hndlr, opts = self._writeonly, self._handler, self._header.options
-        self._insert_slices(idx, [FileSlice(self, FileImageSource.create(f,im,wo,hndlr,**opts), z)
-                                  for z,im,f in izip(xrange(idx,idx+len(ims)), ims, filenames)])
-## TODO:       for s, im in izip(self._slices[idx:end], ims): s._cache_data(im.data)
+        self._insert_slices(idx, [FileSlice(self, None, z) for z in xrange(idx,idx+len(ims))])
+        opts = self._header.options
+        for im,f in izip(ims, filenames):
+            im = im.data # get the image data so we can use it multiple times without reloading
+            src = ImageSource.as_image_source(im) # but we actually need it to be an image source
+            s._source = FileImageSource.create(f, src, self._writeonly, self._handler, **opts)
+            s._cache_data(im)
 
     def _delete(self, idx):
         for start, stop in idx:
