@@ -148,13 +148,14 @@ class FileCollectionStack(FileImageStack):
             start, stop = start+(idx+len(filenames))*step, start+end*step
             filenames.extend(self._header.pattern % i for i in xrange(start, stop, step))
         FileCollectionStack.__rename(reversed(self._slices[idx:self._d]), reversed(filenames))
-        self._insert_slices(idx, [FileSlice(self, None, z) for z in xrange(idx,idx+len(ims))])
+        self._insert_slices(idx, [FileSlice(self, DummyFileImageSource(f), z)
+                                  for z,f in izip(xrange(idx,idx+len(ims)),filenames)])
         opts = self._header.options
-        for im,f in izip(ims, filenames):
+        for im,f,slc in izip(ims, filenames, self._slices[idx:idx+len(ims)]):
             im = im.data # get the image data so we can use it multiple times without reloading
             src = ImageSource.as_image_source(im) # but we actually need it to be an image source
-            s._source = FileImageSource.create(f, src, self._writeonly, self._handler, **opts)
-            s._cache_data(im)
+            slc._source = FileImageSource.create(f, src, self._writeonly, self._handler, **opts)
+            slc._cache_data(im)
 
     def _delete(self, idx):
         for start, stop in idx:
@@ -180,6 +181,14 @@ class FileSlice(FileImageSlice):
         self._source.data = im
         self._set_props(get_im_dtype(im), im.shape[:2])
         return im
+
+class DummyFileImageSource(FileImageSource):
+    # This allows us to have an object with the right filename but doesn't do anything
+    # These abstract methods needs to be implemented but should never be called
+    def _get_props(self): raise RuntimeError()
+    def _set_filename(self, filename): raise RuntimeError()
+    def _get_data(self): raise RuntimeError()
+    def _set_data(self, im): raise RuntimeError()
 
 def cast_pattern(s):
     s = os.path.abspath(Unicode(s))

@@ -299,10 +299,10 @@ Examples:""")
             if stack_based: FileImageStack.is_handler(self._handler, False)
             else:           FileImageSource.is_handler(self._handler, False)
             self._name += ' using handler "'+self._handler+'"'
-        if len(self._kwargs)>0:
-            self._name += " with options " + (", ".join("%s=%s"%(k,v)
-                for k,v in self._kwargs.iteritems()
-                if stack_based or k not in ('pattern','start','step')))
+        opts = self._kwargs if stack_based else \
+               {k:v for k,v in self._kwargs.iteritems() if k not in ('pattern','start','step')}
+        if len(opts)>0:
+            self._name += " with options " + (", ".join("%s=%s"%(k,v) for k,v in opts.iteritems()))
 
     def execute(self, stack):
         from os.path import dirname

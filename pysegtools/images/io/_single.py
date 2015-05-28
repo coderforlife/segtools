@@ -199,6 +199,10 @@ class FileImageSource(DeferredPropertiesImageSource):
     def __delete__(self): self.close()
     @property
     def readonly(self): return self._readonly
+    @property
+    def header(self):
+        """Return 'header' information for an image. This should be a copy of a dictionary."""
+        return {}
 
     @abstractmethod
     def _get_props(self):
@@ -237,7 +241,7 @@ class FileImageSource(DeferredPropertiesImageSource):
         os.rename(self._filename, filename)
 
     @data.setter
-    def set_data(self, im):
+    def data(self, im):
         if self._readonly: raise ValueError('cannot set data for readonly image source')
         self._set_data(ImageSource.as_image_source(im))
 
@@ -262,5 +266,5 @@ class FileImageSource(DeferredPropertiesImageSource):
         """
         pass
 
-# Import additional formats
+# Import formats
 from . import handlers # pylint: disable=unused-import
