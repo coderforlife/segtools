@@ -184,7 +184,7 @@ Supported image types:""")
 class MRCSlice(FileImageSlice):
     def __init__(self, stack, header, z):
         super(MRCSlice, self).__init__(stack, z)
-        self._set_props(header._dtype, (header.nx, header.ny))
+        self._set_props(header._dtype, (header.ny, header.nx))
         self._file = stack._file
         self._off = stack._get_off(z)
     def _get_props(self): pass
