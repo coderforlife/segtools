@@ -5,6 +5,12 @@
 # features just added according to the mailing list but not published yet). This is implemented in
 # pure Python using numpy to read the image data.
 
+# See http://bio3d.colorado.edu/imod/doc/mrc_format.txt for the IMOD version of the specification
+# Other specifications:
+#   http://www.msg.ucsf.edu/IVE/IVE4_HTML/IM_ref2.html
+#   http://ami.scripps.edu/software/mrctools/mrc_specification.php
+#   http://www2.mrc-lmb.cam.ac.uk/image2000.html
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -24,7 +30,7 @@ from .._util import copy_data, openfile, imread_raw, imsave_raw, file_remove_ran
 __all__ = ['MRC']
 
 IMOD = 0x444F4D49 # "IMOD"
-MAP_ = 0x2050414D # "MAP "
+MAP_ = b"MAP "
 HDR_LEN = 224
 LBL_LEN = 80
 LBL_COUNT = 10
@@ -35,20 +41,23 @@ class MRCMode(int32, Enum): #pylint: disable=no-init
     Float   =  2 # 32 bit
     Short2  =  3 # 32 bit, complex, signed
     Float2  =  4 # 64 bit, complex
-    _Byte   =  5 # alternate for "Byte"
+    #_Byte   =  5 # alternate for "Byte" or maybe alternate for "Short", non-standard
     UShort  =  6 # 16 bit, non-standard
     Byte3   = 16 # 24 bit, rgb, non-standard
+    # Other non-standard used by non-IMOD programs: 7 = signed 64 bit, 101 = unsigned 4 bit (packed)
 
 class MRCFlags(int32, Flags): #pylint: disable=no-init
     SignedByte = 1
+    PixelSpacingFromSizeInExtHeader = 2
+    OriginSignInverted = 4
 
-class MRCEndian(int32, Enum): #pylint: disable=no-init
-    Little    = 0x00004144
-    LittleAlt = 0x00000044
-    Big       = 0x00001717
-    BigAlt    = 0x00000017
+class MRCEndian(bytes, Enum): #pylint: disable=no-init
+    Little    = b"\x44\x41\x00\x00"
+    LittleAlt = b"\x44\x00\x00\x00"
+    Big       = b"\x17\x17\x00\x00"
+    BigAlt    = b"\x17\x00\x00\x00"
 
-__dtype2mode = {
+_dtype2mode = {
     1:{uint8:MRCMode.Byte, int8:MRCMode.Byte, int16:MRCMode.Short, uint16:MRCMode.UShort,
        float32:MRCMode.Float, complex64:MRCMode.Float2},
     2:{int16:MRCMode.Short2, float32:MRCMode.Float2},
@@ -87,7 +96,7 @@ class MRC(HomogeneousFileImageStack):
         f.seek(0)
         raw = memoryview(f.read(HDR_LEN))
         if len(raw) != HDR_LEN: return False
-        map_, en = unpack('<ii', raw[208:216])
+        map_, en = unpack('<4s4s', raw[208:216])
         endian = '<'
         if map_ == MAP_:
             if en == MRCEndian.Big or en == MRCEndian.BigAlt: endian = '>'
@@ -196,9 +205,14 @@ class MRCSlice(FileImageSlice):
 def _f(cast): return Field(cast, False, False)
 def _f_ro(cast): return Field(cast, True, False)
 def _f_fix(cast, value): return FixedField(cast, value, False)
+def _b4(value): # 4-byte value not influenced by byte ordering (although if given an integer it assumes little endian)
+    from numbers import Integral
+    if isinstance(value, Integral): value = pack("<i", int(value))
+    if not isinstance(value, bytes) or len(value) != 4: raise ValueError
+    return value
 
 class MRCHeader(FileImageStackHeader):
-    __format_new = '10i6f3i3fiih30xhh20xii6h6f3f2ifi' # needs endian byte before using
+    __format_new = '10i6f3i3fiih30xhh20xii6h6f3f4s4sfi' # needs endian byte before using
     __format_old = '<10i6f3i3fiih30xhh20xii6h6f6h3fi' # always little endian
 
     # These cannot be changed directly: (either they are implied from the data type/size or have a utility to change them properly)
@@ -224,7 +238,7 @@ class MRCHeader(FileImageStackHeader):
             ])
     __fields_new = OrderedDict([
             ('xorg',_f(float32)),('yorg',_f(float32)),('zorg',_f(float32)),            # origin of image
-            ('cmap',_f_fix(int32,MAP_)),('stamp',_f_ro(MRCEndian)),                    # for detecting file type, cmap == 0x2050414D (MAP ) and stamp == 0x00004441 or 0x00001717 for little/big endian
+            ('cmap',_f_fix(_b4,MAP_)),('stamp',_f_ro(MRCEndian)),                      # for detecting file type, cmap == 0x2050414D (MAP ) and stamp == 0x00004441 or 0x00001717 for little/big endian
             ('rms',_f(float32)),                                                       # the RMS deviation of densities from mean density
             ('nlabl',_f_ro(int32)),                                                    # number of meaningful labels
             ])
@@ -259,7 +273,7 @@ class MRCHeader(FileImageStackHeader):
         try:
             raw = f.read(HDR_LEN)
             if len(raw) != HDR_LEN: raise ValueError('MRC file does not have enough bytes for header')
-            map_, en = unpack('<ii', raw[208:216])
+            map_, en = unpack('<4s4s', raw[208:216])
             endian = '<'
             if map_ == MAP_:
                 if en == MRCEndian.Big or en == MRCEndian.BigAlt:
@@ -309,7 +323,7 @@ class MRCHeader(FileImageStackHeader):
     def __get_dtype(self, endian):
         # Determine data type
         mode = self._data['mode']
-        if mode in (MRCMode.Byte, MRCMode._Byte):
+        if mode == MRCMode.Byte:
             stamp, flags = self._data['imodStamp'], self._data['imodFlags']
             return create_im_dtype(int8 if stamp == IMOD and MRCFlags.SignedByte in flags else uint8)
         elif mode in _mode2dtype:
@@ -322,7 +336,7 @@ class MRCHeader(FileImageStackHeader):
         # Get the mode
         self._dtype = dtype
         dt, nchan = get_im_dtype_and_nchan(dtype)
-        mode = __dtype2mode.get(nchan, {}).get(dt.type, None)
+        mode = _dtype2mode.get(nchan, {}).get(dt.type, None)
         if mode is None: raise ValueError('dtype not supported')
         endian = get_dtype_endian(dt)
 
