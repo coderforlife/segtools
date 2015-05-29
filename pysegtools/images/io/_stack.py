@@ -20,7 +20,7 @@ from .._util import String
 from ..types import is_image, get_im_dtype
 from ..source import ImageSource
 from ._single import FileImageSource
-from ...imstack import Help
+from ...imstack import Help, Opt
 from ...general.datawrapper import DictionaryWrapperWithAttr
 from ...general.utils import all_subclasses
 
@@ -264,13 +264,68 @@ class FileImageStack(ImageStack):
     def readonly(self): return self._readonly
     @property
     def header(self): return self._header
-    def print_detailed_info(self, width=None):
-        fill = ImageStack._get_print_fill(width)
-        super(FileImageStack, self).print_detailed_info()
-        if not self.header or len(self.header) == 0: print(fill("No header information"))
+    @staticmethod
+    def _print_header(header, width=None, first_indent=None, indent=2, sub_indent=20):
+        if header is None or len(header) == 0: return
+        def _filter(x):
+            if isinstance(x, bytes) and not all((32 <= ord(c) < 128) or (c in (b'\t\r\n\v')) for c in x):
+                x = "<%d bytes of data>" % len(x)
+            else:
+                x = unicode(x)
+                if len(x) > 50: x = x[:47]+"..."
+            return x
+        from textwrap import TextWrapper
+        non1st = ' '*indent
+        fill_sub = (lambda x:non1st+x) if width is None else \
+                   TextWrapper(width=width, initial_indent=non1st, subsequent_indent=' '*sub_indent).fill
+        if first_indent is None:
+            fill = fill_sub
         else:
-            print(fill("Header:"))
-            for k,v in self._header.iteritems(): print(fill("  %s = %s" % (k,v)))
+            fill = (lambda x:first_indent+x) if width is None else \
+                   TextWrapper(width=width, initial_indent=first_indent, subsequent_indent=' '*sub_indent).fill
+        for k,v in header.iteritems():
+            v = _filter(v)
+            s = k+": "
+            if len(k) < sub_indent - indent - 2:
+                s += " "*(sub_indent - indent - 2 - len(k))
+            print(fill(s+v))
+            fill = fill_sub
+    def print_detailed_info(self, width=None):
+        from ..types import im_dtype_desc
+        fill = ImageStack._get_print_fill(width)
+        h,s,d = self._get_homogeneous_info()
+        z_width = len(str(self._d-1))
+        print(fill("Handler:     %s" % type(self).__name__))
+        if self._d == 0:
+            print(fill("Depth:      0"))
+            print(fill("Total Size: 0 kb"))
+            if self.header and len(self.header) > 0:
+                print(fill("Header:"))
+                FileImageStack._print_header(self.header, width)
+        elif h == Homogeneous.All:
+            print(fill("Dimensions: %d x %d x %d (WxHxD)" % (s[1], s[0], self._d)))
+            print(fill("Data Type:  %s" % im_dtype_desc(d)))
+            nb = s[1] * s[0] * d.itemsize
+            print(fill("Slice Size: %d kb" % (nb//1024)))
+            print(fill("Total Size: %d kb" % (nb*self._d//1024)))
+            if self.header and len(self.header) > 0:
+                print(fill("Header:"))
+                FileImageStack._print_header(self.header, width)
+            ind = "  {z:0>%d}: " % z_width
+            for z,im in enumerate(self._slices):
+                FileImageStack._print_header(im.header, width, ind.format(z=z), z_width+4)
+        else:
+            print(fill("Depth:      %d" % self._d))
+            print(fill("Total Size: %d kb" % (sum(im.w*im.h*im.dtype.itemsize for im in self._slices)//1024)))
+            if self.header and len(self.header) > 0:
+                print(fill("Header:"))
+                FileImageStack._print_header(self.header, width)
+            line = "{z:0>%d}: {w}x{h} {dt} {nb}kb" % z_width
+            for z,im in enumerate(self._slices):
+                nb = im.w*im.h*im.dtype.itemsize//1024
+                print(fill(line.format(z=z, w=im.w, h=im.h, dt=im_dtype_desc(im.dtype), nb=nb)))
+                FileImageStack._print_header(im.header, width, None, z_width+2)
+
 
     # Internal slice maniplutions - primary functions to be implemented by base classes
     # Getting and setting individual slices is done in the FileImageSlice objects
@@ -486,12 +541,21 @@ class HomogeneousFileImageStack(HomogeneousImageStack, FileImageStack):
     def __init__(self, header, slices, w, h, dtype, readonly=False):
         super(HomogeneousFileImageStack, self).__init__(w, h, dtype, slices, {'header':header,'readonly':readonly})
     def print_detailed_info(self, width=None):
+        from ..types import im_dtype_desc
         fill = ImageStack._get_print_fill(width)
-        super(HomogeneousFileImageStack, self).print_detailed_info()
-        if len(self.header) == 0: print(fill("No header information"))
-        else:
+        z_width = len(str(self._d-1))
+        print(fill("Handler:    %s" % type(self).__name__))
+        print(fill("Dimensions: %d x %d x %d (WxHxD)" % (self._w, self._h, self._d)))
+        print(fill("Data Type:  %s" % im_dtype_desc(self._dtype)))
+        nb = self._w * self._h * self._dtype.itemsize
+        print(fill("Slice Size: %d" % (nb//1024)))
+        print(fill("Total Size: %d" % (nb*self._d//1024)))
+        if self.header and len(self.header) > 0:
             print(fill("Header:"))
-            for k,v in self._header.iteritems(): print(fill("  %s = %s" % (k,v)))
+            FileImageStack._print_header(self.header, width)
+        ind = "  {z:0>%d}: " % z_width
+        for z,im in enumerate(self._slices):
+            FileImageStack._print_header(im.header, width, ind.format(z=z), z_width+4)
     @abstractmethod
     def _delete(self, idxs): pass
     @abstractmethod
@@ -504,6 +568,16 @@ class FileImageSlice(ImageSlice):
     _get_props function (the trivial one would be def _get_props(self): pass).
     """
     def __init__(self, stack, z): super(FileImageSlice, self).__init__(stack, z)
+
+    @property
+    def header(self):
+        """
+        Get the 'header' for this slice. This is completely optional and it is perfectly fine to
+        leave this returning None (the default). The information returned by this (in a dictionary)
+        should not be redundant with the header for the stack or the properties of the slice itself
+        (such as size or dtype).
+        """
+        return None
 
     @ImageSlice.data.setter
     def data(self, im):
@@ -664,8 +738,17 @@ class FileImageStackHeader(DictionaryWrapperWithAttr):
         itr = d.iteritems() if isinstance(d, dict) else d
         for k,v in itr: self[k] = v
 
+class _FieldMetaclass(type):
+    """This metaclass mirrors all the 'cast_' static methods from Opt into field."""
+    def __getattr__(self, name):
+        if name.startswith('cast_') and hasattr(Opt, name): return getattr(Opt, name)
+        raise AttributeError
+    def __dir__(self):
+        d = super(_FieldMetaclass, self).__dir__()
+        d.update({k:v for k,v in dir(Opt).iteritems() if k.startswith('cast_')})
+        return d
+        
 class Field(object):
-    # TODO: re-use the casting system from the command-line parsing
     """
     A image stack header field. The base class takes a casting function, if the value is read-only
     (to the external world, default False), if the field is optional (default True), and a default
@@ -674,6 +757,7 @@ class Field(object):
     The cast function should take a wide array of values and convert them if possible to the true
     type. If the input value cannot be converted, a TypeError or ValueError should be raised.
     """
+    __metaclass__ = _FieldMetaclass
     def __init__(self, cast=None, ro=False, opt=True, default=None):
         self._cast = cast
         self.ro    = ro

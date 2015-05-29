@@ -74,28 +74,27 @@ class ImageStack(object):
     @staticmethod
     def _get_print_fill(width):
         from textwrap import TextWrapper
-        return (lambda x:x) if width is None else TextWrapper(width=width, subsequent_indent=' '*13).fill
+        return (lambda x:x) if width is None else TextWrapper(width=width, subsequent_indent=' '*12).fill
     def print_detailed_info(self, width=None):
         fill = ImageStack._get_print_fill(width)
         h,s,d = self._get_homogeneous_info()
-        total_bytes = 0
-        print(fill("Handler:     %s" % type(self).__name__))
+        print(fill("Handler:    %s" % type(self).__name__))
         if self._d == 0:
-            print(fill("Slices:      0"))
+            print(fill("Depth:      0"))
+            print(fill("Total Size: 0 kb"))
         elif h == Homogeneous.All:
-            print(fill("Dimensions:  %d x %d x %d (WxHxD)" % (s[1], s[0], self._d)))
-            print(fill("Data Type:   %s" % im_dtype_desc(d)))
-            sec_bytes = s[1] * s[0] * d.itemsize
-            print(fill("Bytes/Slice: %d" % sec_bytes))
-            total_bytes = self._d * sec_bytes
+            print(fill("Dimensions: %d x %d x %d (WxHxD)" % (s[1], s[0], self._d)))
+            print(fill("Data Type:  %s" % im_dtype_desc(d)))
+            nb = s[1] * s[0] * d.itemsize
+            print(fill("Slice Size: %d kb" % (nb//1024)))
+            print(fill("Total Size: %d kb" % (nb*self._d//1024)))
         else:
-            print(fill("Slices:      %d" % (self._d)))
-            line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s  %d bytes"
+            print(fill("Depth:      %d" % (self._d)))
+            print(fill("Total Size: %d kb" % (sum(im.w*im.h*im.dtype.itemsize for im in self._slices)//1024)))
+            line = "{z:0>%d}: {w}x{h} {dt} {nb}kb" % (len(str(self._d-1)))
             for z,im in enumerate(self._slices):
-                sec_bytes = im.w * im.h * im.dtype.itemsize
-                print(fill(line % (z, im.w, im.h, im_dtype_desc(im.dtype), sec_bytes)))
-                total_bytes += sec_bytes
-        print(fill("Total Bytes: %d" % total_bytes))
+                nb = im.w*im.h*im.dtype.itemsize//1024
+                print(fill(line.format(z=z, w=im.w, h=im.h, dt=im_dtype_desc(im.dtype), nb=nb)))
 
     # Homogeneous interface
     def _get_homogeneous_info(self):
@@ -236,12 +235,12 @@ class HomogeneousImageStack(ImageStack):
     def __str__(self): return "%s: %dx%dx%d %s" % (type(self).__name__, self._w, self._h, self._d, im_dtype_desc(self._dtype))
     def print_detailed_info(self, width=None):
         fill = ImageStack._get_print_fill(width)
-        print(fill("Handler:     %s" % type(self).__name__))
-        print(fill("Dimensions:  %d x %d x %d (WxHxD)" % (self._w, self._h, self._d)))
-        print(fill("Data Type:   %s" % im_dtype_desc(self._dtype)))
-        sec_bytes = self._w * self._h * self._dtype.itemsize
-        print(fill("Bytes/Slice: %d" % sec_bytes))
-        print(fill("Total Bytes: %d" % (self._d * sec_bytes)))
+        print(fill("Handler:    %s" % type(self).__name__))
+        print(fill("Dimensions: %d x %d x %d (WxHxD)" % (self._w, self._h, self._d)))
+        print(fill("Data Type:  %s" % im_dtype_desc(self._dtype)))
+        nb = self._w * self._h * self._dtype.itemsize
+        print(fill("Slice Size: %d kb" % (nb//1024)))
+        print(fill("Total Size: %d kb" % (nb*self._d//1024)))
 
     def _get_homogeneous_info(self): return Homogeneous.All, self._shape, self._dtype
     def _update_homogeneous_set(self, z, shape, dtype): pass

@@ -14,7 +14,6 @@ from ._single import FileImageSource
 from ..types import get_im_dtype
 from ..source import ImageSource
 from .._util import String, Unicode
-from ...imstack import Opt
 
 __all__ = ['FileCollectionStack']
 
@@ -118,6 +117,36 @@ class FileCollectionStack(FileImageStack):
         self._handler = handler
         self._orig_files = filenames
 
+    def print_detailed_info(self, width=None):
+        from .._stack import ImageStack, Homogeneous
+        from ..types import im_dtype_desc
+        fill = ImageStack._get_print_fill(width)
+        h,s,d = self._get_homogeneous_info()
+        z_width = len(str(self._d-1))
+        print(fill("Handler:     %s" % type(self).__name__))
+        if self._d == 0:
+            print(fill("Files:      0"))
+            print(fill("Total Size: 0 kb"))
+        elif h == Homogeneous.All:
+            print(fill("Dimensions: %d x %d x %d (WxHxD)" % (s[1], s[0], self._d)))
+            print(fill("Data Type:  %s" % im_dtype_desc(d)))
+            nb = s[1] * s[0] * d.itemsize
+            print(fill("Slice Size: %d kb" % (nb//1024)))
+            print(fill("Total Size: %d kb" % (nb*self._d//1024)))
+            line = "  {z:0>%d}: {handler}: {filename}" % z_width
+            for z,im in enumerate(self._slices):
+                print(line.format(z=z, filename=im._source.filename, handler=type(im._source).__name__))
+                FileImageStack._print_header(im.header, width, None, z_width+4)
+        else:
+            print(fill("Files:      %d" % self._d))
+            print(fill("Total Size: %d kb" % (sum(im.w*im.h*im.dtype.itemsize for im in self._slices)//1024)))
+            line = "{z:0>%d}: {handler}: {w}x{h} {dt} {nb}kb {filename}" % z_width
+            for z,im in enumerate(self._slices):
+                nb = im.w*im.h*im.dtype.itemsize//1024
+                print(fill(line.format(z=z, w=im.w, h=im.h, dt=im_dtype_desc(im.dtype), nb=nb,
+                                       filename=im._source.filename, handler=type(im._source).__name__)))
+                FileImageStack._print_header(im.header, width, None, z_width+2)
+
     @staticmethod
     def __rename(slices, filenames):
         """
@@ -171,6 +200,8 @@ class FileSlice(FileImageSlice):
     def __init__(self, stack, source, z):
         super(FileSlice, self).__init__(stack, z)
         self._source = source
+    @property
+    def header(self): return self._source.header
     def _get_props(self): self._set_props(self._source.dtype, self._source.shape)
     def _get_data(self):
         im = self._source.data
@@ -198,12 +229,12 @@ def cast_pattern(s):
 
 class FileCollectionStackHeader(FileImageStackHeader):
     """
-    Header for a image file collectionstack. The only fields are a tuple of the files being used. If
-    there is a pattern for files to load, it along with the starting and step values are also
+    Header for a image file collection stack. The only fields are a tuple of the files being used.
+    If there is a pattern for files to load, it along with the starting and step values are also
     available.
     """
     __fields_raw = {
-        'handler': Field(Opt.cast_check(FileImageSource.is_handler), True, True),
+        'handler': Field(Field.cast_check(FileImageSource.is_handler), True, True),
         'options': Field(dict, True, False),
         'files':   Field(tuple, True, False),
         'pattern': Field(cast_pattern, True, True),

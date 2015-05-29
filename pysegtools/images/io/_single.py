@@ -201,8 +201,10 @@ class FileImageSource(DeferredPropertiesImageSource):
     def readonly(self): return self._readonly
     @property
     def header(self):
-        """Return 'header' information for an image. This should be a copy of a dictionary."""
-        return {}
+        """
+        Return 'header' information for an image. This should be a copy of a dictionary or None.
+        """
+        return None
 
     @abstractmethod
     def _get_props(self):
