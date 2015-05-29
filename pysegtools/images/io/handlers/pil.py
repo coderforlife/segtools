@@ -292,7 +292,7 @@ class _PILSource(object):
     @property
     def dtype(self):
         dt = self.dtype_raw
-        if self.im is not None and self.im.mode=='P' and self.im.info['transparency']:
+        if self.im is not None and self.im.mode=='P' and 'transparency' in self.im.info:
             # need to add an extra channel for the transparency data
             from numpy import dtype
             dt = dtype((dt.base, 2 if len(dt.shape) == 0 else (dt.shape[0]+1)))
