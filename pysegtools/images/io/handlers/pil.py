@@ -544,18 +544,18 @@ class PIL(FileImageSource):
         return _sources, options
             
     @classmethod
-    def open(cls, f, readonly, format=None, **options):
+    def open(cls, f, readonly=False, format=None, **options):
         sources, options = PIL.__parse_opts(**options)
         return PIL(_open_source(sources, format, f, readonly, **options))
 
     @classmethod
-    def _openable(cls, filename, f, readonly, format=None, **options):
+    def _openable(cls, filename, f, readonly=False, format=None, **options):
         try: sources, options = PIL.__parse_opts(**options)
         except ValueError: return False
         return _openable_source(sources, format, f, filename, readonly, **options)
 
     @classmethod
-    def create(cls, filename, im, writeonly, format=None, **options):
+    def create(cls, filename, im, writeonly=False, format=None, **options):
         if _sources is None: _init_source()
         if format is None:
             from os.path import splitext
@@ -564,7 +564,7 @@ class PIL(FileImageSource):
         return PIL(_sources[format].create(filename, im, writeonly, **options))
 
     @classmethod
-    def _creatable(cls, filename, ext, writeonly, format=None, **options):
+    def _creatable(cls, filename, ext, writeonly=False, format=None, **options):
         if _sources is None: _init_source()
         if format is None:
             format = Image.EXTENSION.get(ext)
@@ -901,12 +901,12 @@ def _init_stack():
 
 class PILStack(FileImageStack):
     @classmethod
-    def open(cls, f, readonly=False, format=None, **options):
+    def open(cls, f, readonly=True, format=None, **options):
         if _stacks is None: _init_stack()
         return PILStack(_open_source(_stacks, format, f, readonly, **options))
     
     @classmethod
-    def _openable(cls, filename, f, readonly, format=None, **options):
+    def _openable(cls, filename, f, readonly=True, format=None, **options):
         if _stacks is None: _init_stack()
         return _openable_source(_stacks, format, f, filename, readonly, **options)
 
