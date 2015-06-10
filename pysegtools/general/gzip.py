@@ -39,9 +39,10 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import io, os, sys, struct
+import io, os, re, sys, struct
 from time import time
 from collections import OrderedDict
+from datetime import date, datetime
 import zlib
 
 __all__ = ['gzip_oses', 'default_gzip_os',
@@ -86,6 +87,7 @@ _exts = {
     }
 
 String,Unicode,Byte = (str,str,int) if (sys.version_info[0] == 3) else (basestring,unicode,ord)
+_re_not_zero = re.compile(br'[^\0]')
 _uint16 = struct.Struct(str('<H'))
 _uint32 = struct.Struct(str('<L'))
 _uint16_be = struct.Struct(str('>H'))
@@ -176,7 +178,7 @@ def __compress_file_gzip_opts(in_filename, inpt):
             opts['mtime'] = os.path.getmtime(in_filename)
         else:
             opts['mtime'] = os.fstat(inpt.fileno()).st_mtime
-    except OSError: pass
+    except (OSError, IOError): pass
     return opts
 
 def decompress_file(inpt, output=None, method=None):
@@ -209,25 +211,31 @@ def decompress_file(inpt, output=None, method=None):
 def compress(inpt, level=9, method=None):
     level = int(level)
     if method not in (None, 'gzip', 'zlib', 'deflate'): raise ValueError('Compression method must be one of deflate, zlib, or gzip')
-    data = zlib.compress(inpt, level)
+    # zlib.compress doesn't support wbits argument, which we need to set as negative to prevent headers being added
+    c = zlib.compressobj(level, zlib.DEFLATED, -zlib.MAX_WBITS)
+    data1 = c.compress(inpt)
+    data2 = c.flush(zlib.Z_FINISH)
+    del c
     if method == 'gzip' or method is None:
-        out = bytearray(len(data)+18)
-        out[12:-8] = data
-        del data
+        out = bytearray(len(data1)+len(data2)+18)
+        out[12:12+len(data1)] = data1
+        out[12+len(data1):-8] = data2
+        del data1, data2
         # Header
         out[:4] = b'\x1F\x8B\x08\x02'
         _uint32.pack_into(out, 4, int(time()))
         out[8] = 2 if level >= 7 else (4 if level <= 2 else 0)
         out[9] = 0xFF
-        _uint16.pack_into(out, 10, 0xffff & zlib.crc32(out[:10]))
+        _uint16.pack_into(out, 10, 0xffff & zlib.crc32(buffer(out)[:10]))
         # Footer
         _uint32.pack_into(out, -8, 0xffffffff & zlib.crc32(inpt))
         _uint32.pack_into(out, -4, 0xffffffff & len(inpt))
         return bytes(out)
     elif method == 'zlib':
-        out = bytearray(len(data)+6)
-        out[2:-4] = data
-        del data
+        out = bytearray(len(data1)+len(data2)+6)
+        out[2:2+len(data1)] = data1
+        out[2+len(data1):-4] = data2
+        del data1, data2
         # Header
         header = 0x7800 | (((level+1)//3) << 6)
         mod31 = header % 31
@@ -236,8 +244,8 @@ def compress(inpt, level=9, method=None):
         # Footer
         _uint32_be.pack_into(out, -4, 0xffffffff & zlib.adler32(inpt))
         return bytes(out)
-    else # method == 'deflate':
-        return data
+    else: # method == 'deflate'
+        return data1 + data2
         
 
 def decompress(inpt, method=None):
@@ -254,7 +262,7 @@ def __decompress_gzip(inpt):
     if flags & _FNAME:    off = inpt.index(b'\x00', off) + 1
     if flags & _FCOMMENT: off = inpt.index(b'\x00', off) + 1
     if flags & _FHCRC:
-        if _uint16.unpack_from(inpt, off)[0] != (zlib.crc32(inpt[:off]) & 0xffff): raise IOError('Header corrupted')
+        if _uint16.unpack_from(inpt, off)[0] != (zlib.crc32(buffer(inpt)[:off]) & 0xffff): raise IOError('Header corrupted')
         off += 2
     isize = _uint32.unpack_from(inpt, -4)[0]
     out = zlib.decompress(inpt[off:-8], -zlib.MAX_WBITS, isize)
@@ -269,7 +277,7 @@ def __decompress_zlib(inpt):
     if method != 8 or wsize > zlib.MAX_WBITS or fdict: raise IOError('Unknown compression method')
     if header % 31 != 0: raise IOError('Header corrupted')
     out = zlib.decompress(inpt[2:-4], -wsize)
-    if _uint32_be.unpack_from(inpt, -4)[0] != zlib.adler32(s): raise IOError("Adler32 check failed")
+    if _uint32_be.unpack_from(inpt, -4)[0] != zlib.adler32(out): raise IOError("Adler32 check failed")
     return out
 
 def guess_file_compression_method(f):
@@ -337,8 +345,8 @@ class GzipFile(io.BufferedIOBase):
             os         an integer from 0 to 255 or string that describes the filesystem where the
                        file orginated (default depends on system, only strings in gzip_oses are
                        supported)
-            mtime      an integer representing the modification time of the original file as a UNIX
-                       timestamp or a datetime object (default is now)
+            mtime      a datetime object or an integer representing the modification time of the
+                       original file as a UNIX timestamp (default is now)
             text       True if the data being written is text (default is binary)
             filename   the original filename that is being compressed (default is filename without
                        .gz if obtainable)
@@ -347,11 +355,11 @@ class GzipFile(io.BufferedIOBase):
                        the ids being 2-byte strings and data being convertible to byte.
 
         When reading gzip data the extra information is available from the gzip_options property.
-        The properties when reading or writing are "standardized" so that 'os' and 'mtime' are
-        integers, 'text' is a boolean, 'filename' and 'comment' or unicode strings, and 'extras' is
-        an OrderedDict of bytes. Fields not in the header are simply not included. Also, a key 'xf'
-        is available in the dictionary corresponding to the XF flag of the header (2 for max
-        compression, 4 for fastest compression, and 0 otherwise). This value is ignored if given
+        The properties when reading or writing are "standardized" so that 'os' is an integer,
+        'mtime' is a datetime, 'text' is a boolean, 'filename' and 'comment' or unicode strings, and
+        'extras' is an OrderedDict of bytes. Fields not in the header are simply not included. Also,
+        a key 'xf' is available in the dictionary corresponding to the XF flag of the header (2 for
+        max compression, 4 for fastest compression, and 0 otherwise). This value is ignored if given
         while writing, and a calculated value is used.
         """
         super(GzipFile, self).__init__()
@@ -365,12 +373,12 @@ class GzipFile(io.BufferedIOBase):
         # Setup properties
         self.owns_handle = isinstance(file, String)
         self.name = _get_filename(file, '')
-        if method == 'gzip' and writing:
+        if writing and method == 'gzip':
             self.__gzip_options = GzipFile.__check_gzip_opts(kwargs, self.name)
         elif kwargs: raise ValueError('Extra keyword arguments can only be provided when writing gzip data')
         self.__mode = mode
         self.__writing = writing
-        self.__start_off = 0 if start_off is None else start_off
+        self.__start_off = start_off #0 if start_off is None else start_off
         self.__size = 0
         self.__base = self.__open(file)
         if method is None:
@@ -425,22 +433,20 @@ class GzipFile(io.BufferedIOBase):
     def __check_gzip_opts(kwargs, filename):
         if len(kwargs.viewkeys()-{'text','os','mtime','filename','comment','extras','xf'}):
             raise ValueError('Gzip options must only include text, os, mtime, filename, comment, and extras')
+
         gzip_os = kwargs.get('os', default_gzip_os)
         gzip_os = gzip_oses[gzip_os] if isinstance(gzip_os, String) else int(gzip_os)
         if gzip_os > 255 or gzip_os < 0: raise ValueError('Gzip OS is an invalid value')
-        mtime = kwargs.get('mtime', time())
-        from date import date, datetime
-        if isinstance(mtime, date):
-            if not isinstance(mtime, datetime):
-                mtime = datetime(mtime.year, mtime.month, mtime.day)
-            if mtime.tzinfo is not None and mtime.tzinfo.utcoffset(mtime) is not None:
-                mtime = mtime.replace(tzinfo=None) - mtime.utcoffset()
-            mtime = (mtime - datetime.fromtimestamp(0)).total_seconds()
-        opts = {'os':gzip_os, 'mtime':int(mtime), 'text':('text' in kwargs and kwargs['text'])}
+
+        mtime = kwargs.get('mtime', datetime.now())
+        mtime = ((mtime if isinstance(mtime, datetime) else datetime(mtime.year, mtime.month, mtime.day))
+                 if isinstance(mtime, date) else datetime.fromtimestamp(int(mtime)))
+        opts = {'os':gzip_os, 'mtime':mtime, 'text':('text' in kwargs and kwargs['text'])}
         
         filename = filename[:-3] if filename and filename.endswith('.gz') else None
-        filename = kwargs.get('filename', filename))
+        filename = kwargs.get('filename', filename)
         if filename is not None: opts['filename'] = _gzip_header_str(filename)
+        
         if 'comment' in kwargs:  opts['comment']  = _gzip_header_str(kwargs[comment])
         
         extras = kwargs.get('extras')
@@ -497,7 +503,7 @@ class GzipFile(io.BufferedIOBase):
     def checksum(self): return self.__checksum
     @property
     def gzip_options(self):
-        if not hasattr(self, '__gzip_options'): raise AttributeError('Not a gzip file')
+        if not hasattr(self, '_GzipFile__gzip_options'): raise AttributeError('Not a gzip file')
         return self.__gzip_options.copy() # they aren't allowed to manipulate the internal dictionary
 
     # Close
@@ -577,19 +583,21 @@ class GzipFile(io.BufferedIOBase):
         if self.__method == 'gzip':
             opts = self.__gzip_options
             flags = _FHCRC
-            if 'text'     in opts: flags |= _FTEXT
+            if opts['text']:       flags |= _FTEXT
             if 'extras'   in opts: flags |= _FEXTRA
             if 'filename' in opts: flags |= _FNAME
             if 'comment'  in opts: flags |= _FCOMMENT
-            self.__base.write()
             header = bytearray(10)
             header[:3] = b'\x1F\x8B\x08'
             header[3] = flags
-            _uint32.pack_into(header, 4, opts['mtime'])
+            mtime = opts['mtime']
+            if mtime.tzinfo is not None and mtime.tzinfo.utcoffset(mtime) is not None:
+                mtime = mtime.replace(tzinfo=None) - mtime.utcoffset()
+            _uint32.pack_into(header, 4, (mtime - datetime.fromtimestamp(0)).total_seconds())
             header[8] = opts['xf'] = 2 if level >= 7 else (4 if level <= 2 else 0)
             header[9] = opts['os']
             self.__base.write(header)
-            chk16 = zlib.crc32(header) & 0xffffffff
+            chk16 = zlib.crc32(buffer(header)) & 0xffffffff
             if 'extras' in opts:
                 xlen = opts['extras']._xlen
                 extras = bytearray(xlen)
@@ -602,7 +610,7 @@ class GzipFile(io.BufferedIOBase):
                     extras[off+4:off+4+l] = data
                     off += 4 + l
                 self.__base.write(extras)
-                chk16 = zlib.crc32(extras) & 0xffffffff
+                chk16 = zlib.crc32(buffer(extras)) & 0xffffffff
             if 'filename' in opts: chk16 = _write_gzip_header_str(self.__base, opts['filename'], chk16)
             if 'comment' in opts:  chk16 = _write_gzip_header_str(self.__base, opts['comment'],  chk16)
             self.__base.write(_uint16.pack(chk16 & 0xffff))
@@ -655,19 +663,16 @@ class GzipFile(io.BufferedIOBase):
             self.__base_buf = b''
         else:
             s = self.__base.read(n)
-        if check_eof and len(s) != n: raise EOFError
+        if check_eof and len(s) != n:
+            self.__base_buf = s
+            raise EOFError
         return s
     def __skip_0s(self):
         """Skips all upcoming 0s in the data."""
-        if not hasattr(GzipFile.__skip_0s, '_find_not_zero'):
-            import re
-            GzipFile.__skip_0s._re_not_zero = re.compile(br'[^\0]')
-        re_not_zero = GzipFile.__skip_0s._re_not_zero
-
         s = self.__base_buf or self.__base.read(1024)
         self.__base_buf = b''
         while len(s) > 0:
-            m = re_not_zero.search(s)
+            m = _re_not_zero.search(s)
             if m is not None: # found a non-zero
                 self.__base_buf = s[m.start():]
                 break
@@ -701,11 +706,11 @@ class GzipFile(io.BufferedIOBase):
         opts = self.__gzip_options
         header = self.__read_base(10)
         chk16 = zlib.crc32(header) & 0xffffffff
-        if header[:3] != '\x1F\x8B\x08': raise IOError('Not a gzipped file')
+        if header[:3] != b'\x1F\x8B\x08': raise IOError('Not a gzipped file')
         flags = Byte(header[3])
         if flags & 0xE0: raise IOError('Unknown flags')
         opts['text'] = (flags & _FTEXT) != 0
-        opts['mtime'] = _uint32.unpack_from(header, 4)[0]
+        opts['mtime'] = datetime.fromtimestamp(_uint32.unpack_from(header, 4)[0])
         opts['xf'] = Byte(header[8])
         opts['os'] = Byte(header[9])
         if flags & _FEXTRA:
@@ -715,7 +720,7 @@ class GzipFile(io.BufferedIOBase):
             extras = self.__read_base(_uint16.unpack(xlen)[0])
             chk16 = zlib.crc32(extras, chk16) & 0xffffffff
             ext = opts['extras'] = OrderedDict()
-            off = 2
+            off = 0
             while off+4 <= len(extras):
                 l = _uint16.unpack_from(extras, off+2)[0]
                 if off+l+4 > len(extras): raise IOError('Invalid extra fields in header')
@@ -748,7 +753,10 @@ class GzipFile(io.BufferedIOBase):
         if self.__new_member:
             self.__checksum = self.__calc_checksum(b'') & 0xffffffff
             self.__size = 0
-            self.__read_header()
+            try: self.__read_header()
+            except EOFError:
+                if self.__base_buf == b'': return (b'', True)
+                raise
             self.__new_member = False
         buf = self.__read_base(size, False)
         if len(buf) == 0:
