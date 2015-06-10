@@ -18,19 +18,20 @@ from __future__ import unicode_literals
 
 from collections import OrderedDict
 from itertools import izip
+from struct import Struct
 from numpy import int8, uint8, int16, uint16, int32, float32, complex64
 
 from ....general.datawrapper import ListWrapper, ReadOnlyListWrapper
 from ....general.enum import Enum, Flags
 from ...types import create_im_dtype, get_im_dtype_and_nchan, get_dtype_endian
-from ..._util import Unicode, pack, unpack, unpack1
+from ..._util import Unicode
 from .._stack import HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader, Field, FixedField
 from .._util import copy_data, openfile, imread_raw, imsave_raw, file_remove_ranges
 
 __all__ = ['MRC']
 
 IMOD = 0x444F4D49 # "IMOD"
-MAP_ = b"MAP "
+MAP_ = b'MAP '
 HDR_LEN = 224
 LBL_LEN = 80
 LBL_COUNT = 10
@@ -52,10 +53,10 @@ class MRCFlags(int32, Flags): #pylint: disable=no-init
     OriginSignInverted = 4
 
 class MRCEndian(bytes, Enum): #pylint: disable=no-init
-    Little    = b"\x44\x41\x00\x00"
-    LittleAlt = b"\x44\x00\x00\x00"
-    Big       = b"\x17\x17\x00\x00"
-    BigAlt    = b"\x17\x00\x00\x00"
+    Little    = b'\x44\x41\x00\x00'
+    LittleAlt = b'\x44\x00\x00\x00'
+    Big       = b'\x17\x17\x00\x00'
+    BigAlt    = b'\x17\x00\x00\x00'
 
 _dtype2mode = {
     1:{uint8:MRCMode.Byte, int8:MRCMode.Byte, int16:MRCMode.Short, uint16:MRCMode.UShort,
@@ -94,22 +95,21 @@ class MRC(HomogeneousFileImageStack):
     def _openable(cls, filename, f, readonly, **opts):
         if len(opts) != 0: return False
         f.seek(0)
-        raw = memoryview(f.read(HDR_LEN))
+        raw = f.read(HDR_LEN)
         if len(raw) != HDR_LEN: return False
-        map_, en = unpack('<4s4s', raw[208:216])
         endian = '<'
-        if map_ == MAP_:
-            if en == MRCEndian.Big or en == MRCEndian.BigAlt: endian = '>'
-            elif en != MRCEndian.Little and en != MRCEndian.LittleAlt: return False
-        nx, ny, nz, mode = unpack(endian+'4i', raw[:16])
-        if nx <= 0 or ny <= 0 or nz < 0 or mode not in MRCMode: return False
-        mapc, mapr, maps = unpack(endian+'3i', raw[64:76])
-        if mapc != 1 or mapr != 2 or maps != 3: return False
-        nxt = unpack1(endian+'i', raw[92:96])
-        stamp, flags = unpack(endian+'2i', raw[152:160])
-        nlbl = unpack1(endian+'i', raw[220:])
-        if nxt < 0 or nlbl < 0 or nlbl > LBL_COUNT or (stamp == IMOD and flags not in MRCFlags): return False
-        return True
+        if raw[208:212] == MAP_:
+            stamp = raw[212:216]
+            if stamp in (MRCEndian.Big, MRCEndian.BigAlt): endian = '>'
+            elif stamp not in (MRCEndian.Little, MRCEndian.LittleAlt): return False
+        u32_struct = Struct(str(endian+'i'))
+        u32 = lambda b,off: u32_struct.unpack_from(b,off)[0]
+        return (u32(raw, 0) > 0 and u32(raw, 4) > 0 and u32(raw, 8) >= 0 and # nx/ny/nz
+                u32(raw, 12) in MRCMode and # mode
+                u32(raw, 64) == 1 and u32(raw, 68) == 2 and u32(raw, 72) == 3 and # mapc/mapr/maps
+                u32(raw, 92) >= 0 and # nxt
+                (u32(raw, 152) != IMOD or u32(raw, 156) in MRCFlags) and # stamp and flags
+                0 <= u32(raw, 220) <= LBL_COUNT) # nlbl
 
     @classmethod
     def create(cls, f, ims, writeonly=False, **options):
@@ -207,8 +207,10 @@ def _f_ro(cast): return Field(cast, True, False)
 def _f_fix(cast, value): return FixedField(cast, value, False)
 def _b4(value): # 4-byte value not influenced by byte ordering (although if given an integer it assumes little endian)
     from numbers import Integral
-    if isinstance(value, Integral): value = pack("<i", int(value))
-    if not isinstance(value, bytes) or len(value) != 4: raise ValueError
+    if isinstance(value, Integral):
+        from struct import pack
+        value = pack(str('<i'), int(value))
+    elif not isinstance(value, bytes) or len(value) != 4: raise ValueError
     return value
 
 class MRCHeader(FileImageStackHeader):
@@ -255,7 +257,7 @@ class MRCHeader(FileImageStackHeader):
 
     # Specific to MRC
     _is_new = True
-    _format = None
+    _struct = None
     _labels = None
     _extra = None
     _old_next = 0
@@ -273,26 +275,24 @@ class MRCHeader(FileImageStackHeader):
         try:
             raw = f.read(HDR_LEN)
             if len(raw) != HDR_LEN: raise ValueError('MRC file does not have enough bytes for header')
-            map_, en = unpack('<4s4s', raw[208:216])
-            endian = '<'
-            if map_ == MAP_:
-                if en == MRCEndian.Big or en == MRCEndian.BigAlt:
-                    endian = '>'
-                elif en != MRCEndian.Little and en != MRCEndian.LittleAlt:
-                    raise ValueError('MRC file is invalid (stamp is 0x%08x)' % en)
-                self._fields.update(MRCHeader.__fields_new)
-                self._format = endian + MRCHeader.__format_new
+            if raw[208:212] == MAP_:
+                endian = '<'
+                stamp = raw[212:216]
+                if stamp in (MRCEndian.Big, MRCEndian.BigAlt): endian = '>'
+                elif stamp not in (MRCEndian.Little, MRCEndian.LittleAlt): raise ValueError('MRC file is invalid')
+                f, s = MRCHeader.__fields_new, endian + MRCHeader.__format_new
             else:
                 self._is_new = False
-                self._fields.update(MRCHeader.__fields_old)
-                self._format = MRCHeader.__format_old
-            self._data = h = OrderedDict(izip(self._fields, unpack(self._format, raw)))
-            if self._data['mode'] == 5: self._data['mode'] = 0
+                f, s = MRCHeader.__fields_old, MRCHeader.__format_old
+            self._fields.update(f)
+            self._struct = Struct(str(s))
+            self._data = h = OrderedDict(izip(self._fields, self._struct.unpack(raw)))
+            #if self._data['mode'] == 5: self._data['mode'] = 0
             self._check()
             #h['imodFlags'] = MRCFlags(h['imodFlags']) if h['imodStamp'] == IMOD else MRCFlags.None
 
             if h['nx'] <= 0 or h['ny'] <= 0 or h['nz'] < 0:  raise ValueError('MRC file is invalid (dims are %dx%dx%d)' % (h['nx'], h['ny'], h['nz']))
-            if h['mapc'] != 1 or h['mapr'] != 2 or h['maps'] != 3: raise ValueError('MRC file has an unsupported data ordering (%d, %d, %d)' % (h['mapc'], h['mapr'], h['maps']))
+            if (h['mapc'],h['mapr'],h['maps']) != (1,2,3): raise ValueError('MRC file has an unsupported data ordering (%d, %d, %d)' % (h['mapc'], h['mapr'], h['maps']))
 
             self._labels = self.__get_labels(f)
             self._extra = self.__get_extra(f)
@@ -343,7 +343,7 @@ class MRCHeader(FileImageStackHeader):
         # Create the header and write it
         ny, nx = shape
         self._fields.update(MRCHeader.__fields_new)
-        self._format = endian + MRCHeader.__format_new
+        self._struct = Struct(str(endian + MRCHeader.__format_new))
         self._data = OrderedDict([
             ('nx',nx), ('ny',ny), ('nz',0),
             ('mode',mode),
@@ -392,7 +392,7 @@ class MRCHeader(FileImageStackHeader):
         self._data['rms'] = float32(0.0)
         self._fields = MRCHeader.__fields_base.copy()
         self._fields.update(MRCHeader.__fields_new)
-        self._format = '<' + MRCHeader.__format_new
+        self._struct = Struct(str('<' + MRCHeader.__format_new))
         self._is_new = True
 
     @property
@@ -485,7 +485,7 @@ class MRCHeader(FileImageStackHeader):
         """Internal saving function"""
         f.seek(0)
         values = [self._data[field] for field in self._fields]
-        f.write(pack(self._format, *values)) #pylint: disable=star-args
+        f.write(self._struct.pack(*values)) #pylint: disable=star-args
         for lbl in self._labels: f.write(lbl.ljust(LBL_LEN))
         f.write(' ' * LBL_LEN * (LBL_COUNT - len(self._labels)))
         if self._extra: f.write(self._extra)
