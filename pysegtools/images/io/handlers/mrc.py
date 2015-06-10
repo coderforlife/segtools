@@ -280,11 +280,11 @@ class MRCHeader(FileImageStackHeader):
                 stamp = raw[212:216]
                 if stamp in (MRCEndian.Big, MRCEndian.BigAlt): endian = '>'
                 elif stamp not in (MRCEndian.Little, MRCEndian.LittleAlt): raise ValueError('MRC file is invalid')
-                f, s = MRCHeader.__fields_new, endian + MRCHeader.__format_new
+                flds, s = MRCHeader.__fields_new, endian + MRCHeader.__format_new
             else:
                 self._is_new = False
-                f, s = MRCHeader.__fields_old, MRCHeader.__format_old
-            self._fields.update(f)
+                flds, s = MRCHeader.__fields_old, MRCHeader.__format_old
+            self._fields.update(flds)
             self._struct = Struct(str(s))
             self._data = h = OrderedDict(izip(self._fields, self._struct.unpack(raw)))
             #if self._data['mode'] == 5: self._data['mode'] = 0
