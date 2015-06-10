@@ -10,7 +10,7 @@ Additions over the default Python gzip module:
     * Supports pure deflate and zlib data in addition to gzip files
     * Supports modifying and retrieving all the gzip header properties
     * Adds and checks header checksums for increased file integrity
-    * Allows you to read embeded compressed data with rewind and negative seek support when you
+    * Allows you to read embedded compressed data with rewind and negative seek support when you
       specify the starting offset of the data
     * Does not use seek except for rewind, negative seeks, and starting offsets (means you can use
       it on unbuffered socket connections when not using those features)
@@ -41,6 +41,7 @@ from __future__ import unicode_literals
 
 import io, os, sys, struct
 from time import time
+from collections import OrderedDict
 import zlib
 
 __all__ = ['gzip_oses', 'default_gzip_os',
@@ -72,43 +73,46 @@ gzip_oses = {
     'Acorn RISCOS' : 13,
     'Unknown' : 255,
     }
-_default_gzip_oses = {
+__default_gzip_oses = {
     'nt' : 0, 'os2' : 0, 'ce' : 0, # FAT (NT could also be NTFS or HPFS and OS/2 could be HPFS)
     'posix' : 3, # UNIX
     'riscos' : 13, # Acorn RISCOS
     }
-default_gzip_os = _default_gzip_oses.get(os.name, 255) # default is unknown, including for 'java'
+default_gzip_os = __default_gzip_oses.get(os.name, 255) # default is unknown, including for 'java'
 _exts = {
     'gzip' : '.gz',
     'zlib' : '.zlib',
     'deflate' : '.deflate',
     }
 
-String = str if sys.version_info[0] == 3 else basestring
-def _pack(fmt, *v): return struct.pack(str(fmt), *v)
-def _unpack(fmt, b): return struct.unpack(str(fmt), b)
-def _unpack1(fmt, b): return struct.unpack(str(fmt), b)[0]
+String,Unicode,Byte = (str,str,int) if (sys.version_info[0] == 3) else (basestring,unicode,ord)
+_uint16 = struct.Struct(str('<H'))
+_uint32 = struct.Struct(str('<L'))
+_uint16_be = struct.Struct(str('>H'))
+_uint32_be = struct.Struct(str('>L'))
 def _get_filename(f, default=None):
     if isinstance(f, String): return f
     elif hasattr(f, 'name') and (len(f.name) < 2 or f.name[0] != '<' and f.name[-1] != '>'):
         return f.name
     return default
 def _gzip_header_str(s):
-    if not s: return None
-    i = s.find(b'\x00')
+    if s is None: return None
+    s = Unicode(s)
+    i = s.find('\x00')
     if i >= 0: s = s[:i]
-    s = s.encode('iso-8859-1')
-    return s + b'\x00' if s else None
+    s.encode('iso-8859-1') # just to make sure it will be encodable
+    return s
 def _write_gzip_header_str(f, s, chk16):
+    s = s.encode('iso-8859-1') + b'\x00'
     f.write(s)
     return zlib.crc32(s, chk16) & 0xffffffff
-def _read_gzip_header_str(read, chk16):
+def _read_gzip_header_str(read, crc32):
     s = b''
     while True:
         c = read(1)
         if not c or c == b'\x00': break
         s += c
-    return s.decode('iso-8859-1'), (zlib.crc32(s+b'\x00', chk16) & 0xffffffff)
+    return s.decode('iso-8859-1'), (zlib.crc32(s+b'\x00', crc32) & 0xffffffff)
 
 
 # GZIP Format {Little-Endian}
@@ -125,7 +129,7 @@ def _read_gzip_header_str(read, chk16):
 # [extra data]
 # [filename]
 # [comment]
-# CRC16 checksum of header
+# [CRC16 checksum of header]
 # <compressed data>
 # CRC32 checksum
 # Size of uncompressed data
@@ -204,25 +208,37 @@ def decompress_file(inpt, output=None, method=None):
 
 def compress(inpt, level=9, method=None):
     level = int(level)
+    if method not in (None, 'gzip', 'zlib', 'deflate'): raise ValueError('Compression method must be one of deflate, zlib, or gzip')
+    data = zlib.compress(inpt, level)
     if method == 'gzip' or method is None:
-        xf = 2 if level >= 7 else (4 if level <= 2 else 0)
-        s = b'\x1F\x8B\x08\x02' + _pack('<LB', int(time()), xf) + b'\xFF'
-        s += _pack('<H', zlib.crc32(s) & 0xffff)
-        s += zlib.compress(inpt, level)
-        s += _pack('<LL', zlib.crc32(inpt) & 0xffffffff, len(inpt) & 0xffffffff)
-        return s
+        out = bytearray(len(data)+18)
+        out[12:-8] = data
+        del data
+        # Header
+        out[:4] = b'\x1F\x8B\x08\x02'
+        _uint32.pack_into(out, 4, int(time()))
+        out[8] = 2 if level >= 7 else (4 if level <= 2 else 0)
+        out[9] = 0xFF
+        _uint16.pack_into(out, 10, 0xffff & zlib.crc32(out[:10]))
+        # Footer
+        _uint32.pack_into(out, -8, 0xffffffff & zlib.crc32(inpt))
+        _uint32.pack_into(out, -4, 0xffffffff & len(inpt))
+        return bytes(out)
     elif method == 'zlib':
-        header = 0x7800 + (((level+1)//3) << 6)
+        out = bytearray(len(data)+6)
+        out[2:-4] = data
+        del data
+        # Header
+        header = 0x7800 | (((level+1)//3) << 6)
         mod31 = header % 31
         if mod31 != 0: header += (31 - mod31)
-        s += _pack('>H', header)
-        s += zlib.compress(inpt, level)
-        s += _pack('<L', zlib.adler32(inpt) & 0xffffffff)
-        return s
-    elif method == 'deflate':
-        return zlib.compress(inpt, level)
-    else:
-        raise ValueError('Compression method must be one of deflate, zlib, or gzip')
+        _uint16_be.pack_into(out, 0, header)
+        # Footer
+        _uint32_be.pack_into(out, -4, 0xffffffff & zlib.adler32(inpt))
+        return bytes(out)
+    else # method == 'deflate':
+        return data
+        
 
 def decompress(inpt, method=None):
     if method is None: method = guess_compression_method(inpt)
@@ -231,34 +247,30 @@ def decompress(inpt, method=None):
     elif method == 'deflate': return zlib.decompress(inpt)
     else: raise ValueError('Compression method must be one of deflate, zlib, gzip, or None')
 def __decompress_gzip(inpt):
-    magic1, magic2, method, flags = _unpack('<BBBB', inpt[:4])
-    if magic1 != 0x1F or magic2 != 0x8B: raise IOError('Not a gzipped file')
-    if method != 8: raise IOError('Unknown compression method')
+    if len(inpt) < 18 or inpt[:3] != b'\x1F\x8B\x08': raise IOError('Not a gzipped file')
+    flags = Byte(inpt[3])
     if flags & 0xE0: raise IOError('Unknown flags')
-    off = _unpack1('<H', inpt[10:12]) + 12 if flags & _FEXTRA else 10
+    off = (_uint16.unpack_from(inpt, 10)[0] + 12) if flags & _FEXTRA else 10
     if flags & _FNAME:    off = inpt.index(b'\x00', off) + 1
     if flags & _FCOMMENT: off = inpt.index(b'\x00', off) + 1
     if flags & _FHCRC:
-        if _unpack1('<H', inpt[off:off+2]) != (zlib.crc32(inpt[:off]) & 0xffff): raise IOError('Header corrupted')
+        if _uint16.unpack_from(inpt, off)[0] != (zlib.crc32(inpt[:off]) & 0xffff): raise IOError('Header corrupted')
         off += 2
-    crc32, isize = _unpack('<II', inpt[-8:])
-    s = zlib.decompress(inpt[off:-8], -zlib.MAX_WBITS, isize)
-    checksum = zlib.crc32(s)
-    if crc32 != checksum: raise IOError("CRC32 check failed %08x != %08x" % (crc32, checksum))
-    if isize != (len(s) & 0xffffffff): raise IOError("Incorrect length of data produced")
-    return s
+    isize = _uint32.unpack_from(inpt, -4)[0]
+    out = zlib.decompress(inpt[off:-8], -zlib.MAX_WBITS, isize)
+    if _uint32.unpack_from(inpt, -8)[0] != zlib.crc32(out): raise IOError("CRC32 check failed")
+    if isize != (len(out) & 0xffffffff): raise IOError("Incorrect length of data produced")
+    return out
 def __decompress_zlib(inpt):
-    header = _unpack1('>H', inpt[:2])
+    header = _uint16_be.unpack_from(inpt)[0]
     method = (header >>  8) & 0xF
-    windowsize = ((header >> 12) & 0xF) + 8
+    wsize  = ((header >> 12) & 0xF) + 8
     fdict  = (header & 0x20) != 0
-    if method != 8 or windowsize > zlib.MAX_WBITS or fdict: raise IOError('Unknown compression method')
+    if method != 8 or wsize > zlib.MAX_WBITS or fdict: raise IOError('Unknown compression method')
     if header % 31 != 0: raise IOError('Header corrupted')
-    s = zlib.decompress(inpt[2:-4], -windowsize)
-    a32 = _unpack1('>I', inpt[-4:])
-    checksum = zlib.adler32(s)
-    if a32 != checksum: raise IOError("Adler32 check failed %08x != %08x" % (a32, checksum))
-    return s
+    out = zlib.decompress(inpt[2:-4], -wsize)
+    if _uint32_be.unpack_from(inpt, -4)[0] != zlib.adler32(s): raise IOError("Adler32 check failed")
+    return out
 
 def guess_file_compression_method(f):
     if isinstance(f, String):
@@ -266,10 +278,15 @@ def guess_file_compression_method(f):
     else: return guess_compression_method(f.read(3))
 
 def guess_compression_method(buf):
-    if len(buf) > 2 and buf[0:2] == b'\x1F\x8B\x08': return 'gzip' # could also check flags and checksum, but this seems good enough
+    # Pure deflate streams could randomly look like GZIP or ZLIB
+    # Assuming the first 2 or 3 bytes of a deflate stream are independent and uniformly random:
+    #  GZIP has a ~1/16.8 million chance of a false positive (could be lowered with >3 bytes of data)
+    #  ZLIB has a ~1/1000 chance of a false positive (TODO: wish we could lower this - maybe assume FDCIT is always 0 (1/2000 then, still not great))
+    #  GZIP and ZLIB can never be confused we each other
+    if len(buf) > 2 and buf[:3] == b'\x1F\x8B\x08': return 'gzip' # could also check flags and checksum
     if len(buf) > 1:
-        h = _unpack1('>H', buf[:2])
-        if (h&0x88) == 0x08 and h%31 == 0: return 'zlib' # about a 1/1000 chance of guessing zlib when actually deflate
+        h = _uint16_be.unpack_from(buf)[0]
+        if (h&0x8F00) == 0x0800 and h%31 == 0: return 'zlib'
     return 'deflate'
 
 class GzipFile(io.BufferedIOBase):
@@ -315,15 +332,27 @@ class GzipFile(io.BufferedIOBase):
         seeked upon opening and when rewinding/negative seeking. If it is None and a file-like
         object is given, the current offset is safely queried using tell() but assumed to be 0.
 
-        When writing gzip data you can include extra information with the following keyword arguments:
-            os= to an integer from 0 to 255 that describes the filesystem where the file orginated (default depends on system)
-            mtime= to an integer representing the modification time of the original file as a UNIX timestamp (default is now)
-            text=True if the data being written is text (default is binary)
-            filename= to the original filename that is being compressed (default is filename without .gz if obtainable)
-            comment= to a user-readable comment
-            extras= to a list of 2-element tuples, each has a 2 byte string for the subfield id and a byte string for the subfield data
+        When writing a gzip file you can include extra information with the following keyword
+        arguments:
+            os         an integer from 0 to 255 or string that describes the filesystem where the
+                       file orginated (default depends on system, only strings in gzip_oses are
+                       supported)
+            mtime      an integer representing the modification time of the original file as a UNIX
+                       timestamp or a datetime object (default is now)
+            text       True if the data being written is text (default is binary)
+            filename   the original filename that is being compressed (default is filename without
+                       .gz if obtainable)
+            comment    to a user-readable comment
+            extras     an OrderedDict, dictionary, or iterable of tuples of subfields (id:data) with
+                       the ids being 2-byte strings and data being convertible to byte.
 
         When reading gzip data the extra information is available from the gzip_options property.
+        The properties when reading or writing are "standardized" so that 'os' and 'mtime' are
+        integers, 'text' is a boolean, 'filename' and 'comment' or unicode strings, and 'extras' is
+        an OrderedDict of bytes. Fields not in the header are simply not included. Also, a key 'xf'
+        is available in the dictionary corresponding to the XF flag of the header (2 for max
+        compression, 4 for fastest compression, and 0 otherwise). This value is ignored if given
+        while writing, and a calculated value is used.
         """
         super(GzipFile, self).__init__()
 
@@ -337,7 +366,7 @@ class GzipFile(io.BufferedIOBase):
         self.owns_handle = isinstance(file, String)
         self.name = _get_filename(file, '')
         if method == 'gzip' and writing:
-            self.gzip_options = GzipFile.__check_gzip_opts(kwargs, self.name)
+            self.__gzip_options = GzipFile.__check_gzip_opts(kwargs, self.name)
         elif kwargs: raise ValueError('Extra keyword arguments can only be provided when writing gzip data')
         self.__mode = mode
         self.__writing = writing
@@ -394,21 +423,42 @@ class GzipFile(io.BufferedIOBase):
 
     @staticmethod
     def __check_gzip_opts(kwargs, filename):
-        if len(kwargs.viewkeys()-{'text','os','comment','filename','mtime','extras'}):
-            raise ValueError('Gzip options must only include text, comment, filename, mtime, and extras')
-        is_text = 'text' in kwargs and kwargs['text']
-        gzip_os = int(kwargs.get('os', default_gzip_os))
+        if len(kwargs.viewkeys()-{'text','os','mtime','filename','comment','extras','xf'}):
+            raise ValueError('Gzip options must only include text, os, mtime, filename, comment, and extras')
+        gzip_os = kwargs.get('os', default_gzip_os)
+        gzip_os = gzip_oses[gzip_os] if isinstance(gzip_os, String) else int(gzip_os)
         if gzip_os > 255 or gzip_os < 0: raise ValueError('Gzip OS is an invalid value')
-        filename = filename[:-3] if filename and filename.endswith('.gz') else ''
-        filename = _gzip_header_str(kwargs.get('filename', filename))
-        comment = _gzip_header_str(kwargs.get('comment',  ''))
-        mtime = int(kwargs.get('mtime', time()))
+        mtime = kwargs.get('mtime', time())
+        from date import date, datetime
+        if isinstance(mtime, date):
+            if not isinstance(mtime, datetime):
+                mtime = datetime(mtime.year, mtime.month, mtime.day)
+            if mtime.tzinfo is not None and mtime.tzinfo.utcoffset(mtime) is not None:
+                mtime = mtime.replace(tzinfo=None) - mtime.utcoffset()
+            mtime = (mtime - datetime.fromtimestamp(0)).total_seconds()
+        opts = {'os':gzip_os, 'mtime':int(mtime), 'text':('text' in kwargs and kwargs['text'])}
+        
+        filename = filename[:-3] if filename and filename.endswith('.gz') else None
+        filename = kwargs.get('filename', filename))
+        if filename is not None: opts['filename'] = _gzip_header_str(filename)
+        if 'comment' in kwargs:  opts['comment']  = _gzip_header_str(kwargs[comment])
+        
         extras = kwargs.get('extras')
-        if extras and any(len(ex_id) != 2 for ex_id, data in extras): raise ValueError('Gzip extras had a subfield id that was not 2 characters long')
-        return {
-            'os':gzip_os, 'mtime':mtime, 'text':is_text,
-            'filename':filename, 'comment':comment, 'extras':extras
-            }
+        if extras is not None:
+            from collections import Mapping
+            itr = (extras.iteritems() if hasattr(extras, 'iteritems') else extras.items()) \
+                  if isinstance(extras, Mapping) else extras
+            extras = opts['extras'] = OrderedDict()
+            xlen = 2
+            for ex_id, data in itr:
+                ex_id, data = bytes(ex_id), bytes(data)
+                if len(ex_id) != 2: raise ValueError('Gzip extras subfield id must be 2 bytes')
+                extras[ex_id] = data
+                xlen += 4 + len(data)
+            if xlen > 0xFFFF: raise ValueError('Gzip extra data has too much data')
+            extras._xlen = xlen
+            
+        return opts
 
     def __open(self, f):
         if self.owns_handle:
@@ -445,6 +495,10 @@ class GzipFile(io.BufferedIOBase):
     def mode(self): return self.__mode
     @property
     def checksum(self): return self.__checksum
+    @property
+    def gzip_options(self):
+        if not hasattr(self, '__gzip_options'): raise AttributeError('Not a gzip file')
+        return self.__gzip_options.copy() # they aren't allowed to manipulate the internal dictionary
 
     # Close
     @property
@@ -457,10 +511,12 @@ class GzipFile(io.BufferedIOBase):
         if self.closed: return
         if self.__writing:
             self.__base.write(self.__zlib.flush(zlib.Z_FINISH))
-            del self.__zlib
-            if self.__method == 'gzip':   self.__base.write(_pack('<LL', self.__checksum, self.__size & 0xffffffff))
-            elif self.__method == 'zlib': self.__base.write(_pack('>L', self.__checksum))
-            del self.__calc_checksum
+            del self.__zlib, self.__calc_checksum
+            if self.__method == 'gzip':
+                self.__base.write(_uint32.pack(self.__checksum))
+                self.__base.write(_uint32.pack(self.__size & 0xffffffff))
+            elif self.__method == 'zlib':
+                self.__base.write(_uint32_be.pack(self.__checksum))
             self.__base.flush()
         if self.owns_handle: self.__base.close()
         self.__base = None
@@ -495,10 +551,10 @@ class GzipFile(io.BufferedIOBase):
     # Position
     def seekable(self): return not self.__writing
     def tell(self):
+        """Return the uncompressed stream file position indicator to the beginning of the file"""
         self.__check()
         return self.__offset
     def rewind(self):
-        """Return the uncompressed stream file position indicator to the beginning of the file"""
         self.__check(False)
         self.__base.seek(self.__start_off)
         self.__new_member = True
@@ -519,30 +575,43 @@ class GzipFile(io.BufferedIOBase):
     def __init_writing(self, level):
         windowsize = zlib.MAX_WBITS
         if self.__method == 'gzip':
+            opts = self.__gzip_options
             flags = _FHCRC
-            if self.gzip_options['text']:     flags |= _FTEXT
-            if self.gzip_options['extras']:   flags |= _FEXTRA
-            if self.gzip_options['filename']: flags |= _FNAME
-            if self.gzip_options['comment']:  flags |= _FCOMMENT
-            xf = 2 if level >= 7 else (4 if level <= 2 else 0)
-            s = b'\x1F\x8B\x08' + _pack('<BLBB', flags, self.gzip_options['mtime'], xf, self.gzip_options['os'])
-            self.__base.write(s)
-            chk16 = zlib.crc32(s) & 0xffffffff
-            if self.gzip_options['extras']:
-                extras = ''
-                for ex_id, data in self.gzip_options['extras']:
-                    extras += ex_id + _pack('<H', len(data)) + data
-                extras = _pack('<H', len(extras)) + extras
-                chk16 = _write_gzip_header_str(self.__base, extras, chk16)
-            if self.gzip_options['filename']: chk16 = _write_gzip_header_str(self.__base, self.gzip_options['filename'], chk16)
-            if self.gzip_options['comment']:  chk16 = _write_gzip_header_str(self.__base, self.gzip_options['comment'],  chk16)
-            self.__base.write(_pack('<H', chk16 & 0xffff))
+            if 'text'     in opts: flags |= _FTEXT
+            if 'extras'   in opts: flags |= _FEXTRA
+            if 'filename' in opts: flags |= _FNAME
+            if 'comment'  in opts: flags |= _FCOMMENT
+            self.__base.write()
+            header = bytearray(10)
+            header[:3] = b'\x1F\x8B\x08'
+            header[3] = flags
+            _uint32.pack_into(header, 4, opts['mtime'])
+            header[8] = opts['xf'] = 2 if level >= 7 else (4 if level <= 2 else 0)
+            header[9] = opts['os']
+            self.__base.write(header)
+            chk16 = zlib.crc32(header) & 0xffffffff
+            if 'extras' in opts:
+                xlen = opts['extras']._xlen
+                extras = bytearray(xlen)
+                _uint16.pack_into(extras, 0, xlen)
+                off = 2
+                for ex_id, data in opts['extras'].iteritems():
+                    l = len(data)
+                    extras[off:off+2] = ex_id
+                    _uint16(extras, off+2, l)
+                    extras[off+4:off+4+l] = data
+                    off += 4 + l
+                self.__base.write(extras)
+                chk16 = zlib.crc32(extras) & 0xffffffff
+            if 'filename' in opts: chk16 = _write_gzip_header_str(self.__base, opts['filename'], chk16)
+            if 'comment' in opts:  chk16 = _write_gzip_header_str(self.__base, opts['comment'],  chk16)
+            self.__base.write(_uint16.pack(chk16 & 0xffff))
         elif self.__method == 'zlib':
-            header = 0x7800 + (((level+1)//3) << 6)
+            header = 0x7800 | (((level+1)//3) << 6)
             # Make header a multiple of 31
             mod31 = header % 31
             if mod31 != 0: header += (31 - mod31)
-            self.__base.write(_pack('>H', header))
+            self.__base.write(_uint16_be.pack(header))
             windowsize = 15
         self.__base.flush()
         return zlib.compressobj(level, zlib.DEFLATED, -windowsize)
@@ -573,6 +642,11 @@ class GzipFile(io.BufferedIOBase):
 
     # Reading
     def __read_base(self, n, check_eof=True):
+        """
+        Read from the base file object. There may be some data in the internal buffer which will be
+        used first. If check_eof is True (the default) then this will be gauranteed to return n
+        bytes or raise an EOFError, otherwise it may return less than n bytes.
+        """
         if n < len(self.__base_buf):
             s = self.__base_buf[:n]
             self.__base_buf = self.__base_buf[n:]
@@ -583,24 +657,37 @@ class GzipFile(io.BufferedIOBase):
             s = self.__base.read(n)
         if check_eof and len(s) != n: raise EOFError
         return s
-    def __peek_base(self):
-        if len(self.__base_buf) == 0:
-            self.__base_buf = self.__base.read(1)
-        return self.__base_buf[0]
+    def __skip_0s(self):
+        """Skips all upcoming 0s in the data."""
+        if not hasattr(GzipFile.__skip_0s, '_find_not_zero'):
+            import re
+            GzipFile.__skip_0s._re_not_zero = re.compile(br'[^\0]')
+        re_not_zero = GzipFile.__skip_0s._re_not_zero
+
+        s = self.__base_buf or self.__base.read(1024)
+        self.__base_buf = b''
+        while len(s) > 0:
+            m = re_not_zero.search(s)
+            if m is not None: # found a non-zero
+                self.__base_buf = s[m.start():]
+                break
+            s = self.__base.read(1024) # read 1kb at a time
     def __read_more(self, n, s):
+        """
+        Make sure the byte string s is exactly n bytes long. If it is longer, return the trailing
+        bytes to the internal buffer. If it is shorter, read some bytes using __read_base.
+        """
+        if len(s) == n: return s
         if len(s) > n:
             self.__base_buf += s[n:]
             return s[:n]
-        elif len(s) == n:
-            return s
         return s + self.__read_base(n - len(s))
     def __read_header(self):
         windowsize = zlib.MAX_WBITS
         if self.__method == 'gzip':
             self.__read_header_gzip()
         elif self.__method == 'zlib':
-            header = self.__read_base(2)
-            header = _unpack1('>H', header)
+            header = _uint16_be.unpack(self.__read_base(2))[0]
             method = (header >>  8) & 0xF
             windowsize = ((header >> 12) & 0xF) + 8
             fdict  = (header & 0x20) != 0
@@ -610,59 +697,51 @@ class GzipFile(io.BufferedIOBase):
             if header % 31 != 0: raise IOError('Header corrupted')
         return zlib.decompressobj(-windowsize)
     def __read_header_gzip(self):
-        if not hasattr(self, 'gzip_options'):
-            self.gzip_options = {
-                'os' : 255, 'mtime' : 0, 'text' : False,
-                'filename' : None, 'comment' : None, 'extras' : None
-                }
+        if not hasattr(self, '__gzip_options'): self.__gzip_options = {}
+        opts = self.__gzip_options
         header = self.__read_base(10)
-        magic1, magic2, method, flags, mtime, _, gzip_os = _unpack('<BBBBIBB', header)
-        if magic1 != 0x1F or magic2 != 0x8B: raise IOError('Not a gzipped file')
-        if method != 8: raise IOError('Unknown compression method')
-        if flags & 0xE0: raise IOError('Unknown flags')
-        self.gzip_options['text'] = bool(flags & _FTEXT)
-        self.gzip_options['os'] = gzip_os
-        self.gzip_options['mtime'] = mtime
         chk16 = zlib.crc32(header) & 0xffffffff
+        if header[:3] != '\x1F\x8B\x08': raise IOError('Not a gzipped file')
+        flags = Byte(header[3])
+        if flags & 0xE0: raise IOError('Unknown flags')
+        opts['text'] = (flags & _FTEXT) != 0
+        opts['mtime'] = _uint32.unpack_from(header, 4)[0]
+        opts['xf'] = Byte(header[8])
+        opts['os'] = Byte(header[9])
         if flags & _FEXTRA:
             # Read the extra field
             xlen = self.__read_base(2)
-            extras = self.__read_base(_unpack1('<H', xlen))
-            chk16 = zlib.crc32(extras, zlib.crc32(xlen, chk16)) & 0xffffffff
-            ext = []
-            while len(extras) >= 4:
-                l = _unpack1('<H', extras[2:4])
-                if 4+l > len(extras): raise IOError('Invalid extra fields in header')
-                ext.append((extras[:2], extras[4:4+l]))
-                extras = extras[4+l:]
-            if len(extras) > 0: raise IOError('Invalid extra fields in header')
-            self.gzip_options['extras'] = ext
-        if flags & _FNAME:    self.gzip_options['filename'], chk16 = _read_gzip_header_str(self.__read_base, chk16)
-        if flags & _FCOMMENT: self.gzip_options['comment'],  chk16 = _read_gzip_header_str(self.__read_base, chk16)
+            chk16 = zlib.crc32(xlen, chk16) & 0xffffffff
+            extras = self.__read_base(_uint16.unpack(xlen)[0])
+            chk16 = zlib.crc32(extras, chk16) & 0xffffffff
+            ext = opts['extras'] = OrderedDict()
+            off = 2
+            while off+4 <= len(extras):
+                l = _uint16.unpack_from(extras, off+2)[0]
+                if off+l+4 > len(extras): raise IOError('Invalid extra fields in header')
+                ext[extras[off:off+2]] = extras[off+4:off+l+4]
+                off += l+4
+            if off != len(extras): raise IOError('Invalid extra fields in header')
+        if flags & _FNAME:    opts['filename'], chk16 = _read_gzip_header_str(self.__read_base, chk16)
+        if flags & _FCOMMENT: opts['comment'],  chk16 = _read_gzip_header_str(self.__read_base, chk16)
         # Read and verify the 16-bit header CRC
-        chk16_ = _unpack1('<H', self.__read_base(2))
-        if (flags & _FHCRC) and chk16_ != (chk16 & 0xffff): raise IOError('Header corrupted')
+        if (flags & _FHCRC) and _uint16.unpack(self.__read_base(2))[0] != (chk16 & 0xffff): raise IOError('Header corrupted')
 
     def __read_footer(self, footer = ''):
         try:
             if self.__method == 'gzip':
                 footer = self.__read_more(8, footer)
-                crc32, isize = _unpack('<II', footer)
-                if crc32 != self.__checksum:
-                    raise IOError("CRC32 check failed %08x != %08x" % (crc32, self.__checksum))
-                elif isize != (self.__size & 0xffffffff):
-                    raise IOError("Incorrect length of data produced")
+                if   _uint32.unpack_from(footer, 0)[0] != self.__checksum: raise IOError("CRC32 check failed")
+                elif _uint32.unpack_from(footer, 4)[0] != (self.__size & 0xffffffff): raise IOError("Incorrect length of data produced")
             elif self.__method == 'zlib':
                 footer = self.__read_more(4, footer)
-                a32 = _unpack1('>I', footer)
-                if a32 != self.__checksum:
-                    raise IOError("Adler32 check failed %08x != %08x" % (a32, self.__checksum))
+                if _uint32_be.unpack(footer)[0] != self.__checksum: raise IOError("Adler32 check failed")
             else:
                 self.__read_more(0, footer)
         except EOFError:
             raise IOError("Corrupt file: did not end with checksums")
         # Skip any zero-padding
-        while self.__peek_base() == b'\x00': self.__read_base(1)
+        self.__skip_0s()
         self.__new_member = True
 
     def __read(self, size=1024):
