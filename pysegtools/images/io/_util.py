@@ -13,6 +13,8 @@ from .._util import String, prod
 from ...general.gzip import GzipFile
 from ...general.enum import Flags
 
+__is_py3 = sys.version_info[0] == 3
+
 class FileMode(int, Flags):
     """
     File mode as a flags object instead of the Python standard string method. Methods are provided
@@ -124,7 +126,7 @@ def openfile(f, mode, compression=None, comp_level=9, off=None):
         if compressing: return GzipFile(f, mode, type=compression, level=comp_level, start_off=off)
         f = io.open(f, mode)
     elif isinstance(f, io.IOBase): f = f if hasattr(f, 'mode') and mode == f.mode else io.open(f.fileno(), mode)
-    elif sys.version_info[0] == 2 and (isinstance(f, file) or hasattr(f, 'fileno')): f = io.open(f.fileno(), mode)
+    elif not __is_py3 and (isinstance(f, file) or hasattr(f, 'fileno')): f = io.open(f.fileno(), mode)
     try:
         if compressing: f = GzipFile(f, type=compression, level=comp_level, start_off=off)
         elif off:       f.seek(off, io.SEEK_END if off < 0 else io.SEEK_SET)
