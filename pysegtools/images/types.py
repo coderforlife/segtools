@@ -3,12 +3,9 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-from numpy import dtype, iinfo, sctypes, bool_, ndarray
-from sys import byteorder
-import numbers
-import re
-
-from ._util import String
+import numbers, re
+from numpy import dtype, iinfo, sctypes, bool_, ndarray, ascontiguousarray
+from ._util import String, sys_endian
 
 __all__ = [
     'create_im_dtype','get_im_dtype','get_im_dtype_and_nchan','im_dtype_desc','get_dtype_endian',
@@ -64,6 +61,7 @@ def create_im_dtype(base, big_endian=None, channels=1):
     if isinstance(base, dtype):
         if big_endian is None: big_endian = get_dtype_endian(base)
         base = base.type
+    elif big_endian is None: big_endian = sys_endian # base is a type without endian information
     if base in __cmplx_types:
         if channels != 1: raise ValueError('Complex types must use 1 channel')
     elif base not in __basic_types: raise ValueError('Image base type not known')
@@ -122,7 +120,7 @@ def get_dtype_endian(dt):
     """Get a '<' or '>' from a dtype's byteorder (which can be |, =, <, or >)."""
     endian = dtype(dt).byteorder
     if endian == '|': return '<' # | means N/A (single byte), report as little-endian
-    elif endian == '=': return '<' if byteorder == 'little' else '>' # is native byte-order
+    elif endian == '=': return sys_endian # is native byte-order
     return endian
 
 
@@ -182,14 +180,14 @@ def im_rgb_view(im, bgr=False):
     if __is_rgb_view(im): return im
     shp = im.shape
     if len(shp) != 3 or shp[2] not in (3,4) or im.dtype.type not in __basic_types: raise ValueError('Not an RGB or RGBA raw image')
-    return im.view(dtype=dtype([(C,im.dtype) for C in ('BGRA' if bgr else 'RGBA')[:shp[2]]])).squeeze(2)
+    return ascontiguousarray(im).view(dtype=dtype([(C,im.dtype) for C in ('BGRA' if bgr else 'RGBA')[:shp[2]]])).squeeze(2)
 def im_raw_view(im):
     """
     Reverse of im_rgb_view. If the image is not an RGB view it is returned as-is. Otherwise it is
     viewed as a 3D ndarray with a third dimension length of 3 or 4.
     """
     if not __is_rgb_view(im): return im
-    return im.view(dtype=dtype((im.dtype[0],len(im.dtype))))
+    return ascontiguousarray(im).view(dtype=dtype((im.dtype[0],len(im.dtype))))
 
 __cmplx2float = {__c:dtype('f'+str(dtype(__c).itemsize//2)) for __c in __cmplx_types}
 __cmplx2float = {__c:__f.type for __c,__f in __cmplx2float.iteritems() if __f.kind == 'f'}
@@ -223,7 +221,7 @@ def im_complexify(im, force=False):
             mn, mx = get_dtype_min_max(o_dt)
             im += mn
             im /= mx
-    return im.view(dtype=dtype(__float2cmplx[im.dtype.type]).newbyteorder(im.dtype.byteorder)).squeeze(2)
+    return ascontiguousarray(im).view(dtype=dtype(__float2cmplx[im.dtype.type]).newbyteorder(im.dtype.byteorder)).squeeze(2)
 def im_complexify_dtype(dt, force=False):
     """Same as im_complexify but with just the dtype (which is assumed to have 2 channels)."""
     dt = dt.base # removes channel information, if there
@@ -231,7 +229,7 @@ def im_complexify_dtype(dt, force=False):
     if dt.type not in __float2cmplx:
         if not force: raise ValueError('Image cannot be represented as a complex type')
         dt = min((promote_types(dt, f) for f in __float2cmplx), key=lambda dt:dt.itemsize)
-    return __float2cmplx[dt.type]
+    return __float2cmplx[dt.type].newbyteorder(dt.byteorder)
     
 def im_decomplexify(im):
     """

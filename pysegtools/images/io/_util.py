@@ -6,14 +6,12 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import os, sys, io
-from numpy import fromfile as npy_fromfile, nditer, empty, prod
+from numpy import fromfile as npy_fromfile, nditer, empty
 from numbers import Integral
 
-from .._util import String
+from .._util import String, prod
 from ...general.gzip import GzipFile
 from ...general.enum import Flags
-
-__is_py3 = sys.version_info[0] == 3
 
 class FileMode(int, Flags):
     """
@@ -141,8 +139,7 @@ def imread_raw(f, shape, dtype, order='C'):
     the image. The shape does not include the dtype shape.
     """
     if isfileobj(f):
-        full_shape = (shape+dtype.shape) if hasattr(dtype, 'shape') and dtype.shape else shape
-        return fromfile(f, dtype, count=prod(shape)).reshape(full_shape, order=order)
+        return fromfile(f, dtype, count=prod(shape)).reshape(shape+dtype.shape, order=order)
     else:
         im = empty(shape, dtype, order)
         if f.readinto(im.data) != len(im.data): raise ValueError
@@ -171,9 +168,8 @@ def imread_ascii_raw(f, shape, dtype, order='C'):
     dtype shape.
     """
     if isfileobj(f):
-        if hasattr(dtype, 'shape') and dtype.shape:
-            shape += dtype.shape
-            dtype = dtype.base
+        shape += dtype.shape
+        dtype = dtype.base
         im = fromfile(f, dtype, count=prod(shape), sep=' ').reshape(shape, order=order)
     else:
         im = empty(shape, dtype, order)
@@ -201,9 +197,8 @@ def imskip_ascii_raw(f, shape, dtype):
     # Basically imread_ascii_raw with parts removed
     # TODO: is this really faster?
     if isfileobj(f):
-        if hasattr(dtype, 'shape') and dtype.shape:
-            shape += dtype.shape
-            dtype = dtype.base
+        shape += dtype.shape
+        dtype = dtype.base
         fromfile(f, dtype, count=prod(shape), sep=' ')
     else:
         i = 0

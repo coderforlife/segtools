@@ -10,6 +10,9 @@ from operator import mul
 from collections import Iterable
 from itertools import repeat
 
+sys_endian = '<' if sys.byteorder == 'little' else '>'
+sys_64bit = sys.maxsize > 2**32
+
 ##### numpy-like functions for iterators #####
 def prod(itr): return functools.reduce(mul, itr, 1)
 def ravel(itr): return (x for i in itr for x in (ravel(i) if isinstance(i, Iterable) and not isinstance(i, String) else (i,)))
@@ -18,9 +21,7 @@ def reshape(itr, shape, otype=list): return __reshape(iter(itr), tuple(shape) if
 
 
 ##### string and casting utilities #####
-__is_py3 = sys.version_info[0] == 3
-String = str if __is_py3 else basestring
-Unicode = str if __is_py3 else unicode
+String,Unicode,Byte = (str,str,int) if (sys.version_info[0] == 3) else (basestring,unicode,ord)
 def re_search(re, s):
     re_search.match = m = re.search(s)
     return m is not None
