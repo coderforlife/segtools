@@ -71,7 +71,7 @@ class RealImageSlice(__SameShapeImageSlice):
         super(RealImageSlice, self).__init__(stack, z, im)
         dt = im.dtype
         if dt.kind != 'c' and dt.shape != (2,): raise ValueError('Not a complex image')
-        self._set_props(create_im_dtype(im_decomplexify_dtype(dt), dt.byteorder, 1), None)
+        self._set_props(create_im_dtype(im_decomplexify_dtype(dt).base, dt.byteorder, 1), None)
     def _get_data(self): return real(self._input.data)
 class ImagImageStack(FilteredImageStack):
     def __init__(self, ims): super(ImagImageStack, self).__init__(ims, ImagImageSlice)
@@ -85,7 +85,7 @@ class DecomplexifyImageSlice(__SameShapeImageSlice):
         super(DecomplexifyImageSlice, self).__init__(stack, z, im)
         dt = im.dtype
         if dt.kind != 'c': raise ValueError('Not a complex image')
-        self._set_props(create_im_dtype(im_decomplexify_dtype(dt), dt.byteorder, 2), None)
+        self._set_props(create_im_dtype(im_decomplexify_dtype(dt).base, dt.byteorder, 2), None)
     def _get_data(self): return im_decomplexify(self._input.data)
 
 class ComplexifyImageStack(FilteredImageStack):

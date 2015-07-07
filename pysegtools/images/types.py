@@ -4,7 +4,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import numbers, re
-from numpy import dtype, iinfo, sctypes, bool_, ndarray, ascontiguousarray
+from numpy import dtype, iinfo, sctypes, promote_types, bool_, ndarray, ascontiguousarray
 from ._util import String, sys_endian
 
 __all__ = [
@@ -229,7 +229,7 @@ def im_complexify_dtype(dt, force=False):
     if dt.type not in __float2cmplx:
         if not force: raise ValueError('Image cannot be represented as a complex type')
         dt = min((promote_types(dt, f) for f in __float2cmplx), key=lambda dt:dt.itemsize)
-    return __float2cmplx[dt.type].newbyteorder(dt.byteorder)
+    return dtype(__float2cmplx[dt.type]).newbyteorder(dt.byteorder)
     
 def im_decomplexify(im):
     """
@@ -240,7 +240,7 @@ def im_decomplexify(im):
 def im_decomplexify_dtype(dt):
     """Same as im_decomplexify but with just the dtype."""
     if dt.type not in __cmplx2float: return dt
-    return dtype(__cmplx2float[dt.type]).newbyteorder(dt.byteorder)
+    return dtype((__cmplx2float[dt.type],2)).newbyteorder(dt.byteorder)
 
 
 ##### Min/Max for data types #####

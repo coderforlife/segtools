@@ -141,7 +141,8 @@ def imread_raw(f, shape, dtype, order='C'):
     the image. The shape does not include the dtype shape.
     """
     if isfileobj(f):
-        return fromfile(f, dtype, count=prod(shape)).reshape(shape+dtype.shape, order=order)
+        shape += dtype.shape
+        return fromfile(f, dtype.base, count=prod(shape)).reshape(shape, order=order)
     else:
         im = empty(shape, dtype, order)
         if f.readinto(im.data) != len(im.data): raise ValueError
@@ -171,8 +172,7 @@ def imread_ascii_raw(f, shape, dtype, order='C'):
     """
     if isfileobj(f):
         shape += dtype.shape
-        dtype = dtype.base
-        im = fromfile(f, dtype, count=prod(shape), sep=' ').reshape(shape, order=order)
+        im = fromfile(f, dtype.base, count=prod(shape), sep=' ').reshape(shape, order=order)
     else:
         im = empty(shape, dtype, order)
         im_r = im.ravel()
@@ -200,8 +200,7 @@ def imskip_ascii_raw(f, shape, dtype):
     # TODO: is this really faster?
     if isfileobj(f):
         shape += dtype.shape
-        dtype = dtype.base
-        fromfile(f, dtype, count=prod(shape), sep=' ')
+        fromfile(f, dtype.base, count=prod(shape), sep=' ')
     else:
         i = 0
         total = prod(shape+dtype.shape)
