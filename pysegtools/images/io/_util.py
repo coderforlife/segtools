@@ -116,7 +116,7 @@ def openfile(f, mode, compression=None, comp_level=9, off=None):
     Tries to make sure that the file is an IOBase file object and has the right mode. Accepts
     strings, IOBase file objects, and regular file-objects with the fileno() function. Supports
     wrapping the file in a compression handler (supports 'deflate', 'zlib', and 'gzip' along with
-    'auto' for write streams to figure out what type of compression to use) and can seek the file
+    'auto' for read streams to figure out what type of compression to use) and can seek the file
     to the starting offset for you (if negative and no compression, will seek from end).
     """
     if compression not in (None, 'deflate', 'zlib', 'gzip', 'auto') or compression and off < 0: raise ValueError
@@ -336,3 +336,96 @@ def file_remove_ranges(f, ranges, buf_size=16777216): # 16 MB
             copy_data(f, i.lower_bound, position, n, buf=buf)
         position += n
     f.truncate(position)
+
+class FileInsertIO(io.BufferedIOBase):
+    """
+    A class that wraps a file-like-object and inserts the data, pushing data further down in the
+    file as necessary. This does use plenty of buffering to make it useable in the middle of large
+    files.
+
+    The logic is as follows:
+     * if there is room in the file (given with an initial non-zero size), data is written directly
+       to the file
+     * otherwise the data is written into a buffer (default is 64 MB)
+     * if the data would overflow the buffer, the data in the file is moved to make room for the
+       buffer and given data, and the entire buffer and data is written to the file and the buffer
+       is cleared
+     * flush, close, detach, and truncate all make the file consistent in that if there is buffered
+       data, room is made for it and it is written, if there is empty room remaining from an initial
+       non-zero size then futher data is pulled into the empty space.
+    """
+    def __init__(self, f, off=None, size=0, buf_size=67108864): # 64 MB
+        self.__f = f
+        if off is None: off = f.tell()
+        elif f.seek(off) != off: raise IOError()
+        self.__off_start = off
+        self.__off = 0
+        self.__room = size
+        self.__buf_raw = bytearray(buf_size)
+        self.__buf = memoryview(self.__buf_raw)
+        self.__buf_size = 0
+
+    def isatty(self): return False
+    def readable(self): return False
+    def writable(self): return True
+    def seekable(self): return False
+    def fileno(self): raise IOError() # use .raw.fileno() if you want the underlying file number
+    def tell(self): return self.__off_start + self.__off + self.__buf_size
+    @property
+    def raw(self): return self.__f
+    def detach(self):
+        self.flush()
+        f = self.__f
+        self.__f = None
+        return f
+    def close(self):
+        if self.closed: return
+        self.flush()
+        self.__f = None
+        self.closed = True
+
+    def __make_room(self, nbytes):
+        if nbytes < self.__room: return
+        off = self.__off_start + self.__off
+        copy_data(self._f, off + self.__room, off + nbytes)
+        self.__room = nbytes
+        if self.seek(off) != off: raise IOError()
+    def __remove_room(self):
+        if self.__room == 0: return
+        off = self.__off_start + self.__off
+        copy_data(self._f, off + self.__room, off)
+        self.__room = 0
+        if self.seek(off) != off: raise IOError()
+    def __write_mv(self, mv):
+        nbytes = len(mv)
+        self.__off += nbytes
+        self.__room -= nbytes
+        nbytes -= self.__f.write(mv)
+        while nbytes > 0: nbytes -= self.__f.write(mv[-nbytes:])
+
+    def flush(self):
+        if self.__buf_size > 0:
+            self.__make_room(self.__buf_size)
+            self.__write_mv(self.__buf[:self.__buf_size])
+            self.__buf_size = 0
+        elif self.__room > 0:
+            self.__remove_room()
+
+    def write(self, b):
+        nbytes = len(b)
+        if nbytes <= self.__room:
+            self.__write_mv(memoryview(b))
+        elif nbytes > len(self.__buf_raw) - self.__buf_size:
+            self.__make_room(self.__buf_size + nbytes)
+            if self.__buf_size:
+                self.__write_mv(self.__buf[:self.__buf_size])
+                self.__buf_size = 0
+            self.__write_mv(memoryview(b))
+        else:
+            self.__buf[self.__buf_size:self.__buf_size+nbytes] = b
+            self.__buf_size += nbytes
+        return nbytes
+
+    def truncate(self, size=None):
+        if size is None: self.flush()
+        else: raise IOError()
