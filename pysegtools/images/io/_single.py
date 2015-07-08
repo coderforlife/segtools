@@ -47,22 +47,24 @@ class FileImageSource(DeferredPropertiesImageSource):
         return handlers
 
     @classmethod
-    def __open_handlers(cls, readonly=False, handler=None):
-        for cls in all_subclasses(cls):
-            if cls._can_read() and (readonly or cls._can_write()) and \
-               (handler is None or handler == cls.name()):
-                yield cls
+    def __openable_by(cls, filename, readonly=False, handler=None, **options):
+        handlers = (h for h in all_subclasses(cls) if h._can_read() and (readonly or h._can_write()))
+        if handler is not None:
+            for h in handlers:
+                if handler == h.name(): return cls
+            raise ValueError('No image source handler named "'+handler+'" for opening files')
+        for h in handlers:
+            with open(filename, 'rb') as f:
+                if h._openable(filename, f, readonly, **options): return h
+        raise ValueError('Unable to find image source handler for opening file "'+filename+'"')
 
     @classmethod
     def open(cls, filename, readonly=False, handler=None, **options):
         """
         Opens an existing image file. Extra options are only supported by some file handlers.
         """
-        for cls in cls.__open_handlers(readonly, handler):
-            with open(filename, 'rb') as f:
-                if cls._openable(filename, f, readonly, **options):
-                    return cls.open(filename, readonly, **options)
-        raise ValueError('Unable to find image source handler for file "'+filename+'"')
+        return cls.__openable_by(filename, readonly, handler, **options). \
+               open(filename, readonly, **options)
 
     @classmethod
     def openable(cls, filename, readonly=False, handler=None, **options):
@@ -70,19 +72,22 @@ class FileImageSource(DeferredPropertiesImageSource):
         Checks if an existing image file can be opened with the given arguments. Extra options are
         only supported by some file handlers.
         """
-        try:
-            for cls in cls.__open_handlers(readonly, handler):
-                with open(filename, 'rb') as f:
-                    if cls._openable(filename, f, readonly, **options): return True
-        except StandardError: pass
-        return False
+        try: cls.__openable_by(filename, readonly, handler, **options); return True
+        except StandardError: return False
 
     @classmethod
-    def __create_handlers(cls, writeonly=False, handler=None):
-        for cls in all_subclasses(cls):
-            if cls._can_write() and (writeonly or cls._can_read()) and \
-               (handler is None or handler == cls.name()):
-                yield cls
+    def __creatable_by(cls, filename, writeonly=False, handler=None, **options):
+        from os.path import splitext
+        ext = splitext(filename)[1].lower()
+        handlers = (h for h in all_subclasses(cls) if h._can_write() and (writeonly or h._can_read()))
+        if handler is not None:
+            for h in handlers:
+                if handler == cls.name(): return h
+            raise ValueError('No image source handler named "'+handler+'" for creating files')
+        for h in handlers:
+            with open(filename, 'rb') as f:
+                if cls._creatable(filename, ext, writeonly, **options): return h
+        raise ValueError('Unable to find image source handler for creating file "'+filename+'"')
 
     @classmethod
     def create(cls, filename, im, writeonly=False, handler=None, **options):
@@ -96,13 +101,8 @@ class FileImageSource(DeferredPropertiesImageSource):
         honored. It is your word that you will not use any functions that get data from the
         stack.
         """
-        from os.path import splitext
-        im = ImageSource.as_image_source(im)
-        ext = splitext(filename)[1].lower()
-        for cls in cls.__create_handlers(writeonly, handler):
-            if cls._creatable(filename, ext, writeonly, **options):
-                return cls.create(filename, im, writeonly, **options)
-        raise ValueError('Unknown file extension or options')
+        return cls.__creatable_by(filename, writeonly, handler, **options). \
+               create(filename, ImageSource.as_image_source(im), writeonly, **options)
 
     @classmethod
     def creatable(cls, filename, writeonly=False, handler=None, **options):
@@ -110,13 +110,8 @@ class FileImageSource(DeferredPropertiesImageSource):
         Checks if a filename can written to as a new image file. Extra options are only supported by
         some file handlers.
         """
-        try:
-            from os.path import splitext
-            ext = splitext(filename)[1].lower()
-            return any(cls._creatable(filename, ext, writeonly, **options)
-                       for cls in cls.__create_handlers(writeonly, handler))
-        except StandardError: pass
-        return False
+        try: cls.__creatable_by(filename, writeonly, handler, **options); return True
+        except StandardError: return False
 
     @classmethod
     def _openable(cls, filename, f, readonly, **opts): #pylint: disable=unused-argument
