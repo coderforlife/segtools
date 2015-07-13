@@ -22,8 +22,9 @@ def __version_getter(name):
     # Gets a function that gets the version of a module (assuming the version is in __version__) or
     # False if the module cannot be loaded.
     def __get_version():
-        import importlib
-        try: return importlib.import_module(name).__version__
+        try:
+            import importlib # doesn't import before 2.7
+            return importlib.import_module(name).__version__
         except ImportError: return False
     return __get_version
 def __get_python_version():
