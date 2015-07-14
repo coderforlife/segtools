@@ -4,14 +4,17 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from abc import abstractmethod
 from itertools import repeat
 
 from numpy import float64, complex128, real_if_close, dstack, zeros_like
 from numpy.fft import fft2, ifft2, fftshift, ifftshift
 
-from ..types import check_image, check_image_single_channel, im_decomplexify, im_decomplexify_dtype, im_complexify_dtype
-from ..types import get_dtype_min_max, get_dtype_max, get_im_dtype_and_nchan
+from ..types import check_image, check_image_single_channel
+from ..types import im_complexify as __im_complexify, im_decomplexify, im_decomplexify_dtype, im_complexify_dtype
+from ..types import get_dtype_min_max, get_im_dtype_and_nchan, create_im_dtype
 from ._stack import FilteredImageStack, FilteredImageSlice
+from .._stack import ImageStack
 from ...imstack import Command, CommandEasy, Opt, Help
 
 __all__ = ['real', 'imag', 'im_decomplexify', 'im_complexify', 'fft', 'ifft',
@@ -30,19 +33,18 @@ def imag(im):
     if im.ndim != 3 or im.shape[2] != 2: raise ValueError('Unsupported image type')
     return im[:,:,1]
 
-def im_complexify(real, imag=None, force=True):
-    from ..types import im_complexify
-    if imag is None:
-        if real.dtype.kind == 'c' or real.ndim == 3 and real.shape[2] == 2:
-            check_image(real)
-            return im_complexify(real, force)
-        real = check_image_single_channel(real)
-        imag = zeros_like(real)
+def im_complexify(R, I=None, force=True):
+    if I is None:
+        if R.dtype.kind == 'c' or R.ndim == 3 and R.shape[2] == 2:
+            check_image(R)
+            return im_complexify(R, force)
+        R = check_image_single_channel(R)
+        I = zeros_like(R)
     else:
-        real = check_image_single_channel(real)
-        imag = check_image_single_channel(imag)
-        if real.dtype != imag.dtype: raise ValueError('Real and imaginary data types must be the same')
-    return im_complexify(dstack(real, imag), force)
+        R = check_image_single_channel(R)
+        I = check_image_single_channel(I)
+        if R.dtype != I.dtype: raise ValueError('Real and imaginary data types must be the same')
+    return __im_complexify(dstack((R,I)), force)
 
 def fft(im, shift=True):
     o_dt = im.dtype
@@ -63,6 +65,8 @@ def ifft(im, shift=True):
 ##### Image Stacks #####
 class __SameShapeImageSlice(FilteredImageSlice):
     def _get_props(self): self._set_props(None, self._input.shape)
+    @abstractmethod
+    def _get_data(self): pass
 
 class RealImageStack(FilteredImageStack):
     def __init__(self, ims): super(RealImageStack, self).__init__(ims, RealImageSlice)
@@ -89,7 +93,7 @@ class DecomplexifyImageSlice(__SameShapeImageSlice):
     def _get_data(self): return im_decomplexify(self._input.data)
 
 class ComplexifyImageStack(FilteredImageStack):
-    def __init__(self, real, imag=None, force=True):
+    def __init__(self, real, imag=None, force=True): #pylint: disable=redefined-outer-name
         self._force = force
         real = ImageStack.as_image_stack(real)
         if imag is not None:
@@ -97,20 +101,22 @@ class ComplexifyImageStack(FilteredImageStack):
             if len(real) != len(imag): raise ValueError('Real and imaginary parts must be the same shape and data type')
         else:
             imag = repeat(None)
-        super(InvertImageStack, self).__init__(real,
+        super(ComplexifyImageStack, self).__init__(real,
             [ComplexifyImageSlice(self,z,R,I) for z,(R,I) in enumerate(zip(real,imag))])
 class ComplexifyImageSlice(FilteredImageSlice):
+    #pylint: disable=protected-access
     def __init__(self, stack, z, R, I):
         super(ComplexifyImageSlice, self).__init__(stack, z, R)
         self.__imag = I
         dt, sh = R.dtype, R.shape
         if I is None:
-            dt, nchan = get_im_dtype_and_nchan()
+            dt, nchan = get_im_dtype_and_nchan(R)
             if dt.kind == 'c' or nchan > 2: raise ValueError()
         else:
-            if dt.kind == 'c' or len(dtype.shape): raise ValueError()
+            if dt.kind == 'c' or len(dt.shape): raise ValueError()
             if I.dtype != dt or I.shape != sh: raise ValueError('Real and imaginary parts must be the same shape and data type')
         self._set_props(im_complexify_dtype(dt, self._stack._force), sh)
+    def _get_props(self): pass
     def _get_data(self): return im_complexify(self._input.data, self.__imag.data, self._stack._force)
 
 
@@ -119,6 +125,7 @@ class FFTImageStack(FilteredImageStack):
         super(FFTImageStack, self).__init__(ims, FFTImageSlice)
         self._shift = shift
 class FFTImageSlice(__SameShapeImageSlice):
+    #pylint: disable=protected-access
     def __init__(self, stack, z, im):
         super(FFTImageSlice, self).__init__(stack, z, im)
         if im.dtype.kind == 'c' or len(im.dtype.shape): raise ValueError('Not a single-channel image')
@@ -130,6 +137,7 @@ class IFFTImageStack(FilteredImageStack):
         super(IFFTImageStack, self).__init__(ims, IFFTImageSlice)
         self._shift = shift
 class IFFTImageSlice(__SameShapeImageSlice):
+    #pylint: disable=protected-access
     def __init__(self, stack, z, im):
         super(IFFTImageSlice, self).__init__(stack, z, im)
         if im.dtype.kind != 'c': raise ValueError('Not a complex image')
@@ -222,7 +230,7 @@ is filled in with 0).
         p.newline()
         p.text("See also:")
         p.list('real','imag','decomplexify')
-    def __str__(self): 'complexify'+(' (using 2 stacks)' if self.__two_stacks else '')
+    def __str__(self): return 'complexify'+(' (using 2 stacks)' if self.__two_stacks else '')
     def __init__(self, args, stack):
         self.__two_stacks, = args.get_all(*ComplexifyCommand._opts())
         stack.pop()

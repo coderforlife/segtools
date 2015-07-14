@@ -5,197 +5,31 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-from abc import ABCMeta, abstractproperty, abstractmethod
-from io import open
-from os.path import abspath
+from abc import abstractmethod
 import os
 
+from ._handler_manager import HandlerManager
 from ..source import ImageSource, DeferredPropertiesImageSource
-from ...imstack import Help
-from ...general.utils import all_subclasses
 
-class _FileImageSourceMeta(ABCMeta):
-    """The meta-class for file image stacks, which extends ABCMeta and calls Help.register if applicable"""
-    def __new__(cls, clsname, bases, dct):
-        c = super(_FileImageSourceMeta, cls).__new__(cls, clsname, bases, dct)
-        n = c.name()
-        if n is not None: Help.register((n,c.__name__), c.print_help)
-        return c
-
-class FileImageSource(DeferredPropertiesImageSource):
+class FileImageSource(DeferredPropertiesImageSource, HandlerManager):
     """
     A single 2D image slices on disk. Initially only the header is loaded. The image data is not
     read until accessed. This class is designed to mirror the FileImageStack class except it
     derives from ImageSource instead of ImageStack.
     """
-    
-    __metaclass__ = _FileImageSourceMeta
-
-    @classmethod
-    def is_handler(cls, handler):
-        """Checks that the given string is a valid handler for image source files."""
-        return any(handler == cls.name() for cls in all_subclasses(cls))
-
-    @classmethod
-    def handlers(cls, read=True):
-        """Get a list of all image source handlers."""
-        handlers = []
-        for cls in all_subclasses(cls):
-            h = cls.name()
-            if h is not None and (read and cls._can_read or not read and cls._can_write):
-                handlers.append(h)
-        return handlers
-
-    @classmethod
-    def __openable_by(cls, filename, readonly=False, handler=None, **options):
-        handlers = (h for h in all_subclasses(cls) if h._can_read() and (readonly or h._can_write()))
-        if handler is not None:
-            for h in handlers:
-                if handler == h.name(): return cls
-            raise ValueError('No image source handler named "'+handler+'" for opening files')
-        for h in handlers:
-            with open(filename, 'rb') as f:
-                if h._openable(filename, f, readonly, **options): return h
-        raise ValueError('Unable to find image source handler for opening file "'+filename+'"')
-
-    @classmethod
-    def open(cls, filename, readonly=False, handler=None, **options):
-        """
-        Opens an existing image file. Extra options are only supported by some file handlers.
-        """
-        return cls.__openable_by(filename, readonly, handler, **options). \
-               open(filename, readonly, **options)
-
-    @classmethod
-    def openable(cls, filename, readonly=False, handler=None, **options):
-        """
-        Checks if an existing image file can be opened with the given arguments. Extra options are
-        only supported by some file handlers.
-        """
-        try: cls.__openable_by(filename, readonly, handler, **options); return True
-        except StandardError: return False
-
-    @classmethod
-    def __creatable_by(cls, filename, writeonly=False, handler=None, **options):
-        from os.path import splitext
-        ext = splitext(filename)[1].lower()
-        handlers = (h for h in all_subclasses(cls) if h._can_write() and (writeonly or h._can_read()))
-        if handler is not None:
-            for h in handlers:
-                if handler == cls.name(): return h
-            raise ValueError('No image source handler named "'+handler+'" for creating files')
-        for h in handlers:
-            with open(filename, 'rb') as f:
-                if cls._creatable(filename, ext, writeonly, **options): return h
-        raise ValueError('Unable to find image source handler for creating file "'+filename+'"')
-
-    @classmethod
-    def create(cls, filename, im, writeonly=False, handler=None, **options):
-        """
-        Creates an image file. Extra options are only supported by some file handlers.
-
-        The new image file is created from the given ndarray or ImageSource. Selection of a handler
-        and format is purely on file extension and options given.
-
-        Note that the "writeonly" flag is only used for optimization and may not always been
-        honored. It is your word that you will not use any functions that get data from the
-        stack.
-        """
-        return cls.__creatable_by(filename, writeonly, handler, **options). \
-               create(filename, ImageSource.as_image_source(im), writeonly, **options)
-
-    @classmethod
-    def creatable(cls, filename, writeonly=False, handler=None, **options):
-        """
-        Checks if a filename can written to as a new image file. Extra options are only supported by
-        some file handlers.
-        """
-        try: cls.__creatable_by(filename, writeonly, handler, **options); return True
-        except StandardError: return False
-
-    @classmethod
-    def _openable(cls, filename, f, readonly, **opts): #pylint: disable=unused-argument
-        """
-        [To be implemented by handler, default is nothing is openable]
-
-        Return if a file is openable as a FileImageSource given the filename, file object, and
-        dictionary of options. If this returns True then the class must provide a static/class
-        method like:
-            `open(filename, readonly, **options)`
-        Option keys are always strings, values can be either strings or other values (but strings
-        must be accepted for any value and you must convert, if possible). While _openable should
-        return False if there any unknown option keys or option values cannot be used, open should
-        throw exceptions.
-        """
-        return False
-
-    @classmethod
-    def _creatable(cls, filename, ext, writeonly, **opts): #pylint: disable=unused-argument
-        """
-        [To be implemented by handler, default is nothing is creatable]
-
-        Return if a filename/ext (ext always lowercase and includes .) is creatable as a
-        FileImageSource given the dictionary of options. If this returns True then the class must
-        provide a static/class method like:
-            `create(filename, ImageSource, writeonly, **options)`
-        Option keys are always strings, values can be either strings or other values (but strings
-        must be accepted for any value and you must convert, if possible). While _creatable should
-        return False if there any unknown option keys or option values cannot be used, create should
-        throw exceptions.
-
-        Note that the "writeonly" flag is only used for optimization and may not always been
-        honored. It is the word of the caller they will not use any functions that get data from
-        the stack. The handler may ignore this and treat it as read/write.
-        """
-        return False
-
-    @classmethod
-    def _can_read(cls):
-        """
-        [To be implemented by handler, default is readable]
-
-        Returns True if this handler can, under any circumstances, read images.
-        """
-        return True
-
-    @classmethod
-    def _can_write(cls):
-        """
-        [To be implemented by handler, default is writable]
-
-        Returns True if this handler can, under any circumstances, write images.
-        """
-        return True
-
-    @classmethod
-    def name(cls):
-        """
-        [To be implemented by handler, default causes the handler to not have a help page, be
-        unusable by name, and not be listed, but still can handle things]
-
-        Return the name of this image source handler to be displayed in help outputs.
-        """
-        return None
-
-    @classmethod
-    def print_help(cls, width):
-        """
-        [To be implemented by handler, default prints nothing]
-
-        Prints the help page of this image source handler.
-        """
-        pass
-
     def __init__(self, filename, readonly=False):
-        self._filename = abspath(filename)
+        self._filename = os.path.abspath(filename)
         self._readonly = bool(readonly)
 
+    @classmethod
+    def _create_trans(cls, im): return ImageSource.as_image_source(im)
+    
     def close(self): pass
     def __delete__(self): self.close()
     @property
     def readonly(self): return self._readonly
     @property
-    def header(self):
+    def header(self): #pylint: disable=no-self-use
         """
         Return 'header' information for an image. This should be a copy of a dictionary or None.
         """
@@ -215,7 +49,7 @@ class FileImageSource(DeferredPropertiesImageSource):
         return self._filename
     @filename.setter
     def filename(self, filename):
-        filename = abspath(abspath)
+        filename = os.path.abspath(filename)
         if self._filename != filename:
             self._set_filename(filename)
             self._filename = filename
@@ -230,7 +64,7 @@ class FileImageSource(DeferredPropertiesImageSource):
         """
         pass
 
-    def _rename(self, filname):
+    def _rename(self, filename):
         # TODO: renaming may run into problems on Windows because if the file exists the rename
         # will fail. A solution is to delete the file first. Also, what if the new file name
         # exists and is a directory or unremovable?
@@ -238,7 +72,7 @@ class FileImageSource(DeferredPropertiesImageSource):
         os.rename(self._filename, filename)
 
     @data.setter
-    def data(self, im):
+    def data(self, im): #pylint: disable=arguments-differ
         if self._readonly: raise ValueError('cannot set data for readonly image source')
         self._set_data(ImageSource.as_image_source(im))
 
@@ -264,4 +98,5 @@ class FileImageSource(DeferredPropertiesImageSource):
         pass
 
 # Import formats
-from . import handlers # pylint: disable=unused-import
+#from . import handlers (doesn't work, next line is roughly equivalent) 
+__import__(('.'.join(__name__.split('.')[:-1]+['handlers'])), globals(), locals()) #pylint: disable=unused-import

@@ -186,6 +186,10 @@ class _DictViewSetLike(_DictView):
     def __or__(self, other): return _DictViewSetLike.__set_op(self, other, set.update)
     def __sub__(self, other): return _DictViewSetLike.__set_op(self, other, set.difference_update)
     def __xor__(self, other): return _DictViewSetLike.__set_op(self, other, set.symmetric_difference_update)
+    def __rand__(self, other): return _DictViewSetLike.__set_op(other, self, set.intersection_update)
+    def __ror__(self, other): return _DictViewSetLike.__set_op(other, self, set.update)
+    def __rsub__(self, other): return _DictViewSetLike.__set_op(other, self, set.difference_update)
+    def __rxor__(self, other): return _DictViewSetLike.__set_op(other, self, set.symmetric_difference_update)
 
 class _DictViewKeys(_DictViewSetLike, collections.KeysView):
     def __init__(self, d): super(_DictViewKeys, self).__init__(d)
@@ -239,7 +243,7 @@ class ReadOnlyDictionaryWrapper(DictionaryWrapper):
 class ListWrapper(list):
     # Raw Functions     Derived Functions
     #  __len__      <=                __iter__, __contains__, index, remove, count, reverse, __reversed__, __repr__, sort, append
-    #  __getitem__  <=  __getslice__, __iter__, __contains__, index, remove, count, reverse, __reversed__, __repr__, sort, pop, __imul__, __mul__, __add__
+    #  __getitem__  <=  __getslice__, __iter__, __contains__, index, remove, count, reverse, __reversed__, __repr__, sort, pop, __imul__, __mul__, __add__, __radd__
     #
     #  __delitem__  <=  __delslice__, remove, pop, __imul__
     #  __setitem__  <=  __setslice__, reverse, sort
@@ -327,6 +331,10 @@ class ListWrapper(list):
         lst = self[:]
         lst.extend(other)
         return lst
+    def __radd__(self, other):
+        lst = other[:]
+        lst.extend(self)
+        return lst
     def __mul__(self, n):
         if not isinstance(n, Integral): raise TypeError('an integer is required')
         if n <= 0: return self[0:0] # empty list of same type
@@ -385,11 +393,11 @@ class ListOfSame(ReadOnlyListWrapper): # does allow 'deleting' though
     """
     A list where all elements have the same value. It allows for an infinite number of elements.
     """
-    def __init__(self, val, len=None):
-        if len != None and len < 0: raise ValueError()
+    def __init__(self, val, length=None):
+        if length is not None and length < 0: raise ValueError()
         super(ListOfSame, self).__init__(None)
         self.__val = val
-        self.__len = len
+        self.__len = length
     def __len__(self): return maxsize if self.__len is None else self.__len
     def __getitem__(self, i):
         if isinstance(i, Integral):
@@ -419,10 +427,12 @@ class ListOfSame(ReadOnlyListWrapper): # does allow 'deleting' though
         raise ValueError('%s is not in list' % value)
     def count(self, value): return len(self) if value == self.__val else 0
     def __eq__(self, other):
+        #pylint: disable=protected-access
         if isinstance(other, ListOfSame):
             return self.__val == other.__val and self.__len == other.__len
         return _iter_eq(self, other)
     def __lt__(self, other):
+        #pylint: disable=protected-access
         if isinstance(other, ListOfSame):
             return ((self.__len == 0 and other.__len != 0) or
                     self.__val < other.__val or
@@ -430,10 +440,13 @@ class ListOfSame(ReadOnlyListWrapper): # does allow 'deleting' though
         return _iter_lt(self, other)
 
 class DelayLoadedList(ReadOnlyListWrapper):
-    """A read-only list where the elements are not computed/loaded until they are requested."""
+    """
+    A read-only list where the elements are not computed/loaded until they are requested. Unlike
+    delayed(..., list), this loads each item seperately instead of all items at once.
+    """
     __metaclass__ = ABCMeta
-    def __init__(self, len):
-        super(DelayLoadedList, self).__init__([_marker]*len)
+    def __init__(self, length):
+        super(DelayLoadedList, self).__init__([_marker]*length)
     @abstractmethod
     def _loaditem(self, i): pass
     def __getitem(self, i):

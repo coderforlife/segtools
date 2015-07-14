@@ -67,6 +67,8 @@ Examples:""")
     def __init__(self, args, stack):
         if len(args.positional) == 0: raise ValueError("No image slices selected")
         if len(args.named) != 0: raise ValueError("No named options are accepted")
+        stack.pop()
+        stack.push()
         self.__inds = []
         try:
             for arg in args.positional:
@@ -80,9 +82,9 @@ Examples:""")
         except ValueError: raise ValueError("Only integers and slices ([first][:step]:[last]) are allowed")
     def execute(self, stack):
         ims = stack.pop()
-        last_ind = len(s)-1
+        last_ind = len(ims)-1
         inds = []
-        all_neg = True
+        #all_neg = True
         for i in self.__inds:
             if isinstance(i, slice):
                 # slice: stop is inclusive (not normally in Python)
@@ -90,14 +92,14 @@ Examples:""")
                 if step > 0:
                     start = 0         if start is None else ((last_ind+start) if start < 0 else start)
                     stop  = (last_ind if stop  is None else ((last_ind+stop)  if stop  < 0 else stop))+1
-                    all_neg = False
+                    #all_neg = False
                 else: # step < 0
                     start = last_ind if start is None else ((last_ind+start) if start < 0 else start)
                     stop  = (0       if stop  is None else ((last_ind+stop)  if stop  < 0 else stop))-1
                 inds.extend(xrange(start, stop, step))
             else:
                 inds.append((i+last_ind) if i < 0 else i)
-                all_neg = False
+                #all_neg = False
         stack.push(ImageStackCollection(ims[inds]))
 
 class SplitCommand(Command):
@@ -134,9 +136,12 @@ Examples:""")
         p.text("See also:")
         p.list('z', 'combine')
 
+    def __str__(self): return "spliting stack into %s and the inverse"%self.__raw
+
+    @staticmethod
     def __safe_eval(x, n):
-        # At this point we have also already sanitized and made sure there are onyl digits, operators, and n
-        return eval(x, globals={'__builtins__':{}}, locals={'n':n})
+        # At this point we have also already sanitized and made sure there are only digits, operators, and n
+        return eval(x, globals={'__builtins__':{}}, locals={'n':n}) #pylint: disable=eval-used
 
     @staticmethod
     def __cast(x):
@@ -149,6 +154,9 @@ Examples:""")
     def __init__(self, args, stack):
         if len(args.positional) != 1: raise ValueError("Exaclty one option required")
         if len(args.named) != 0: raise ValueError("No named options are accepted")
+        stack.pop()
+        stack.push()
+        stack.push()
         try:
             self.__raw = arg = args[0].strip()
             if ':' not in arg: raise ValueError
@@ -268,7 +276,7 @@ with the info command, which can be placed immediately before this command if ne
         p.text("Options:")
         p.opts(*cls._opts())
     def __str__(self): return "memory-mapped caching" if self.__memmap else "memory caching"
-    def __init__(self, args, stack):
+    def __init__(self, args, _):
         self.__memmap, self.__tmpdir = args.get_all(*MemCacheCommand._opts())
     def execute(self, stack):
         import gc
@@ -279,7 +287,7 @@ with the info command, which can be placed immediately before this command if ne
         else:
             from numpy import empty
             for ims in imss:
-                info = [(im.shape, im.dtype) for im in ims._slices]
+                info = [(im.shape, im.dtype) for im in ims]
                 if all(i == info[0] for i in islice(info, 1, None)):
                     # Homogeneous - single 3D array
                     sh, dt = info[0]
@@ -292,6 +300,7 @@ with the info command, which can be placed immediately before this command if ne
         gc.collect() # TODO: run some tests to make sure we aren't leaking objects (unreachable cycle with __del__)
         
 class MemMapCacheImageStack(ImageStack):
+    __file = None
     def __init__(self, ims, tmpdir=None):
         from numpy import ndarray, cumsum
         slices = ims[:]
@@ -335,8 +344,8 @@ class MemMapCacheImageStack(ImageStack):
             return mmap(self.__file.fileno(), size, access=ACCESS_WRITE)
 
     @ImageStack.cache_size.setter
-    def cache_size(self, value): pass # prevent built-in caching - this is a cache!
-    def close():
+    def cache_size(self, value): pass # prevent built-in caching - this is a cache! #pylint: disable=arguments-differ
+    def close(self):
         self.__file.close()
         self.__file = None
     def __delete__(self): self.close()

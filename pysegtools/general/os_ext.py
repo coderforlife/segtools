@@ -29,7 +29,7 @@ else:
 
     def cb_winerrcheck(success, func, args):
         if not success:
-            if len(args) > 0 and type(args[0]) == HANDLE: CloseHandle(args[0])
+            if len(args) > 0 and isinstance(args[0], HANDLE): CloseHandle(args[0])
             raise WinError()
         return True
     def cb_wait_check(result, func, args):

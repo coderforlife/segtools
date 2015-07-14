@@ -13,7 +13,7 @@ from numpy import flipud, fliplr, rot90
 from ._stack import FilteredImageStack, FilteredImageSlice, UnchangingFilteredImageStack, UnchangingFilteredImageSlice
 from .._stack import ImageStack, ImageSlice
 from ..source import ImageSource
-from ..types import check_image, get_im_dtype_and_nchan, create_im_dtype, get_dtype_min_max, get_dtype_max
+from ..types import check_image, get_im_dtype_and_nchan, create_im_dtype, get_im_min_max, get_dtype_max
 from ...imstack import Command, CommandEasy, Opt, Help
 
 __all__ = ['flip','rotate','inv',
@@ -36,7 +36,7 @@ def rotate(im, direction='cw'):
     degrees. A view may be returned in some cases. The direction can be 'cw', 'ccw', or 'full'.
     """
     check_image(im)
-    try: return rot90(im, ('ccw', 'full', 'cw').index() + 1)
+    try: return rot90(im, ('ccw', 'full', 'cw').index(direction) + 1)
     except ValueError: raise ValueError('Unsupported direction')
 
 def inv(im):
@@ -60,12 +60,12 @@ def inv(im):
 
 ##### 3D #####
 class FlipImageStack(UnchangingFilteredImageStack):
-    def __init__(self, ims, dir='y'):
+    def __init__(self, ims, direction='y'):
         """dir can be x, y, or z"""
-        self._dir = dir
-        if dir == 'z':
+        self._dir = direction
+        if direction == 'z':
             slcs = [DoNothingFilterImageSlice(im,self,z) for z,im in enumerate(reversed(ims))]
-        elif dir in ('x','y'):
+        elif direction in ('x','y'):
             self._flip = flipud if dir == 'y' else fliplr
             slcs = FlipImageSlice
         else:
@@ -74,17 +74,19 @@ class FlipImageStack(UnchangingFilteredImageStack):
 class DoNothingFilterImageSlice(UnchangingFilteredImageSlice):
     def _get_data(self): return self._input.data
 class FlipImageSlice(UnchangingFilteredImageSlice):
+    #pylint: disable=protected-access
     def _get_data(self): return self._stack._flip(self._input.data)
 
 
 class RotateImageStack(FilteredImageStack):
-    def __init__(self, ims, dir='cw'):
+    def __init__(self, ims, direction='cw'):
         """dir can be cw, cww, or full"""
-        self._dir = dir
-        try: self._k = ('ccw', 'full', 'cw').index() + 1
+        self._dir = direction
+        try: self._k = ('ccw', 'full', 'cw').index(direction) + 1
         except ValueError: raise ValueError('Unsupported direction')
         super(RotateImageStack, self).__init__(ims, RotateImageSlice)
 class RotateImageSlice(FilteredImageSlice):
+    #pylint: disable=protected-access
     def _get_props(self):
         self._set_props(self._input.dtype, self._input.shape[::(-1 if (self._stack._k&1) else 1)])
     def _get_data(self): return rot90(self._input.data, self._stack._k)
@@ -126,8 +128,7 @@ class ExtractChannelsImageSlice(FilteredImageSlice):
 class CombineChannelsImageStack(FilteredImageStack):
     def __init__(self, imss):
         from itertools import islice
-        from numpy import sum
-        
+        from numpy import sum #pylint: disable=redefined-builtin
         self._imss = imss = [ImageStack.as_image_stack(ims) for ims in imss]
         if len(imss) == 0: raise ValueError('no channels to combine')
         d = len(imss[0])
@@ -146,13 +147,16 @@ class CombineChannelsImageStack(FilteredImageStack):
         super(CombineChannelsImageStack, self).__init__(None,
             [CombineChannelsImageSlice(self,z,dt,sh) for z,(dt,sh) in enumerate(zip(dtypes,shapes))])
 class CombineChannelsImageSlice(ImageSlice):
+    #pylint: disable=protected-access
     def __init__(self, stack, z, dtype, shape):
         super(CombineChannelsImageSlice, self).__init__(stack, z)
         self._set_props(dtype, shape)
     def _get_props(self): pass
     def _get_data(self):
+        from numpy import empty
         dst, chan = empty(self._shape, dtype=self._dtype), 0
         if dst.ndim == 2: dst = dst[:,:,None]
+        z = self._z
         for ims in self._stack._imss:
             im = ims[z].data
             if im.ndim == 2: im = im[:,:,None]

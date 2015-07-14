@@ -4,6 +4,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from abc import abstractmethod
 from functools import partial
 
 from ._stack import UnchangingFilteredImageStack, UnchangingFilteredImageSlice
@@ -42,12 +43,12 @@ def median_blur(im, size=3):
 ##### 3D #####
 class BlurFilterImageStack(UnchangingFilteredImageStack):
     def __init__(self, ims, flt):
-        super(BasicFilterImageStack, self).__init__(ims, BlurFilterImageSlice)
+        super(BlurFilterImageStack, self).__init__(ims, BlurFilterImageSlice)
         self._filter = flt
 
 class BlurFilterImageSlice(UnchangingFilteredImageSlice):
-    def _get_data(self):
-        return _filter(self._input.data, self._stack._filter)
+    #pylint: disable=protected-access
+    def _get_data(self): return _filter(self._input.data, self._stack._filter)
 
 class GaussianBlur(BlurFilterImageStack):
     def __init__(self, ims, sigma=1.0):
@@ -74,11 +75,16 @@ class BlurCommand(CommandEasy):
         Opt('size', 'The amount of blurring as an integer >=2', Opt.cast_int(lambda x:x>1), 3),
         )
     @classmethod
-    def _consumes(cls, dtype): return ('Image to be blurred',)
+    def _consumes(cls): return ('Image to be blurred',)
     @classmethod
-    def _produces(cls, dtype): return ('Blurred image',)
+    def _produces(cls): return ('Blurred image',)
+    @abstractmethod
+    def __str__(self): pass
+    @abstractmethod
+    def execute(self, stack): pass
     
 class GaussianBlurCommand(BlurCommand):
+    _sigma = None
     @classmethod
     def name(cls): return 'gaussian blur'
     @classmethod
@@ -90,9 +96,10 @@ class GaussianBlurCommand(BlurCommand):
         Opt('sigma', 'The amount of blurring as a positive floating-point number', Opt.cast_float(lambda x:x>0), 1.0),
         )
     def __str__(self): return 'Gaussian blur with sigma=%f'%self._sigma
-    def execute(self, stack): stack.push(GaussianBlurImageStack(stack.pop(), self._sigma))
+    def execute(self, stack): stack.push(GaussianBlur(stack.pop(), self._sigma))
     
 class MeanBlurCommand(BlurCommand):
+    _size = None
     @classmethod
     def name(cls): return 'mean blur'
     @classmethod
@@ -100,9 +107,10 @@ class MeanBlurCommand(BlurCommand):
     @classmethod
     def flags(cls): return ('mean-blur',)
     def __str__(self): return 'mean blur with size=%d'%self._size
-    def execute(self, stack): stack.push(MeanBlurImageStack(stack.pop(), self._size))
+    def execute(self, stack): stack.push(MeanBlur(stack.pop(), self._size))
 
 class MedianBlurCommand(BlurCommand):
+    _size = None
     @classmethod
     def name(cls): return 'median blur'
     @classmethod
@@ -110,4 +118,4 @@ class MedianBlurCommand(BlurCommand):
     @classmethod
     def flags(cls): return ('median-blur',)
     def __str__(self): return 'median blur with size=%d'%self._size
-    def execute(self, stack): stack.push(MedianBlurImageStack(stack.pop(), self._size))
+    def execute(self, stack): stack.push(MedianBlur(stack.pop(), self._size))

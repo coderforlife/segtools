@@ -11,13 +11,14 @@ from StringIO import StringIO
 from numpy import dtype, int64, intp, float64, finfo
 from numpy import array, empty, zeros, linspace, tile, repeat, vstack, savetxt, loadtxt
 from numpy import add, left_shift, floor, sqrt
-from numpy import lexsort, histogram, unique, spacing, count_nonzero
+from numpy import lexsort, histogram, spacing, count_nonzero
 
 from ._stack import UnchangingFilteredImageStack, UnchangingFilteredImageSlice
 from .._stack import ImageStack
 from ...imstack import Command, Opt, Help
 from ..types import get_im_min_max, get_dtype_min_max, get_dtype_max, get_dtype_min, check_image_single_channel
 from .._util import String
+from ...general.delayed import delayed
 
 __all__ = ['imhist', 'histeq_trans', 'histeq_apply', 'histeq', 'histeq_exact']
 
@@ -26,7 +27,7 @@ def __as_unsigned(im):
     if im.dtype.kind == 'i':
         u_dt = dtype(o_dt.byteorder+'u'+str(o_dt.itemsize))
         im = im.view(u_dt)
-        im -= get_dtype_min(dt)
+        im -= get_dtype_min(o_dt)
     return im, o_dt
 def __restore_signed(im, dt):
     if dt.kind == 'i': im -= -long(get_dtype_min(dt))
@@ -203,7 +204,7 @@ def histeq_exact(im, h_dst=256, mask=None, order=6):
         del mask
 
     ##### Create the tranform that is the size of the image but with sorted histogram values #####
-    h_dst = tile(n/h_dst, h_dst) if isinstance(h_dst, Integral) else h_dst.ravel()*(n/h_dst.sum())
+    h_dst = tile(n/h_dst, h_dst) if isinstance(h_dst, Integral) else h_dst.ravel()*(n/h_dst.sum()) #pylint: disable=no-member
     if len(h_dst) < 2: raise ValueError('Invalid histogram')
     # Since there could be fractional amounts, make sure they are added up and put somewhere
     H_whole = floor(h_dst)
@@ -230,24 +231,21 @@ def __pixel_order(im, order=6):
     """
     from scipy.ndimage.filters import correlate
 
-    im,dt = __as_unsigned(im)
+    im,_ = __as_unsigned(im)
     if order < 2 or order > 6: raise ValueError('Invalid order')
 ##    if order == 1: return im.ravel().argsort().argsort()
 
     if im.dtype.kind == 'u' and im.dtype.itemsize <= 2:
         if im.dtype.itemsize == 1 or order <= 3:
             ##### Single convolution and no lexsort #####
-            F, = __create_uint_filter(order, im.dtype.itemsize)
+            F, = __create_uint_filter(order, im.dtype.itemsize) #pylint: disable=unbalanced-tuple-unpacking
             im = im.astype(int64)
             im = add(correlate(im, F), left_shift(im, 63 - im.dtype.itemsize*8, im), im)
+##            from numpy import unique
 ##            print(len(unique(im)) / im.size) # OA
             return im.ravel().argsort().argsort()
         Fs = __create_uint_filter(order, im.dtype.itemsize)
     else: # if im.dtype.kind == 'f' or im.dtype.itemsize > 2:
-        global __filters_float
-        if __filters_float is None:
-            __filters_float = ((__filter5==6).astype(float64), (__filter5==5).astype(float64), (__filter5==4).astype(float64),
-                               (__filter3==3).astype(float64), (__filter3==2).astype(float64))
         Fs = __filters_float[-order+1:]
 
     ##### Convolve filters with the image and lexsort #####
@@ -263,7 +261,9 @@ __filter3 = array([[3,2,3],[2,1,2],[3,2,3]])
 __filter5 = array([[6,5,4,5,6],[5,3,2,3,5],[4,2,1,2,4],[5,3,2,3,5],[6,5,4,5,6]])
 __filters = [None, array([[1]]), __filter3, __filter3, __filter5, __filter5, __filter5]
 __filters_uint = {}
-__filters_float = None
+__filters_float = delayed(lambda:(
+    (__filter5==6).astype(float64),(__filter5==5).astype(float64),(__filter5==4).astype(float64),
+    (__filter3==3).astype(float64),(__filter3==2).astype(float64)), tuple)
 
 def __create_uint_filter(order, nbytes):
     idx = (order, nbytes)
@@ -322,13 +322,13 @@ class HistEqImageStack(UnchangingFilteredImageStack):
         if (h_dst if isinstance(h_dst, Integral) else len(h_dst)) < 2: raise ValueError('Histogram too small')
         if mask is not None:
             mask = ImageStack.as_image_stack(mask)
-            if mask.dtype != bool: raise ValueError('mask must be of bool/logical type')
-            if len(mask) != len(ims): raise ValueError('mask must be same shape as image')
+            if mask.dtype != bool or len(mask) != len(ims): raise ValueError('mask must be of bool/logical type of the same shape as image')
         else:
             mask = repeat(None)
         super(HistEqImageStack, self).__init__(ims,
             [HistEqImageSlice(im, self, z, mk) for z,(im,mk) in enumerate(ims, mask)])
     def _get_trans(self):
+        #pylint: disable=protected-access
         if self._T is None:
             h_src = zeros(256, int64)
             for slc in self._slices: h_src += imhist(slc._input.data, 256, slc.mask)
@@ -336,6 +336,7 @@ class HistEqImageStack(UnchangingFilteredImageStack):
         return self._T
 
 class HistEqImageSlice(UnchangingFilteredImageSlice):
+    #pylint: disable=protected-access
     def __init__(self, image, stack, z, mask):
         super(HistEqImageSlice, self).__init__(image, stack, z)
         self._mask = mask
@@ -469,12 +470,12 @@ Exact Histogram Equalization References:
         p.text("See also:")
         p.list('imhist')
     def __str__(self):
-        '%shistogram equalization with %s%s%s' % (
+        return '%shistogram equalization with %s%s%s%s' % (
             'exact ' if self.__exact else '',
             ('bins from %s'%('stdin' if self.__hist=='-' else self.__hist)) if isinstance(self.__hist, String) else '%s equal bins'%self.__hist,
             ' using a mask' if self.__use_mask else '',
             ' across entire stack' if self.__src_hist is True else ('' if self.__src_hist is None else (' using source histogram from %s'%('stdin' if self.__src_hist=='-' else self.__src_hist))),
-            (' (order=%d)'%self.__exact) if isinstance(self.__exact, Integer) else '',
+            (' (order=%d)'%self.__exact) if isinstance(self.__exact, Integral) else '',
             )
     def __init__(self, args, stack):
         self.__hist,self.__use_mask,self.__exact,self.__src_hist,order = args.get_all(*HistEqCommand._opts())
@@ -491,9 +492,9 @@ Exact Histogram Equalization References:
     @staticmethod
     def __get_hist(h):
         if isinstance(h, String):
-            if fname == '-': l = stdin.readline()
+            if h == '-': l = stdin.readline()
             else:
-                with open(fname, 'r') as f: l = f.readline()
+                with open(h, 'r') as f: l = f.readline()
             h = loadtxt(StringIO(l.trim()))
             if h.ndim == 0 or len(h) < 2: raise ValueError('not enough data for histogram')
         return h

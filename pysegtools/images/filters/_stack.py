@@ -34,10 +34,16 @@ class FilteredImageSlice(ImageSlice):
     def __init__(self, image, stack, z):
         super(FilteredImageSlice, self).__init__(stack, z)
         self._input = ImageSource.as_image_source(image)
+    @abstractmethod
+    def _get_props(self): pass
+    @abstractmethod
+    def _get_data(self): pass
 
 class UnchangingFilteredImageStack(FilteredImageStack):
     """A stack of images that does not change the shape or data type of the filtered image stack."""
-    def _get_homogeneous_info(self): return self._ims._get_homogeneous_info()
+    def _get_homogeneous_info(self):
+        #pylint: disable=protected-access
+        return self._ims._get_homogeneous_info()
 
 class UnchangingFilteredImageSlice(FilteredImageSlice):
     """
@@ -45,3 +51,5 @@ class UnchangingFilteredImageSlice(FilteredImageSlice):
     without UnchangingFilteredImageStack.
     """
     def _get_props(self): self._set_props(self._input.dtype, self._input.shape)
+    @abstractmethod
+    def _get_data(self): pass

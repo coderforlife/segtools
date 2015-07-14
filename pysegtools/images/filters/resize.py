@@ -78,8 +78,9 @@ class BinImageStack(FilteredImageStack):
         if self._size < 2: raise ValueError('Unsupported binning size')
         if method not in ('mean', 'median'): raise ValueError('Unsupported binning method')
         self._f = mean if method == 'mean' else median
-        super(BinImageStack, self).__init__(ims, BimImageSlice)
-class BimImageSlice(FilteredImageSlice):
+        super(BinImageStack, self).__init__(ims, BinImageSlice)
+class BinImageSlice(FilteredImageSlice):
+    #pylint: disable=protected-access
     def _get_props(self):
         sh, sz = self._input.shape, self._stack._size
         self._set_props(self._input.dtype, ((sh[0]+sz-1)//sz, (sh[1]+sz-1)//sz))
@@ -99,9 +100,9 @@ class ResizeImageStack(FilteredImageStack):
     def __init__(self, ims, factor):
         self._factor = float(factor)
         if self._factor <= 0.0: raise ValueError('Factor must be positive')
-        if self._factor == 1.0: return im
         super(ResizeImageStack, self).__init__(ims, ResizeImageSlice)
 class ResizeImageSlice(FilteredImageSlice):
+    #pylint: disable=protected-access
     def _get_props(self):
         from scipy.version import version
         sh, f = self._input.shape, self._stack._factor
@@ -140,7 +141,7 @@ evaulate over smaller areas."""
     @classmethod
     def _see_also(cls): return ('resize',)
     def __str__(self): return 'bin %dx%d boxes using %s'%(self._size, self._size, self._method)
-    def execute(self, stack): stack.push(BimImageSlice(stack.pop(), self._size, self._method))
+    def execute(self, stack): stack.push(BinImageStack(stack.pop(), self._size, self._method))
     
 class ResizeCommand(CommandEasy):
     _factor = None
@@ -164,4 +165,4 @@ in the x and y directions, while if it is 2.0 the image is doubled in the x and 
     @classmethod
     def _see_also(cls): return ('bin',)
     def __str__(self): return 'resize to %.2fx'%(self._factor)
-    def execute(self, stack): stack.push(ResizeImageSlice(stack.pop(), self._factor))
+    def execute(self, stack): stack.push(ResizeImageStack(stack.pop(), self._factor))

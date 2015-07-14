@@ -134,16 +134,16 @@ def is_image(im):
     ndim = 2 if im.ndim == 3 and im.shape[2] == 1 else im.ndim
     return (ndim == 2 and im.dtype.type in __basic_types+__cmplx_types or
             ndim == 3 and 2 <= im.shape[2] <= 5 and im.dtype.type in __basic_types)
-def is_image_desc(dtype, shape):
+def is_image_desc(dt, shape):
     """
     Returns True if the dtype and shape represent an image. Same as is_image but just checks the
     properties instead of needing an array.
     """
-    shape = shape + dtype.shape
-    dtype = dtype.base.type
+    shape = shape + dt.shape
+    dt = dt.base.type
     ndim = 2 if len(shape) == 3 and shape[2] == 1 else len(shape)
-    return (ndim == 2 and dtype in __basic_types+__cmplx_types or
-            ndim == 3 and 2 <= shape[2] <= 5 and dtype in __basic_types)
+    return (ndim == 2 and dt in __basic_types+__cmplx_types or
+            ndim == 3 and 2 <= shape[2] <= 5 and dt in __basic_types)
 def check_image(im):
     """
     Similar to is_image except instead of returning True/False it throws an exception if it isn't

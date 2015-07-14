@@ -154,7 +154,7 @@ class Args(object):
         key, val = self.__get(key)
         if key is None:
             if default is not _NoDefault: return default
-            raise ValueError("Value required for argument '%s'" % o.name)
+            raise ValueError("Value required for argument '%s'" % val)
         if isinstance(key, Integral): del self._args[key]
         else: del self._kwargs[key]
         return val
@@ -164,8 +164,8 @@ class Args(object):
         try: return opt.default if key is None else opt.cast(val)
         except (LookupError):
             if default is not _NoDefault: return default
-            raise ValueError("Value required for argument '%s'" % o.name)
-        except (ValueError, TypeError): raise ValueError("Argument '%s' does not support value '%s'" % (o.name, val))
+            raise ValueError("Value required for argument '%s'" % opt.name)
+        except (ValueError, TypeError): raise ValueError("Argument '%s' does not support value '%s'" % (opt.name, val))
     def __get_all(self, *opts):
         """
         Get all arguments as an iterator of key,val pairs like __get would return along with the
@@ -542,7 +542,9 @@ class CommandEasy(Command):
         if fs is None or len(fs) == 0: return
         p = Help(width)
         p.title(t)
-        if d: p.text(d); p.newline();
+        if d:
+            p.text(d)
+            p.newline()
         p.flags(fs)
         if os:
             p.newline()
@@ -551,10 +553,10 @@ class CommandEasy(Command):
             s = ('--' if len(s) > 1 else '-')+s
             s += " " + (" ".join('['+o.name+']' if o.has_default else o.name for o in os))
             p.cmds(s)
-        if os: p.newline(); p.text("Options:"); p.opts(*os) #pylint: disable=star-args
+        if os: p.newline(); p.text("Options:"); p.opts(*os)
         if co or pr: p.newline(); p.stack_changes(consumes=co, produces=pr)
-        if ex: p.newline(); p.text("Examples:"); p.list(*ex) #pylint: disable=star-args
-        if sa: p.newline(); p.text("See also:"); p.list(*sa) #pylint: disable=star-args
+        if ex: p.newline(); p.text("Examples:"); p.list(*ex)
+        if sa: p.newline(); p.text("See also:"); p.list(*sa)
     def __new__(cls, args, stack):
         for _ in xrange(len(cls._consumes())): stack.pop()
         for _ in xrange(len(cls._produces())): stack.push()

@@ -5,15 +5,18 @@
 # Cython helper module for label filters.
 # These are not required but are much faster then the pure-Python ones.
 
-include "npy_helper.pxi"
+include "_cython/npy_helper.pxi"
 
 __all__ = ['unique_fast', 'unique_rows_fast',
            'unique_merge', 'unique_rows_merge',
            'replace', 'replace_rows',
-           'renumber', 'renumber_rows',
            'searchsorted_rows',
+           'number', 'number_rows',
+           'renumber', 'renumber_rows',
            'relabel2', 'relabel3']
 
+with_cython = True
+           
 ######################################################################
 #################### Unique Fast, Rows, and Merge ####################
 ######################################################################
@@ -22,7 +25,7 @@ __all__ = ['unique_fast', 'unique_rows_fast',
 # file. For the most part only integral, floating-point, and complex are optimized. All others will
 # fall back to some other code.
 
-cdef extern from "label.h" nogil:
+cdef extern from "_cython/label.h" nogil:
     pass
 
 cdef ndarray __unique_sorted(ndarray a):
@@ -241,6 +244,113 @@ def replace_rows(keys not None, vals not None, arr not None):
     return out
 
 
+########## Search Sorted ##########
+cdef extern from * nogil:
+    cdef void row_lower_bounds[T](const T*, const T*, const T*, const T*, uintp*, intp)
+    cdef void row_upper_bounds[T](const T*, const T*, const T*, const T*, uintp*, intp)
+
+    
+def __searchsorted_rows_left_fallback(ndarray s not None, ndarray a not None, ndarray out not None):
+    with nogil:
+        row_lower_bounds(<npy_ubyte*>PyArray_DATA(s), <npy_ubyte*>PyArray_DATA(s)+PyArray_STRIDE(s,0),
+                         <npy_ubyte*>PyArray_DATA(a), <npy_ubyte*>PyArray_DATA(a)+PyArray_STRIDE(a,0),
+                         <uintp*>PyArray_DATA(out), PyArray_STRIDE(a,0))
+
+@fused(fallback=__searchsorted_rows_left_fallback)
+def __searchsorted_rows_left(ndarray[npy_number, ndim=2] s not None, ndarray[npy_number, ndim=2] a not None, ndarray out not None):
+    cdef intp ncols = PyArray_DIM(a,1)
+    with nogil:
+        row_lower_bounds(<npy_number*>PyArray_DATA(s), <npy_number*>PyArray_DATA(s)+PyArray_DIM(s,0)*ncols,
+                         <npy_number*>PyArray_DATA(a), <npy_number*>PyArray_DATA(a)+PyArray_DIM(a,0)*ncols,
+                         <uintp*>PyArray_DATA(out), ncols)
+            
+def __searchsorted_rows_right_fallback(ndarray s not None, ndarray a not None, ndarray out not None):
+    with nogil:
+        row_upper_bounds(<npy_ubyte*>PyArray_DATA(s), <npy_ubyte*>PyArray_DATA(s)+PyArray_STRIDE(s,0),
+                         <npy_ubyte*>PyArray_DATA(a), <npy_ubyte*>PyArray_DATA(a)+PyArray_STRIDE(a,0),
+                         <uintp*>PyArray_DATA(out), PyArray_STRIDE(a,0))
+
+@fused(fallback=__searchsorted_rows_right_fallback)
+def __searchsorted_rows_right(ndarray[npy_number, ndim=2] s not None, ndarray[npy_number, ndim=2] a not None, ndarray out not None):
+    cdef intp ncols = PyArray_DIM(a,1)
+    with nogil:
+        row_upper_bounds(<npy_number*>PyArray_DATA(s), <npy_number*>PyArray_DATA(s)+PyArray_DIM(s,0)*ncols,
+                         <npy_number*>PyArray_DATA(a), <npy_number*>PyArray_DATA(a)+PyArray_DIM(a,0)*ncols,
+                         <uintp*>PyArray_DATA(out), ncols)
+
+def searchsorted_rows(sorted not None, arr not None, side='left'):
+    """
+    Takes each row in arr and searches for it in sorted using a binary search. This is basically the
+    Numpy method searchsorted but it works on rows and doesn't support the "sorter" option argument.
+
+    For non-basic data types this falls back to using the same method on the raw binary data of each
+    row.
+    """
+    cdef ndarray a = __check(arr, 2)
+    cdef ndarray s = __check2D(sorted)
+    cdef NPY_SEARCHSIDE sside
+    PyArray_SearchsideConverter(side, &sside)
+    if not PyArray_EquivArrTypes(s,a): raise ValueError('Input and sorted arrays must have the same dtype')
+    if PyArray_DIM(s,1) != PyArray_DIM(a,PyArray_NDIM(a)-1): raise ValueError('Input and sorted arrays must have the same number of columns')
+    cdef ndarray out = PyArray_EMPTY(PyArray_NDIM(a)-1, PyArray_SHAPE(a), NPY_UINTP, False)
+    if PyArray_SIZE(a) == 0: pass
+    elif sside == NPY_SEARCHLEFT:  __searchsorted_rows_left[PyArray_TYPE(a)](__ravel_rows(a), s, out)
+    elif sside == NPY_SEARCHRIGHT: __searchsorted_rows_right[PyArray_TYPE(a)](__ravel_rows(a), s, out)
+    return out
+
+
+########## Number ##########
+cdef ndarray __fix_zero(ndarray vals, ndarray zero, ndarray pos0_arr):
+    """
+    This fixes the 0 entry in the replacement data by making sure there always is one and it is
+    always first.
+    """
+    cdef intp stride = PyArray_STRIDE(vals, 0)
+    cdef char* vals_p = PyArray_BYTES(vals)
+    cdef void* zero_p = PyArray_DATA(zero)
+    cdef uintp pos0 = (<uintp*>PyArray_DATA(pos0_arr))[0]
+    if pos0 == PyArray_DIM(vals,0) or memcmp(vals_p+pos0*stride, zero_p, stride)!=0:
+        return PyArray_Concatenate((zero, vals), 0) # add 0 to the beginning
+    elif pos0 != 0:
+        memmove(vals_p+stride, vals_p, pos0*stride) # all negatives move up
+        memcpy(vals_p, zero_p, stride) # add 0 to the beginning
+    return vals
+
+def number(arr not None):
+    """
+    Numbers an image while keeping order. Just like renumber except that order is maintained.
+    This uses unique_fast and replace.
+    """
+    # See scipy-lectures.github.io/advanced/image_processing/#measuring-objects-properties-ndimage-measurements for the unqiue/searchsorted method
+    # First get the sorted, unique values
+    cdef ndarray a = PyArray_CheckFromAny(arr, NULL, 1, 0, __chk_flags, NULL)
+    cdef ndarray vals = unique_fast(a)
+    # Correct the 0 entry
+    cdef ndarray zero = PyArray_ZEROS(0, NULL, PyArray_TYPE(vals), False)
+    vals = __fix_zero(vals, zero, PyArray_SearchSorted(vals, zero, NPY_SEARCHLEFT, NULL))
+    # Use replace to create the output
+    cdef ndarray nums = PyArray_Arange(0, PyArray_DIM(vals,0), 1, NPY_UINTP)
+    return replace(vals, nums, a), PyArray_DIM(vals,0)-1
+    
+def number_rows(arr not None):
+    """
+    Numbers an image while keeping order. Just like renumber except that order is maintained.
+    This uses unique_rows_fast and replace_rows.
+    """
+    # See scipy-lectures.github.io/advanced/image_processing/#measuring-objects-properties-ndimage-measurements for the unqiue/searchsorted method
+    # First get the sorted, unique values
+    cdef ndarray a = PyArray_CheckFromAny(arr, NULL, 1, 0, __chk_flags, NULL)
+    cdef ndarray vals = unique_rows_fast(a)
+    # Correct the 0 entry
+    cdef intp d[2]
+    d[0] = 1; d[1] = PyArray_DIM(vals,1)
+    cdef ndarray zero = PyArray_ZEROS(2, d, PyArray_TYPE(a), False)
+    vals = __fix_zero(vals, zero, searchsorted_rows(vals, zero))
+    # Use replace to create the output
+    cdef ndarray nums = PyArray_Arange(0, PyArray_DIM(vals,0), 1, NPY_UINTP)
+    return replace_rows(vals, nums, a), PyArray_DIM(vals,0)-1
+
+
 ########## Renumber ##########
 cdef extern from * nogil:
     cdef V map_renumber[K,V](const K*, V*, intp) except +
@@ -298,61 +408,6 @@ def renumber_rows(arr not None):
     if PyArray_SIZE(a) != 0:
         N = __renumber_rows[PyArray_TYPE(a)](__ravel_rows(a), PyArray_Ravel(out, NPY_CORDER))
     return out, N
-
-
-########## Search Sorted ##########
-cdef extern from * nogil:
-    cdef void row_lower_bounds[T](const T*, const T*, const T*, const T*, uintp*, intp)
-    cdef void row_upper_bounds[T](const T*, const T*, const T*, const T*, uintp*, intp)
-
-    
-def __searchsorted_rows_left_fallback(ndarray s not None, ndarray a not None, ndarray out not None):
-    with nogil:
-        row_lower_bounds(<npy_ubyte*>PyArray_DATA(s), <npy_ubyte*>PyArray_DATA(s)+PyArray_STRIDE(s,0),
-                         <npy_ubyte*>PyArray_DATA(a), <npy_ubyte*>PyArray_DATA(a)+PyArray_STRIDE(a,0),
-                         <uintp*>PyArray_DATA(out), PyArray_STRIDE(a,0))
-
-@fused(fallback=__searchsorted_rows_left_fallback)
-def __searchsorted_rows_left(ndarray[npy_number, ndim=2] s not None, ndarray[npy_number, ndim=2] a not None, ndarray out not None):
-    cdef intp ncols = PyArray_DIM(a,1)
-    with nogil:
-        row_lower_bounds(<npy_number*>PyArray_DATA(s), <npy_number*>PyArray_DATA(s)+PyArray_DIM(s,0)*ncols,
-                         <npy_number*>PyArray_DATA(a), <npy_number*>PyArray_DATA(a)+PyArray_DIM(a,0)*ncols,
-                         <uintp*>PyArray_DATA(out), ncols)
-            
-def __searchsorted_rows_right_fallback(ndarray s not None, ndarray a not None, ndarray out not None):
-    with nogil:
-        row_upper_bounds(<npy_ubyte*>PyArray_DATA(s), <npy_ubyte*>PyArray_DATA(s)+PyArray_STRIDE(s,0),
-                         <npy_ubyte*>PyArray_DATA(a), <npy_ubyte*>PyArray_DATA(a)+PyArray_STRIDE(a,0),
-                         <uintp*>PyArray_DATA(out), PyArray_STRIDE(a,0))
-
-@fused(fallback=__searchsorted_rows_right_fallback)
-def __searchsorted_rows_right(ndarray[npy_number, ndim=2] s not None, ndarray[npy_number, ndim=2] a not None, ndarray out not None):
-    cdef intp ncols = PyArray_DIM(a,1)
-    with nogil:
-        row_upper_bounds(<npy_number*>PyArray_DATA(s), <npy_number*>PyArray_DATA(s)+PyArray_DIM(s,0)*ncols,
-                         <npy_number*>PyArray_DATA(a), <npy_number*>PyArray_DATA(a)+PyArray_DIM(a,0)*ncols,
-                         <uintp*>PyArray_DATA(out), ncols)
-
-def searchsorted_rows(sorted not None, arr not None, side='left'):
-    """
-    Takes each row in arr and searches for it in sorted using a binary search. This is basically the
-    Numpy method searchsorted but it works on rows and doesn't support the "sorter" option argument.
-
-    For non-basic data types this falls back to using the same method on the raw binary data of each
-    row.
-    """
-    cdef ndarray a = __check(arr, 2)
-    cdef ndarray s = __check2D(sorted)
-    cdef NPY_SEARCHSIDE sside
-    PyArray_SearchsideConverter(side, &sside)
-    if not PyArray_EquivArrTypes(s,a): raise ValueError('Input and sorted arrays must have the same dtype')
-    if PyArray_DIM(s,1) != PyArray_DIM(a,PyArray_NDIM(a)-1): raise ValueError('Input and sorted arrays must have the same number of columns')
-    cdef ndarray out = PyArray_EMPTY(PyArray_NDIM(a)-1, PyArray_SHAPE(a), NPY_UINTP, False)
-    if PyArray_SIZE(a) == 0: pass
-    elif sside == NPY_SEARCHLEFT:  __searchsorted_rows_left[PyArray_TYPE(a)](__ravel_rows(a), s, out)
-    elif sside == NPY_SEARCHRIGHT: __searchsorted_rows_right[PyArray_TYPE(a)](__ravel_rows(a), s, out)
-    return out
 
 
 #################################################

@@ -7,7 +7,7 @@ from __future__ import unicode_literals
 from numbers import Integral
 from itertools import islice
 
-from numpy import zeros, ones, empty, array, repeat, vstack, hstack, dstack
+from numpy import zeros, ones, empty, array, vstack, hstack, dstack
 from numpy import roll, flipud, fliplr, transpose
 from numpy import mean, nonzero, sign, logical_and, logical_or, equal, argsort
 
@@ -16,7 +16,7 @@ from ..types import check_image
 from .._stack import ImageStack, Homogeneous
 from ..colors import get_color, is_color
 from ...imstack import CommandEasy, Opt
-from ...general.datawrapper import ListOfSame, DelayLoadedList
+from ...general.datawrapper import DelayLoadedList
 from ...general.enum import Enum
 
 __all__ = ['get_bg_color','get_bg_padding','get_bg_mask','fill','fill_padding','crop','pad']
@@ -41,7 +41,7 @@ def get_bg_padding(im, bg_color=None):
         bg_color = get_bg_color(im)
         if bg_color is None: return (0,0,0,0) # no discoverable bg color, no paddding
     else:
-        bg_color = get_color(bg, im)
+        bg_color = get_color(bg_color, im)
     shp = im.shape
     w,h = shp[1]-1, shp[0]-1
     t,l,b,r = 0, 0, h, w
@@ -95,11 +95,15 @@ def padding2mask(im, padding):
     bg[t:B,R: ,...] = True
     return bg
 
+def __check_padding(padding, h, w):
+    return len(padding) == 4 and all(isinstance(x, Integral) and x>=0 for x in padding) and \
+           padding[0]+padding[2] < h and padding[1]+padding[3] < w
+
 def __mean(im, axis=2):
     if im.ndim == axis or im.shape[axis] == 1: return mean(im)
-    return array([mean(im[...,i]) for i in xrange(im.shape[axis])])
+    return array([mean(im[...,i]) for i in xrange(im.shape[axis])])\
 
-def fill_padding(im, padding=None, fill='black'):
+def fill_padding(im, padding=None, fill='black'): #pylint: disable=redefined-outer-name
     """
     Fills the 'background' of the image. The background is given by the amount of padding (top,
     left, bottom, right). If the padding is not given, it is calculated with get_bg_padding().
@@ -119,43 +123,27 @@ def fill_padding(im, padding=None, fill='black'):
     check_image(im)
     h,w = im.shape[:2]
     if padding is None: padding = get_bg_padding(im)
-    elif (len(padding) != 4 or any(not isinstance(x, Integral) or x<0 for x in padding)
-          or x[0]+x[2] >= h or x[1]+x[3] >= w):
-        raise ValueError
+    elif not __check_padding(padding, h, w): raise ValueError
     if all(x==0 for x in padding): return im
     if not im.flags.writeable: im = im.copy()
-    t,l,b,r = padding
+    t,l,b,r = padding #pylint: disable=unpacking-non-sequence
     B,R = h-b,w-r
     fg = im[t:B,l:R]
     
-    if fill == 'reflect':
-        H,W = h-b-t, w-r-l # foreground width/height
+    if fill in ('reflect', 'mirror'):
+        off = 1 if fill == 'mirror' else 0 # mirror shifts everything by 1
+        H,W = h-b-t-off, w-r-l-off # foreground width/height
         # Complete all the rows first
-        while H < t: im[t-H:t,l:R,...] = flipud(fg); t -= H;         H *= 2; fg = im[t:B,l:R]
-        while H < b: im[b:b-H,l:R,...] = flipud(fg); b -= H; B += H; H *= 2; fg = im[t:B,l:R]
-        im[:t,l:R,...] = flipud(fg[:t,:,...])
-        if b != 0: im[B:,l:R,...] = flipud(fg[-b:,:,...])
+        while H < t: im[t-H:t+off, l:R, ...] = flipud(fg); t -= H;         H *= 2; fg = im[t:B,l:R]
+        while H < b: im[b-off:b-H, l:R, ...] = flipud(fg); b -= H; B += H; H *= 2; fg = im[t:B,l:R]
+        im[:t+off, l:R, ...] = flipud(fg[:t+off, :, ...])
+        if b != 0: im[B-off:, l:R, ...] = flipud(fg[-b-off:, :, ...])
         fg = im[:,l:R]
         # Now the columns
-        while W < l: im[:,l-W:l,...] = fliplr(fg); l -= W;         W *= 2; fg = im[t:B,l:R]
-        while W < r: im[:,r:r-W,...] = fliplr(fg); r -= W; R += W; W *= 2; fg = im[t:B,l:R]
-        im[:,:l,...] = fliplr(fg[:,:l,...])
-        if r != 0: im[:,R:,...] = fliplr(fg[:,-r:,...])
-        # Corners are done automatically
-        
-    elif fill == 'mirror':
-        H,W = h-b-t-1, w-r-l-1 # foreground width/height (not including overlaid element)
-        # Complete all the rows first
-        while H < t: im[t-H:t+1,l:R,...] = flipud(fg); t -= H;         H = H*2; fg = im[t:B,l:R]
-        while H < b: im[b-1:b-H,l:R,...] = flipud(fg); b -= H; B += H; H = H*2; fg = im[t:B,l:R]
-        im[:t+1,l:R,...] = flipud(fg[:t+1,:,...])
-        if b != 0: im[B-1:,l:R,...] = flipud(fg[-b-1:,:,...])
-        fg = im[:,l:R]
-        # Now the columns
-        while W < l: im[:,l-W:l+1,...] = fliplr(fg); l -= W;         H = H*2; fg = im[t:B,l:R]
-        while W < r: im[:,r+1:r-W,...] = fliplr(fg); r -= W; R += W; W = W*2; fg = im[t:B,l:R]
-        im[:,:l+1,...] = fliplr(fg[:,:l+1,...])
-        if r != 0: im[:,R-1:,...] = fliplr(fg[:,-r-1:,...])
+        while W < l: im[:, l-W:l+off, ...] = fliplr(fg); l -= W;         W *= 2; fg = im[t:B,l:R]
+        while W < r: im[:, r+off:r-W, ...] = fliplr(fg); r -= W; R += W; W *= 2; fg = im[t:B,l:R]
+        im[:, :l+off, ...] = fliplr( fg[:, :l+off, ...] )
+        if r != 0: im[:, R-off:, ...] = fliplr( fg[:, -r-off:, ...] )
         # Corners are done automatically
         
     elif fill == 'wrap':
@@ -184,7 +172,7 @@ def fill_padding(im, padding=None, fill='black'):
         im[B: ,R: ,...] = fg[-1,-1,...]
         
     else:
-        fill = __mean_im(fg) if fill == 'mean' else get_color(fill, im)
+        fill = __mean(fg) if fill == 'mean' else get_color(fill, im)
         im[ :t, : ,...] = fill
         im[B: , : ,...] = fill
         im[t:B, :l,...] = fill
@@ -192,8 +180,18 @@ def fill_padding(im, padding=None, fill='black'):
         
     return im
 
-__tree_eps = 1e-6 # 1e-6 allows almost a distance of 500k to still be distinguishable
-def fill(im, mask=None, fill='black'):
+#__tree_eps = 1e-6 # 1e-6 allows almost a distance of 500k to still be distinguishable
+def __nearest_neighbors(mask):
+    bg_idx, fg_idx = nonzero(mask), nonzero(~mask)
+    try:
+        from scipy.spatial import cKDTree as KDTree #pylint: disable=no-name-in-module
+    except ImportError:
+        from scipy.spatial import KDTree
+    tree = KDTree(transpose(fg_idx))
+    dist,i = tree.query(transpose(bg_idx))
+    return bg_idx, fg_idx, dist, i
+
+def fill(im, mask=None, fill='black'): #pylint: disable=redefined-outer-name
     """
     Fills the 'background' of the image. The background is given by the mask (True is background).
     If the background is not given, it is calculated with get_bg_mask().
@@ -214,31 +212,18 @@ def fill(im, mask=None, fill='black'):
     h,w = im.shape[:2]
     if mask is None: mask = get_bg_mask(im)
     elif mask.shape != (h,w) or mask.dtype != bool or all(mask.flat): raise ValueError
-    if not any(mask.flat): return im
+    if not any(mask.flat): return im #pylint: disable=no-member
     if not im.flags.writeable: im = im.copy()
     
-    if fill == 'reflect':
-        from scipy.spatial import cKDTree
-        bg_idx, fg_idx = nonzero(mask), nonzero(~mask)
-        tree = cKDTree(transpose(fg_idx))
-        dist,i = tree.query(transpose(bg_idx))
+    if fill in ('reflect', 'mirror'):
+        bg_idx, fg_idx, dist, i = __nearest_neighbors(mask)
         di = argsort(dist)
         dst_y, dst_x = bg_idx
         src_y, src_x = fg_idx[0][i], fg_idx[1][i]
-        src_y, src_x = 2*src_y-dst_y-sign(src_y-dst_y), 2*src_x-dst_x-sign(src_x-dst_x)
-        valids = logical_and(logical_and(src_y>=0,src_y<h), logical_and(src_x>=0,src_x<w))
-        di = di.compress(valids.take(di))
-        for DY,DX,SY,SX in zip(dst_y.take(di), dst_x.take(di), src_y.take(di), src_x.take(di)):
-            im[DY, DX] = im[SY, SX]
-        
-    elif fill == 'mirror':
-        from scipy.spatial import cKDTree
-        bg_idx, fg_idx = nonzero(mask), nonzero(~mask)
-        tree = cKDTree(transpose(fg_idx))
-        dist,i = tree.query(transpose(bg_idx))
-        di = argsort(dist)
-        dst_y, dst_x = bg_idx
-        src_y, src_x = 2*fg_idx[0][i]-dst_y, 2*fg_idx[1][i]-dst_x
+        if fill == 'mirror':
+            src_y, src_x = 2*src_y-dst_y, 2*src_x-dst_x
+        else: # fill == 'reflect'
+            src_y, src_x = 2*src_y-dst_y-sign(src_y-dst_y), 2*src_x-dst_x-sign(src_x-dst_x)
         valids = logical_and(logical_and(src_y>=0,src_y<h), logical_and(src_x>=0,src_x<w))
         di = di.compress(valids.take(di))
         # At this point we need to set every src pixel to its dst pixel's value
@@ -247,29 +232,10 @@ def fill(im, mask=None, fill='black'):
         # This is the straight forward way to go in order
         for DY,DX,SY,SX in zip(dst_y.take(di), dst_x.take(di), src_y.take(di), src_x.take(di)):
             im[DY, DX] = im[SY, SX]
-        # This one works but is slower (at least for small images)
-        ##from numpy import ceil, log2, arange, split, sum
-        ##pow2s = 2**arange(int(ceil(log2(dist[di[-1]]))))
-        ##for DI in split(di, [sum(dist<=p) for p in pow2s]):
-        ##    im[dst_y[DI], dst_x[DI]] = im[src_y[DI], src_x[DI]]
-        # This method averages all nearest neighbors (doesn't really help output and takes much longer)
-        ##bg_idx, fg_y, fg_x = transpose(bg_idx), fg_idx[0], fg_idx[1]
-        ##for (bgy, bgx), d in zip(bg_idx[di], dist[di]):
-        ##    i = tree.query_ball_point([bgy, bgx], d+__tree_eps)
-        ##    im[bgy, bgx] = __mean(im[2*fg_y[i]-bgy, 2*fg_x[i]-bgx], 1)
         
     elif fill == 'nearest':
-        from scipy.spatial import cKDTree
-        bg_idx, fg_idx = nonzero(mask), nonzero(~mask)
-        tree = cKDTree(transpose(fg_idx))
-        _,i = tree.query(transpose(bg_idx))
+        bg_idx, fg_idx, _, i = __nearest_neighbors(mask)
         im[bg_idx[0], bg_idx[1]] = im[fg_idx[0][i], fg_idx[1][i]]
-        # This method averages all nearest neighbors (doesn't really help output and takes much longer)
-        ##bg_idx, fg_y, fg_x = transpose(bg_idx), fg_idx[0], fg_idx[1]
-        ##dist,_ = tree.query(bg_idx)
-        ##for (bgy, bgx), d in zip(bg_idx, dist):
-        ##    i = tree.query_ball_point([bgy, bgx], d+__tree_eps)
-        ##    im[bgy, bgx] = __mean(im[fg_y[i], fg_x[i]], 1)
 
     elif fill == 'wrap': raise ValueError
     
@@ -283,36 +249,23 @@ def crop(im, padding=None):
     Crops an image, removing the padding from each side (top, left, bottom, right). If the padding
     is not given, it is calculated with get_bg_padding. Returns a view, not a copy.
     """
-    im = im_standardize_dtype(im)
-    if padding is None: padding = get_bg_padding(im)
-    elif len(padding) != 4 or any(not isinstance(x, (int, long)) for x in padding): raise ValueError
-    t,l,b,r = padding
+    check_image(im)
     h,w = im.shape[:2]
+    if padding is None: padding = get_bg_padding(im)
+    elif not __check_padding(padding, h, w): raise ValueError
+    t,l,b,r = padding #pylint: disable=unpacking-non-sequence
     return im[t:h-b,l:w-r,...]
 
-def pad(im, padding):
+def pad(im, padding, alloc=zeros):
     """Pad an image with 0s. The amount of padding is given by top, left, bottom, and right."""
     check_image(im)
-    if (len(padding) != 4 or any(not isinstance(x, Integral) or x<0 for x in padding)
-          or x[0]+x[2] >= h or x[1]+x[3] >= w):
-        raise ValueError
-    t,l,b,r = padding
     h,w = im.shape[:2]
-    im_out = zeros((h+b+t,w+r+l,im.shape[2]),dtype=im.dtype)
+    if not __check_padding(padding, h, w): raise ValueError
+    t,l,b,r = padding
+    im_out = alloc((h+b+t,w+r+l,im.shape[2]),dtype=im.dtype)
     im_out[t:t+h,l:l+w,...] = im
     return im_out
 
-def _pad_empty(im, padding):
-    """Pad an image with undefined. The amount of padding is given by top, left, bottom, and right."""
-    check_image(im)
-    if (len(padding) != 4 or any(not isinstance(x, Integral) or x<0 for x in padding)
-          or x[0]+x[2] >= h or x[1]+x[3] >= w):
-        raise ValueError
-    t,l,b,r = padding
-    h,w = im.shape[:2]
-    im_out = empty((h+b+t,w+r+l,im.shape[2]),dtype=im.dtype)
-    im_out[t:t+h,l:l+w,...] = im
-    return im_out
 
 ##### Stack Classes #####
 
@@ -326,7 +279,8 @@ class PaddingForImageStack(DelayLoadedList):
         return get_bg_padding(self.__ims[i].data, self.__color)
     @staticmethod
     def as_padding_list(mask):
-        return mask._padding if isinstance(mask, BackgroundMask) and hasattr(ims, '_padding') else PaddingForImageStack(mask, True)
+        #pylint: disable=protected-access
+        return mask._padding if isinstance(mask, BackgroundMask) and hasattr(mask, '_padding') else PaddingForImageStack(mask, True)
 class MinPaddingForImageStack(DelayLoadedList): # "Conservative"
     """
     Like PaddingForImageStack except all values are the minimum padding. This is designed for
@@ -335,7 +289,7 @@ class MinPaddingForImageStack(DelayLoadedList): # "Conservative"
     """
     def __init__(self, ims, color=None):
         ims = ImageStack.as_image_stack(ims)
-        super(PaddingForImageStack, self).__init__(len(ims))
+        super(MinPaddingForImageStack, self).__init__(len(ims))
         self.__ims, self.__color = ims, color
     def _loaditem(self, i):
         # loads all once the first one is requested
@@ -357,7 +311,7 @@ class MaxPaddingForImageStack(DelayLoadedList): # "Aggressive"
     """
     def __init__(self, ims, color=None):
         ims = ImageStack.as_image_stack(ims)
-        super(PaddingForImageStack, self).__init__(len(ims))
+        super(MaxPaddingForImageStack, self).__init__(len(ims))
         self.__ims, self.__color = ims, color
     def _loaditem(self, i):
         # loads all once the first one is requested
@@ -373,7 +327,7 @@ class MaxPaddingForImageStack(DelayLoadedList): # "Aggressive"
         return p
 
 
-class MaskProjection(Enum):
+class MaskProjection(Enum): #pylint: disable=no-init
     None_ = 0
     All = 1
     Any = 2
@@ -397,39 +351,44 @@ class BackgroundMask(FilteredImageStack):
             super(BackgroundMask, self).__init__(ims, BackgroundMaskSlice_OP)
         self._dtype, self._homogeneous = bool, Homogeneous.DType
 class BackgroundMaskSlice(FilteredImageSlice):
+    #pylint: disable=protected-access
     def _get_props(self): self._set_props(bool, self._input.shape)
     def _get_data(self): return get_bg_mask(self._input.data, self._stack._color)
 class BackgroundMaskSlice_OP(BackgroundMaskSlice):
+    #pylint: disable=protected-access
     def _get_data(self):
         if self._stack._mask is None:
-            op, c, ims = self._stack._op, self._stack._color. self._stack._ims
+            op, c, ims = self._stack._op, self._stack._color, self._stack._ims
             mask = get_bg_mask(ims[0], c)
             for im in islice(ims, 1, None): op(mask, get_bg_mask(im, c), mask)
             self._stack._mask = mask
         return self._stack._mask
 class BackgroundMaskSlice_Rect(BackgroundMaskSlice):
+    #pylint: disable=protected-access
     def _get_data(self): return padding2mask(self.shape, self._stack._padding[self._z])
 
 
 class FillImageStack(UnchangingFilteredImageStack):
     """Calculates the background mask for an image stack."""
-    def __init__(self, ims, fill, mask_or_padding):
+    def __init__(self, ims, fill, mask_or_padding): #pylint: disable=redefined-outer-name
         """mask_or_padding must derive from ImageStack if it is a mask"""
         if len(mask_or_padding) != len(ims): raise ValueError('mask/padding must be same shape as image')
         self._fill = fill
-        if isinstance(padding, ImageStack):
+        if isinstance(mask_or_padding, ImageStack):
             if mask_or_padding.dtype != bool: raise ValueError('mask must be of bool/logical type')
             super(FillImageStack, self).__init__(ims, FillImageSlice, mask_or_padding)
         else:
-            self._padding = padding
+            self._padding = mask_or_padding
             super(FillImageStack, self).__init__(ims, FillPaddingImageSlice)
 class FillImageSlice(UnchangingFilteredImageSlice):
+    #pylint: disable=protected-access
     def __init__(self, image, stack, z, mask):
         super(FillImageSlice, self).__init__(image, stack, z)
         self._mask = mask = mask[z]
         if mask.shape != image.shape: raise ValueError('mask must be same shape as image')
     def _get_data(self): return fill(self._input.data, self._mask.data, self._stack._fill) # TODO: .copy()?
 class FillPaddingImageSlice(UnchangingFilteredImageSlice):
+    #pylint: disable=protected-access
     def _get_data(self): return fill_padding(self._input.data, self._stack._padding[self._z], self._stack._fill) # TODO: .copy()?
 
 
@@ -450,38 +409,40 @@ class CropImageStack(FilteredImageStack):
         super(CropImageStack, self).__init__(ims, CropImageSlice)
         self._padding = padding
 class CropImageSlice(FilteredImageSlice):
+    #pylint: disable=protected-access
     def _get_props(self):
         p, s = self._stack._padding[self._z], self._input.shape
-        self._set_props(self._input.dtype, s[1]-p[1]-p[3], s[0]-p[0]-p[2])
+        self._set_props(self._input.dtype, (s[0]-p[0]-p[2], s[1]-p[1]-p[3]))
     def _get_data(self): return crop(self._input.data, self._stack._padding[self._z])
 
 
 class PadImageStack(FilteredImageStack):
-    def __init__(self, ims, fill, mask_or_padding):
+    def __init__(self, ims, fill, mask_or_padding): #pylint: disable=redefined-outer-name
         """
         mask_or_padding must derive from ImageStack if it is a mask. If it is a mask, the padding
         representation of it is used to create the actual padding but the mask is used to fill.
         """
-        if len(padding) != len(ims): raise ValueError('image stack and padding sequence must be same length')
-        if isinstance(padding, ImageStack):
-            mask = padding
+        if len(mask_or_padding) != len(ims): raise ValueError('image stack and padding sequence must be same length')
+        if isinstance(mask_or_padding, ImageStack):
+            mask = mask_or_padding
             if mask.dtype != bool: raise ValueError('mask must be of bool/logical type')
             self._padding = PaddingForImageStack.as_padding_list(mask)
             super(PadImageStack, self).__init__(ims, [PadImageSlice(im, self, z, m) for z,(im,m) in enumerate(zip(ims, mask))])
         else:
-            self._padding = padding
+            self._padding = mask_or_padding
             super(PadImageStack, self).__init__(ims, PadImageSlice, None)
         self._fill = fill
 class PadImageSlice(FilteredImageSlice):
+    #pylint: disable=protected-access
     def __init__(self, image, stack, z, mask):
         super(PadImageSlice, self).__init__(image, stack, z)
         self._mask = mask
     def _get_props(self):
         p, s = self._stack._padding[self._z], self._input.shape
-        self._set_props(self._input.dtype, s[1]+p[1]+p[3], s[0]+p[0]+p[2])
+        self._set_props(self._input.dtype, (s[0]+p[0]+p[2], s[1]+p[1]+p[3]))
     def _get_data(self):
         padding = self._stack._padding[self._z]
-        im = _pad_empty(self._input.data, padding)
+        im = pad(self._input.data, padding, empty)
         return fill_padding(im, padding, self._stack._fill) if self._mask is None else fill(im, self._mask, self._stack._fill)
 
 
@@ -514,7 +475,7 @@ class BackgroundMaskCommand(CommandEasy):
     @classmethod
     def _see_also(cls): return ('fill', 'crop', 'pad')
     def __str__(self): return 'calculate background padding '+(('of color %s '%self._color) if self._color=='auto' else '')+('(rectangular)' if self._rect else '')
-    def execute(self, stack): stack.push(BackgroundMask(stack.pop(), None if color=='auto' else self._color, self._rect))
+    def execute(self, stack): stack.push(BackgroundMask(stack.pop(), None if self._color=='auto' else self._color, self._rect))
 
 class FillCommand(CommandEasy):
     _fill = None
@@ -540,13 +501,13 @@ class FillCommand(CommandEasy):
     def _see_also(cls): return ('bg-mask', 'crop', 'pad')
     def __str__(self): return 'fill %swith %s'%(
         ('outside rectangular area ' if self._rect else ''),
-        {'mean':'mean color','reflect':'reflection','wrap':'wrapping'}.get(self._color, self._color))
+        {'mean':'mean color','reflect':'reflection','wrap':'wrapping'}.get(self._fill, self._fill))
     def __init__(self, args, stack):
         super(FillCommand, self).__init__(args, stack)
         if self._fill is 'wrap' and not self._rect: raise ValueError('wrap cannot be used unless rect is true')
     def execute(self, stack):
         ims, mask = stack.pop(), stack.pop()
-        stack.push(FillImageStack(self._fill, PaddingForImageStack.as_padding_list(mask) if self._rect else mask))
+        stack.push(FillImageStack(ims, self._fill, PaddingForImageStack.as_padding_list(mask) if self._rect else mask))
 
 class CropCommand(CommandEasy):
     @classmethod
@@ -564,7 +525,7 @@ class CropCommand(CommandEasy):
     def __str__(self): return 'crop'
     def execute(self, stack):
         ims, mask = stack.pop(), stack.pop()
-        stack.push(CropImageStack(mask))
+        stack.push(CropImageStack(ims, mask))
 
 class PadCommand(CommandEasy):
     _fill = None
@@ -596,7 +557,7 @@ specified."""
     def _see_also(cls): return ('bg-mask', 'fill', 'crop')
     def __str__(self): return 'pad and fill %swith %s'%(
         ('padding ' if self._rect else ''),
-        {'mean':'mean color','reflect':'reflection','wrap':'wrapping'}.get(self._color, self._color))
+        {'mean':'mean color','reflect':'reflection','wrap':'wrapping'}.get(self._fill, self._fill))
     def execute(self, stack):
         ims, mask = stack.pop(), stack.pop()
-        stack.push(PadImageStack(mask, self._fill, self._rect))
+        stack.push(PadImageStack(ims, self._fill, PaddingForImageStack.as_padding_list(mask) if self._rect else mask))

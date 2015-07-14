@@ -75,7 +75,7 @@ def fromfile(f, dt=float, count=-1, sep=''):
     __close_file(f, f2, orig_pos)
     return arr
 
-def tofile(arr, f, sep='', format='%s'):
+def tofile(arr, f, sep='', format='%s'): #pylint: disable=redefined-builtin
     """Wrapper for ndarray.tofile that handles io.FileIO objects in Python 2"""
     if __is_py3 or isinstance(f, (basestring,file)): arr.tofile(f, sep, format); return
     f2, orig_pos = __as_file(f)
@@ -92,10 +92,10 @@ def check_file_obj(f, read, write, seek, binary=True, append=False):
     if hasattr(f, 'closed') and f.closed: return False
     if isinstance(f, io.IOBase):
         return ((not read or f.readable()) and (not write or f.writable()) and
-                (not seekable or f.seekable()) and (binary != isinstance(f,io.TextIOBase)) and
+                (not seek or f.seekable()) and (binary != isinstance(f,io.TextIOBase)) and
                 (not hasattr(f, 'mode') or append == ('a' in f.mode)))
-    return (hasattr(f, 'mode') and (not read or any_in('r+', f.mode)) and (not write or any_in('wa+' in f.mode)) and
-            (not seekable or hasattr(f, 'seek')) and (binary == ('b' in f.mode)) and (append == ('a' in f.mode)))
+    return (hasattr(f, 'mode') and (not read or any_in('r+', f.mode)) and (not write or any_in('wa+', f.mode)) and
+            (not seek or hasattr(f, 'seek')) and (binary == ('b' in f.mode)) and (append == ('a' in f.mode)))
 
 def isfileobj(f):
     """
@@ -316,7 +316,7 @@ def fill_data(f, off=0, size=None, val=0, buf_size=16777216):
 def file_remove_ranges(f, ranges, buf_size=16777216): # 16 MB
     """
     Remove the given ranges from the file, shift all contents after them toward the start of the
-    file. This is done with copying data at most once. The ranges must be tuples with start stop
+    file. This is done with copying data at most once. The ranges must be tuples with start,stop
     file offsets (stop is actually +1 the last file offset removed). The file is truncated at the
     end. The file-like object must support seek, complete readinto, complete write, truncate, and
     get_file_size. By complete, the function must not stop short of the amount of data requested
@@ -354,7 +354,7 @@ class FileInsertIO(io.BufferedIOBase):
        data, room is made for it and it is written, if there is empty room remaining from an initial
        non-zero size then futher data is pulled into the empty space.
     """
-    def __init__(self, f, off=None, size=0, buf_size=67108864): # 64 MB
+    def __init__(self, f, off=None, size=0, buf_size=67108864): #pylint: disable=super-init-not-called
         self.__f = f
         if off is None: off = f.tell()
         elif f.seek(off) != off: raise IOError()

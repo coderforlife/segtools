@@ -4,8 +4,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 from abc import ABCMeta, abstractproperty, abstractmethod
-from collections import Sequence
-from numpy import ndarray
+from numpy import ndarray, dtype
 from .types import check_image, get_im_dtype
 
 __all__ = ['ImageSource', 'ArrayImageSource', 'DeferredPropertiesImageSource']
@@ -67,11 +66,13 @@ class ArrayImageSource(ImageSource):
 
 class DeferredPropertiesImageSource(ImageSource):
     """An image source where the shape and dtype properties are deferred but cached."""
-    __metaclass__ = ABCMeta
     _w = None
     _h = None
     _shape = None
     _dtype = None
+
+    @abstractproperty
+    def data(self): pass
 
     @abstractmethod
     def _get_props(self):

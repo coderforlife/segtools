@@ -6,7 +6,7 @@ copy of DynamicClassAttribute (difficult to find) and a new MappingProxyType
 is the built-in dictproxy with an available constructor.
 """
 
-# pylint: disable=protected-access, no-member, star-args
+# pylint: disable=protected-access, no-member
 
 from __future__ import absolute_import
 from __future__ import division
@@ -408,7 +408,7 @@ class Enum: # pylint: disable=function-redefined, no-init
         # all enum instances are actually created during class construction
         # without calling this method; this method is called by the metaclass'
         # __call__ (i.e. Color(3) ), and by pickle
-        if type(value) is cls:
+        if type(value) is cls: #pylint: disable=unidiomatic-typecheck
             # For lookups like Color(Color.red)
             return value
         # by-value search for a matching enum member
@@ -699,7 +699,7 @@ class Flags: # pylint: disable=function-redefined, no-init
 
     Derive from this class to define new flag sets."""
     def __new__(cls, value):
-        if type(value) is cls: return value
+        if type(value) is cls: return value #pylint: disable=unidiomatic-typecheck
         if value in cls._value2member_map_: return cls._value2member_map_[value]
         raise ValueError("%s is not a valid %s" % (value, cls.__name__))
     def __repr__(self): return "<%s.%s: %r>" % (self.__class__.__name__, self._name_, self._value_)

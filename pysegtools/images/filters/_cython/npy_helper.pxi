@@ -7,7 +7,7 @@ from cython cimport sizeof
 import sys
 import numpy
 
-from npy_helper cimport *
+from _cython.npy_helper cimport *
 
 
 ############### Fused Function Helpers ###############

@@ -298,10 +298,11 @@ def guess_compression_method(buf):
     return 'deflate'
 
 class GzipFile(io.BufferedIOBase):
+    #pylint: disable=too-many-instance-attributes
     __offset = 0
     max_read_chunk = 10 * 1024 * 1024 # 10Mb
 
-    def __init__(self, file, mode=None, level=9, method=None, start_off=None, **kwargs):
+    def __init__(self, file, mode=None, level=9, method=None, start_off=None, **kwargs): #pylint: disable=redefined-builtin
         """
         Creates a file-like object that wraps another file-like object and either compresses all
         data written to it or decompresses all data read from it. Cannot be used for both read
@@ -425,7 +426,7 @@ class GzipFile(io.BufferedIOBase):
     def __check_start_off(start_off, mode):
         if start_off is not None:
             start_off = int(start_off)
-            if 'a' in mode: raise ValueError('Starting offset not supported in append mode') # 'a' in mode
+            if 'a' in mode: raise ValueError('Starting offset not supported in append mode')
             if start_off < 0: raise ValueError('Starting offset cannot be negative')
         return start_off
 
@@ -447,7 +448,7 @@ class GzipFile(io.BufferedIOBase):
         filename = kwargs.get('filename', filename)
         if filename is not None: opts['filename'] = _gzip_header_str(filename)
         
-        if 'comment' in kwargs:  opts['comment']  = _gzip_header_str(kwargs[comment])
+        if 'comment' in kwargs:  opts['comment']  = _gzip_header_str(kwargs['comment'])
         
         extras = kwargs.get('extras')
         if extras is not None:
@@ -462,7 +463,7 @@ class GzipFile(io.BufferedIOBase):
                 extras[ex_id] = data
                 xlen += 4 + len(data)
             if xlen > 0xFFFF: raise ValueError('Gzip extra data has too much data')
-            extras._xlen = xlen
+            extras.xlen = xlen
             
         return opts
 
@@ -559,7 +560,7 @@ class GzipFile(io.BufferedIOBase):
     def tell(self):
         """Return the uncompressed stream file position indicator to the beginning of the file"""
         self.__check()
-        return self.__offset
+        return self.__offset + self.__start_off
     def rewind(self):
         self.__check(False)
         self.__base.seek(self.__start_off)
@@ -569,9 +570,11 @@ class GzipFile(io.BufferedIOBase):
     def seek(self, offset, whence=None):
         self.__check(False)
         if whence:
-            if whence == io.SEEK_CUR:
-                offset += self.__offset
+            if whence == io.SEEK_CUR: offset += self.__offset
             else: raise IOError('Seek from end not supported') # whence == io.SEEK_END
+        else:
+            offset -= self.__start_off
+        if offset < 0: raise IOError('Invalid offset')
         if offset < self.__offset: self.rewind() # for negative seek, rewind and do positive seek
         self.__skip(offset - self.__offset)
         return self.__offset
@@ -599,7 +602,7 @@ class GzipFile(io.BufferedIOBase):
             self.__base.write(header)
             chk16 = zlib.crc32(buffer(header)) & 0xffffffff
             if 'extras' in opts:
-                xlen = opts['extras']._xlen
+                xlen = opts['extras'].xlen
                 extras = bytearray(xlen)
                 _uint16.pack_into(extras, 0, xlen)
                 off = 2
@@ -845,7 +848,8 @@ class GzipFile(io.BufferedIOBase):
                 buf[off:] = c[:-off]
                 off = 0
                 break
-            buf[off:off+len(c)] = c
+            end = len(buf) if -off == len(c) else off+len(c)
+            buf[off:end] = c
             off += len(c)
             readsize = min(self.max_read_chunk, readsize * 2)
         read = len_buf-off

@@ -10,10 +10,13 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import struct
-from io import open
+from io import open #pylint: disable=redefined-builtin
+from sys import byteorder
 from abc import ABCMeta, abstractproperty, abstractmethod
+from types import ClassType
 
 from PIL import Image
+from PIL.ImageFile import ImageFile, StubImageFile
 from numpy import uint8
 
 from .._stack import FileImageStack, FileImageSlice, FileImageStackHeader, FixedField
@@ -21,30 +24,18 @@ from .._single import FileImageSource
 from .._util import check_file_obj
 from ...types import get_im_dtype_and_nchan
 from ..._util import String, _bool
+from ....general.delayed import delayed
 
 from distutils.version import StrictVersion
 if not hasattr(Image, 'PILLOW_VERSION') or StrictVersion(Image.PILLOW_VERSION) < StrictVersion('2.0'):
     raise ImportError
 
 ########## PIL dtypes ##########
-_native = None
-_mode2dtype = None
-_dtype2mode = None
-def _init_pil():
-    from sys import byteorder
-    from numpy import sctypes, dtype
-    from numpy import bool_, uint8,uint16,uint32, int8,int16,int32, float32,float64 #float16
+_native = byteorder!='little'
+def __get_mode2dtype():
+    from numpy import bool_, uint16,uint32, int8,int16,int32, float32,float64 #float16
     from ...types import create_im_dtype as d
-    global _native, _mode2dtype, _dtype2mode
-    _native = byteorder!='little'
-    
-    Image.init()
-    # Add common extensions for the SPIDER format
-    Image.register_extension("SPIDER", ".spi")
-    Image.register_extension("SPIDER", ".stk")
-    
-    # TODO: could use len(PIL.ImageMode.getmode(mode).bands) and PIL.ImageMode.getmode(mode).basetype to auto-generate these conversions
-    _mode2dtype = {
+    return {
         #'P' is a special case
         # Some of these modes will actually never show up because they are raw modes.
 
@@ -66,29 +57,44 @@ def _init_pil():
         'F;32F':d(float32),'F;32BF':d(float32,True),'F;32NF':d(float32,_native),
         'F;64F':d(float64),'F;64BF':d(float64,True),'F;64NF':d(float64,_native),
     }
-    _dtype2mode = {
+_mode2dtype = delayed(__get_mode2dtype, dict)
+def __get_dtype2mode():
+    from numpy import sctypes, dtype
+    # TODO: could use len(PIL.ImageMode.getmode(mode).bands) and PIL.ImageMode.getmode(mode).basetype to auto-generate these conversions
+    d = {
         # mode, rawmode (little endian), rawmode (big endian)
         # Multi-channel and bit images are special cases
         #float16:('F','F;16F','F;16BF'), # F;16 can only come from integers...
-    }
+        }
     # Build _dtype2mode
     for t in sctypes['uint']:
         nb = dtype(t).itemsize
-        if   nb == 1: _dtype2mode[t] = ('L','L','L')
-        elif nb == 2: _dtype2mode[t] = ('I;16','I;16','I;16B')
-        elif nb == 4: _dtype2mode[t] = ('I','I;32','I;32B')
-        else: nb = str(nb*8); _dtype2mode[t] = ('I','I;'+nb,'I;'+nb+'B')
+        if   nb == 1: d[t] = ('L','L','L')
+        elif nb == 2: d[t] = ('I;16','I;16','I;16B')
+        elif nb == 4: d[t] = ('I','I;32','I;32B')
+        else: nb = str(nb*8); d[t] = ('I','I;'+nb,'I;'+nb+'B')
     for t in sctypes['int']:
         nb = dtype(t).itemsize
-        if nb == 1: _dtype2mode[t] = ('I','I;8S','I;8S')
-        else: nb = str(nb*8); _dtype2mode[t] = ('I','I;'+nb+'S','I;'+nb+'BS')
+        if nb == 1: d[t] = ('I','I;8S','I;8S')
+        else: nb = str(nb*8); d[t] = ('I','I;'+nb+'S','I;'+nb+'BS')
     for t in sctypes['float']:
         nb = dtype(t).itemsize
         if nb < 4: continue
-        nb = str(nb*8); _dtype2mode[t] = ('F','F;'+nb+'F','F;'+nb+'BF')
+        nb = str(nb*8); d[t] = ('F','F;'+nb+'F','F;'+nb+'BF')
+    return d
+_dtype2mode = delayed(__get_dtype2mode, dict)
 
 
 ########## PIL interaction class ##########
+class DummyImage(Image.Image):
+    def __init__(self, frmt, dt, shape):
+        Image.Image.__init__(self) # Image.Image is an old-style class until early 2015
+        self.format = frmt
+        self.set(dt, shape)
+    def set(self, dt, shape):
+        self.mode = _dtype2mode[dt]
+        self.size = tuple(reversed(shape))
+
 def imsrc2pil(im):
     im = im.data
     st, sh = im.strides[0], im.shape[1::-1]
@@ -105,8 +111,8 @@ def imsrc2pil(im):
         mode = _dtype2mode.get(dt.type)
         if mode is None: raise ValueError
         return Image.frombuffer(mode[0], sh, im.data, 'raw', mode[2 if _native else 1], st, 1)
-def _accept_all(im): return True
-def _accept_none(im): return False
+def _accept_all(im_): return True
+def _accept_none(im_): return False
 class _PILSource(object):
     """
     This is the class that does most of the work interacting with the PIL library. It is
@@ -115,17 +121,22 @@ class _PILSource(object):
     accepting function, and saving function. Upon opening or creating, a copy is returned which has
     various other attributes.
     """
-    def __init__(self, frmt, open, accept, save):
+    def __init__(self, frmt, open_func, accept, save):
         self.format = frmt
-        self._open = open
-        self.accept = (_accept_none if open is None else _accept_all) if accept is None else accept
+        self._open = open_func
+        self.accept = (_accept_none if open_func is None else _accept_all) if accept is None else accept
         self._save = save
+        self.im = None
+        self.filename = None
+        self.readonly = None
+        self.open_options = None
+        self.save_options = None
     @property
     def readable(self): return self._open is not None
     @property
     def writable(self): return self._save is not None
     
-    def _open_pil_image(self, f, filename, **options):
+    def _open_pil_image(self, f, filename, **options_):
         """
         Opens a PIL image object from the file object and filename with the given options. Can be
         overriden by subclasses to handle options. Default implementation does nothing with options.
@@ -143,7 +154,7 @@ class _PILSource(object):
         im.encoderconfig = ()
         self._save(im, f, filename)
 
-    def _parse_open_options(self, **options):
+    def _parse_open_options(self, **options): #pylint: disable=no-self-use
         """
         Parse the options list for options this format supports while opening. Return both the
         parsed options and the remaining unused in seperate dictionaries. Make sure to call
@@ -151,15 +162,16 @@ class _PILSource(object):
         """
         return {}, options
 
-    def _parse_save_options(self, palette=False, **options):
+    def _parse_save_options(self, palette=False, **options): #pylint: disable=no-self-use
         """
         Parse the options list for options this format supports while saving. Return both the
         parsed options and the remaining unused in seperate dictionaries. Make sure to call
         recusively.
         """
         if palette is not True and palette is not False:
+            from numbers import Integral
             if isinstance(palette, String):
-                pal_lower = palette.lower()
+                pal_lower = palette.lower() #pylint: disable=no-member
                 if   pal_lower in ('true', 't'): palette = True
                 elif pal_lower in ('false','f'): palette = False
                 elif palette.isdigit():
@@ -167,43 +179,46 @@ class _PILSource(object):
                     if palette < 1 or palette > 256: raise ValueError('Invalid palette')
                 else: raise ValueError('Invalid palette')
             elif isinstance(palette, Integral):
-                from numbers import Integral
                 palette = int(palette)
                 if palette < 1 or palette > 256: raise ValueError('Invalid palette')
             else: raise ValueError('Invalid palette')
         return {'palette':palette}, options
 
-    def _parse_options(self, open, save, **options):
+    def _parse_options(self, open_func, save, **options):
         """
         Parse the options list for options this format supports while opening and saving. Do not
         override this function, instead override _parse_open_options and _parse_save_options.
         """
-        if open: open_options, options = self._parse_open_options(**options)
+        if open_func: open_options, options = self._parse_open_options(**options)
         else: open_options = {}
         if save: save_options, options = self._parse_save_options(**options)
         else: save_options = {}
         if len(options) > 0: raise ValueError("Unsupported options given")
         return open_options, save_options
 
-    def _copy(self, im, filename, readonly, open_options, save_options):
+    def __open(self, im, filename, readonly, open_options, save_options):
         """
         Copies the format, _open, accept, and _save properties of this object into a new object of
-        the same type and adds the new properties.
+        the same type and adds the new properties for being "opened".
         """
+        #pylint: disable=protected-access
         c = type(self)(self.format, self._open, self.accept, self._save)
-        c.im = im
-        c.filename = filename
-        c.readonly = readonly
-        c.open_options = open_options
-        c.save_options = save_options
+        c.__set_open(im, filename, readonly, open_options, save_options)
         return c
+
+    def __set_open(self, im, filename, readonly, open_options, save_options):
+        self.im = im
+        self.filename = filename
+        self.readonly = readonly
+        self.open_options = open_options
+        self.save_options = save_options
     
-    def open(self, file, readonly, **options):
+    def open(self, file, readonly, **options): #pylint: disable=redefined-builtin
         """
         Opens a file object/filename image with the given options. Returns a copy of this template
         object that has the image object and other attributes.
         """
-        if hasattr(self, 'im'): raise RuntimeError("Not a template PILSource object")
+        if self.im is not None: raise RuntimeError("Not a template PILSource object")
         if not self.readable: raise ValueError("Cannot read from file format")
         if not readonly and not self.writable: raise ValueError("Cannot write to file format")
 
@@ -212,8 +227,8 @@ class _PILSource(object):
         if isinstance(file, String):
             filename, f = file, open(file, 'rb')
             try:
-                return self._copy(self._open_pil_image(f, filename, **open_options),
-                                  filename, readonly, open_options, save_options)
+                return self.__open(self._open_pil_image(f, filename, **open_options),
+                                   filename, readonly, open_options, save_options)
             except StandardError: f.close(); raise
         
         # File-like object
@@ -222,8 +237,8 @@ class _PILSource(object):
         filename = file.name if (hasattr(file, 'name') and isinstance(file.name, String) and
                                  len(file.name) > 0 and file.name[0] != '<' and file.name[-1] != '>') else ''
         try:
-            return self._copy(self._open_pil_image(file, filename, **open_options),
-                              filename, readonly, open_options, save_options)
+            return self.__open(self._open_pil_image(file, filename, **open_options),
+                               filename, readonly, open_options, save_options)
         except StandardError: f.seek(start); raise
     
     def openable(self, filename, prefix, readonly, **options):
@@ -233,14 +248,14 @@ class _PILSource(object):
         """
         if not (self.readable and (readonly or self.writable) and self.accept(prefix)): return False
         try: self.open(filename, readonly, **options).close(); return True
-        except (SyntaxError, IndexError, TypeError, ValueError, EOFError, struct.error) as ex: return False
+        except (SyntaxError, IndexError, TypeError, ValueError, EOFError, struct.error): return False
 
     def create(self, filename, im, writeonly, **options):
         """
         Creates a new image file. Returns a copy of this template object that has the image object
         and other attributes. im is an ImageSource.
         """
-        if hasattr(self, 'im'): raise RuntimeError("Not a template PILSource object")
+        if self.im is not None: raise RuntimeError("Not a template PILSource object")
         if not self.writable: raise ValueError("Cannot write to file format")
         if not writeonly and not self.readable: raise ValueError("Cannot read from file format")
         if len(options) > 0: raise ValueError("No options are supported")
@@ -254,14 +269,12 @@ class _PILSource(object):
         # Open image
         if writeonly:
             # if writeonly we have to cache the dtype and shape properties
-            s = self._copy(None, filename, False, {}, save_options)
-            s._dtype = im.dtype
-            s._shape = im.shape
-            return s
+            return self.__open(DummyImage(self.format, im.dtype, im.shape),
+                               filename, False, {}, save_options)
         f = open(filename, 'rb')
         try:
-            return self._copy(self._open_pil_image(f, filename, **open_options),
-                              filename, False, open_options, save_options)
+            return self.__open(self._open_pil_image(f, filename, **open_options),
+                               filename, False, open_options, save_options)
         except StandardError: f.close(); raise
     
     def creatable(self, writeonly, **options):
@@ -269,39 +282,35 @@ class _PILSource(object):
         Checks if a file is creatable. UnlikeThis should not be overriden. Instead override
         _parse_[open_|save_]options.
         """
-        try: open_options, save_options = self._parse_options(not writeonly, True, **options)
+        try: _, _ = self._parse_options(not writeonly, True, **options)
         except StandardError: return False
         return self.writable and (not writeonly or self.readable)
 
     # Only available after open/create
     def close(self):
-        if hasattr(self, 'im'):
-            if hasattr(self.im, 'close'): self.im.close()
-            del self.im
+        if self.im is not None:
+            self.im.close()
+            self.im = None
     @property
     def header_info(self):
         """Gets the header info for a 2D image. In stacks, this gets the current slice's header."""
-        if self.im is None:
-            h = {'format':self.format}
-        else:
-            h = {'format':self.im.format}
-            h.update(self.im.info)
+        h = {'format':self.im.format}
+        h.update(self.im.info)
         return h
     @property
-    def is_stack(self): return False
+    def is_stack(self): return False #pylint: disable=no-self-use
     @property
     def dtype(self):
         dt = self.dtype_raw
-        if self.im is not None and self.im.mode=='P' and 'transparency' in self.im.info:
+        if self.im.mode=='P' and 'transparency' in self.im.info:
             # need to add an extra channel for the transparency data
             from numpy import dtype
             dt = dtype((dt.base, 2 if len(dt.shape) == 0 else (dt.shape[0]+1)))
         return dt
     @property
-    def dtype_raw(self): return (self._dtype if self.im is None else
-                                 _mode2dtype[self.im.palette.mode if self.im.mode=='P' else self.im.mode])
+    def dtype_raw(self): return _mode2dtype[self.im.palette.mode if self.im.mode=='P' else self.im.mode]
     @property
-    def shape(self): return self._shape if self.im is None else tuple(reversed(self.im.size))
+    def shape(self): return tuple(reversed(self.im.size))
     def _get_palette(self, dt):
         from numpy import frombuffer
         pal = self.im.palette
@@ -327,41 +336,29 @@ class _PILSource(object):
             a = frombuffer(self.im.tobytes(), dtype=dt)
         return a.reshape(tuple(reversed(dt_final.shape+self.im.size)))
     def set_data(self, im): # im is an ImageSource
-        reopen = self.im is not None # if writeonly don't reopen image
-        if reopen: self.im.close()
-        else:
-            self._dtype = im.dtype
-            self._shape = im.shape
         im = imsrc2pil(im)
-        if self.filename:
-            with open(self.filename, 'wb') as f: self._save_pil_image(f, self.filename, im, **self.save_options)
-            if reopen:
-                f = open(self.filename, 'rb')
-                try: self.im = self._open_pil_image(f, self.filename, **self.open_options)
-                except StandardError: f.close(); raise
+        with open(self.filename, 'wb') as f: self._save_pil_image(f, self.filename, im, **self.save_options)
+        if isinstance(self.im, DummyImage): # if writeonly don't reopen image
+            self.im.set(im.dtype, im.shape)
         else:
-            self.file.seek(0)
-            self._save_pil_image(f, "", im, **self.save_options)
-            if reopen:
-                self.file.seek(0)
-                self.im = self._open_pil_image(self.file, "", **self.open_options)
+            f = open(self.filename, 'rb')
+            try: self.im = self._open_pil_image(f, self.filename, **self.open_options)
+            except StandardError: f.close(); raise
     def rename(self, renamer, filename):
         if not self.filename: raise ValueError('no filename')
-        reopen = self.im is not None
-        if reopen: self.im.close()
         self.filename = filename
         renamer(filename)
-        if reopen:
+        if isinstance(self.im, ImageFile):
             f = open(filename, 'rb')
             try: self.im = self._open_pil_image(f, filename, **self.open_options)
             except StandardError: f.close(); raise
 
-def _get_prefix(file):
+def _get_prefix(f):
     from os import SEEK_CUR
-    if isinstance(file, String):
-        with open(file, 'rb') as f: return f.read(16)
-    data = file.read(16)
-    file.seek(-len(data), SEEK_CUR)
+    if isinstance(f, String):
+        with open(f, 'rb') as f: return f.read(16)
+    data = f.read(16)
+    f.seek(-len(data), SEEK_CUR)
     return data
 def _open_source(sources, frmt, f, readonly, **options):
     if frmt is not None:
@@ -380,14 +377,14 @@ def _openable_source(sources, frmt, f, filename, readonly, **options):
             (frmt in sources and sources[frmt].openable(filename, prefix, readonly, **options)))
 
 
-########## Image Source ##########
+########## Specialized Image Sources ##########
 # TODO: There are various other options that I am not supporting here due to rarity or being able to
 # add them post-saving, but they could be added as needed.
 # Some examples of good things to add would be:
 #  * saving params dpi and icc-profile (lots of formats support these two options)
-#  * GIF/PNG's saving param transparency
+#  * GIF/PNG saving param transparency
 #  * JPEG/WebP saving param exif
-#  * JPEG2000's opening params mode/reduce/layers and tons of saving params I don't understand
+#  * JPEG2000 opening params mode/reduce/layers and tons of saving params I don't understand
 class _EPSSource(_PILSource):
     def _parse_open_options(self, scale=1, **options):
         open_options, options = super(_EPSSource, self)._parse_open_options(**options)
@@ -439,7 +436,7 @@ class _JPEGSource(_PILSource):
         return save_options, options
 class _PALMSource(_PILSource):
     def _parse_save_options(self, bpp=4, **options):
-        save_options, options = super(_PNGSource, self)._parse_save_options(**options)
+        save_options, options = super(_PALMSource, self)._parse_save_options(**options)
         bpp = int(bpp)
         if bpp not in (1, 2, 4): raise ValueError('Invalid bpp')
         save_options['bpp'] = bpp
@@ -488,7 +485,8 @@ class _TIFFSource(_PILSource):
     @property
     def header_info(self):
         h = super(_TIFFSource, self).header_info
-        h.update(_get_tiff_tags(self.im))
+        if isinstance(self.im, ImageFile):
+            h.update(_get_tiff_tags(self.im))
         return h
 class _WEBPSource(_PILSource):
     def _parse_save_options(self, quality=80, lossless=False, **options):
@@ -499,13 +497,247 @@ class _WEBPSource(_PILSource):
         if _bool(lossless): save_options['lossless'] = True
         return save_options, options
 
-_sources, _read_formats, _write_formats = None, None, None
-def _init_source():
-    from types import ClassType
-    from PIL.ImageFile import StubImageFile
-    global _sources, _read_formats, _write_formats
-    if _mode2dtype is None: _init_pil()
-    _source_classes = {
+
+########## Image Stacks ##########
+# TODO: support local for GIF-stack?
+class _PILStack(_PILSource):
+    """Class handling general stacks"""
+    _z = 0
+    _single_slice = False
+    def __init__(self, frmt, open_func, accept, save=None):
+        super(_PILStack, self).__init__(frmt, open_func, accept, None)
+    def open(self, file, readonly, slice=None, **options): #pylint: disable=redefined-builtin
+        s = super(_PILStack, self).open(file, readonly, **options)
+        if not s.is_stack: raise ValueError("File is not a stack")
+        if slice is not None:
+            s.seek(slice)
+            s._single_slice = True #pylint: disable=protected-access
+        return s
+        
+    @property
+    def is_stack(self): return True
+    @property
+    def header_stack_info(self): return self._get_hdr()
+    @property
+    def header_info(self): return self._get_hdr() if self._single_slice else {}
+    def _get_hdr(self):
+        """Get the headers for the current slice"""
+        h = {'format':self.im.format}
+        h.update(self.im.info)
+        return h
+    def seek(self, z):
+        if self._z == z: return
+        if self._z > z:
+            # we need to go all the way to the end and then reset to the beginning
+            #try:
+            #    while True:
+            #        self._z += 1
+            #        self.im.seek(self._z)
+            #except (EOFError, ValueError): pass
+            self._z = 0
+            self.im.seek(0)
+        while self._z != z:
+            try:
+                self._z += 1
+                self.im.seek(self._z)
+            except (EOFError, ValueError):
+                self._z -= 1
+                raise ValueError('Slice index out of range')
+    def _for_each_slice(self, func):
+        lst, start_z = [], self._z
+        self.seek(0)
+        while True:
+            try: lst.append(func()); self.seek(self._z+1)
+            except (EOFError, ValueError): break
+        try: self.seek(start_z)
+        except StandardError: pass
+        return lst
+    def slices(self, stack):
+        # Default behavior for slices is to read all of them store them. This is pretty bad, but
+        # nothing we can really do. The good thing is many formats have a better solution.
+        return self._for_each_slice(lambda:_PILSlice(stack, self, self._z))
+class _PILSlice(FileImageSlice):
+    def __init__(self, stack, pil, z):
+        super(_PILSlice, self).__init__(stack, z)
+        self._set_props(pil.dtype, pil.shape)
+        self._data = pil.data
+        self._header = pil.header_info
+    @property
+    def header(self): return self._header
+    def _get_props(self): pass
+    def _get_data(self): return self._data
+    def _set_data(self, im): raise RuntimeError() # this can never be called
+
+class _PILStackWithSliceHeaders(_PILStack):
+    """A PIL stack that has possibly different headers for each slice."""
+    __metaclass__ = ABCMeta
+    
+    @abstractmethod
+    def _get_all_hdrs(self):
+        """Get a list of all headers for the entire stack."""
+        pass
+    
+    __stk_hdr = None
+    __slc_hdrs = None
+    @property
+    def header_stack_info(self):
+        if self.__stk_hdr is None: self.__stk_hdr = self.__extract_stack_headers()
+        return self.__stk_hdr.copy()
+    @property
+    def header_info(self):
+        if self._single_slice: return self._get_hdr()
+        if self.__slc_hdrs is None: self.__stk_hdr = self.__extract_stack_headers()
+        return self.__slc_hdrs[self._z].copy()
+    def __extract_stack_headers(self):
+        """
+        Extracts the "stack" headers from a list of "slice" headers according to the following:
+          * any header itme that is identical across all slices is deemed part of the stack header
+            and removed from each slice
+          * any header key that only exists for the first slice is moved to the stack header (except
+            if there is only one slice)
+          * if there are no slices, the current headers are assumed to be for the entire stack.
+        Returns the stack header (dict). The slice headers (list of dict) is modified in-place.
+        """
+        headers = self.__slc_hdrs = self._get_all_hdrs()
+        if len(headers) == 0: return self._get_hdr()
+
+        from itertools import islice
+        def _remove_items(d, keys):
+            for k in keys: del d[k]
+        def _move_items(d, dsrc, keys):
+            for k in keys: d[k] = dsrc[k]; del dsrc[k]
+
+        # Calculate the items that all slices have identical and update
+        h_stack = set(headers[0].iteritems())
+        for h in islice(headers, 1, None): h_stack &= h.viewitems()
+        h_stack = dict(h_stack)
+        h_stack_keys = h_stack.keys()
+        for h in headers: _remove_items(h, h_stack_keys)
+
+        # Calculate keys unique to the first slice and update
+        if len(headers) > 1:
+            h_stack_keys = set(headers[0])
+            for h in islice(headers, 1, None): h_stack_keys -= h.viewkeys()
+            _move_items(h_stack, headers[0], h_stack_keys)
+
+        return h_stack
+
+class _GIFStack(_PILStackWithSliceHeaders):
+    def _get_all_hdrs(self): return self._for_each_slice(self._get_hdr)
+    
+class _RandomAccessPILStack(_PILStack):
+    """
+    A PIL stack for formats that allow random-access of slices. Each format exposes the total
+    number of slices differently though, so there are subclasses for that.
+    """
+    __metaclass__ = ABCMeta
+    @abstractproperty
+    def depth(self): return 0
+    def seek(self, z):
+        if self._z == z: return
+        if z >= self.depth: raise ValueError('Slice index out of range')
+        try: self.im.seek(z)
+        except (EOFError, ValueError): raise ValueError('Slice index out of range')
+        self._z = z
+    def slices(self, stack):
+        return [_RandomAccessPILSlice(stack, self, z) for z in xrange(self.depth)]
+class _RandomAccessPILSlice(FileImageSlice):
+    def __init__(self, stack, pil, z):
+        super(_RandomAccessPILSlice, self).__init__(stack, z)
+        pil.seek(z)
+        self._set_props(pil.dtype, pil.shape)
+        self._pil = pil
+    @property
+    def header(self):
+        self._pil.seek(self._z)
+        return self._pil.header_info
+    def _get_props(self): pass
+    def _get_data(self):
+        self._pil.seek(self._z)
+        return self._pil.data
+    def _set_data(self, im): raise RuntimeError() # this can never be called
+
+class _RandomAccessPILStackWithSliceHeaders(_PILStackWithSliceHeaders, _RandomAccessPILStack):
+    @abstractproperty
+    def depth(self): return 0
+    def _get_all_hdrs(self):
+        d = self.depth
+        if d == 0: return []
+        headers = [None]*d
+        self.im.seek(0)
+        for z in xrange(d):
+            self.im.seek(z)
+            headers[z] = self._get_hdr()
+        self.im.seek(self._z)
+        return headers
+
+class _IMStack(_RandomAccessPILStack):
+    @property
+    def depth(self): return self.im.info["File size (no of images)"]
+class _SPIDERStack(_RandomAccessPILStackWithSliceHeaders):
+    @property
+    def depth(self): return self.im.nimages
+    @property
+    def is_stack(self): return self.im.istack != 0
+class _DCXStack(_RandomAccessPILStackWithSliceHeaders):
+    @property
+    def depth(self): return len(self.im._offset)
+class _MICStack(_RandomAccessPILStackWithSliceHeaders):
+    @property
+    def depth(self): return len(self.im.images)
+    @property
+    def is_stack(self): return self.im.category == Image.CONTAINER
+class _TIFFStack(_RandomAccessPILStackWithSliceHeaders):
+    # Not quite random-access because we don't know the depth until we have gone all the way
+    # through once. Also, internally, it does use increment and reset but is fast since it can skip
+    # all of the image data.
+    __depth = None
+    @property
+    def depth(self):
+        if self.__depth is None:
+            z = 0
+            while True:
+                try: self.im.seek(z); z += 1
+                except (EOFError, ValueError): break
+            self.__depth = z
+        return self.__depth
+    def _get_hdr(self):
+        h = super(_TIFFStack, self)._get_hdr()
+        h.update(_get_tiff_tags(self.im))
+        return h
+class _PSDStack(_RandomAccessPILStack):
+    # PIL reads the PSD image "oddly". The entire merged image is in frame=0. The others are the
+    # layers in order. However, once you go to any other frame you can never return 0. So what we
+    # are going to do is say if the image is opened as a 2D image then we will so the entire merged
+    # image. If we open it as a stack we will only go for the other layers (and not the merged image
+    # ever). Another problem is that PIL doesn't seem to always be able to extract the layers, but I
+    # might be using a too-new version of Photoshop...
+    @property
+    def depth(self): return len(self.im.layers)
+    def seek(self, idx):
+        if idx >= self.depth: raise ValueError('Slice index out of range')
+        try: self.im.seek(idx+1) # +1 for skipping the entire merged image
+        except (EOFError, ValueError): raise ValueError('Slice index out of range')
+
+
+########## FileImageSource and FileImageStack ##########
+def __init():
+    Image.init()
+    # Add common extensions for the SPIDER format
+    Image.register_extension("SPIDER", ".spi")
+    Image.register_extension("SPIDER", ".stk")
+
+    static = object()
+    static.exts = Image.EXTENSION
+
+    stub_formats = set(frmt for frmt,(clazz,accept) in Image.OPEN.iteritems() if
+                       isinstance(clazz,(type,ClassType)) and issubclass(clazz,StubImageFile))
+    stub_formats.add('MPEG') # MPEG is not registered properly as a stub
+    static.read_formats  = frozenset(Image.OPEN) - stub_formats
+    static.write_formats = frozenset(Image.SAVE) - stub_formats
+
+    # Init the various sources
+    source_classes = {
             'EPS' : _EPSSource,
             'GIF' : _GIFSource,
             'ICNS': _ICNSSource,
@@ -515,33 +747,46 @@ def _init_source():
             'TIFF': _TIFFSource,
             'WEBP': _WEBPSource,
         }
-
-    stub_formats = set(frmt for frmt,(clazz,accept) in Image.OPEN.iteritems() if
-                       isinstance(clazz,(type,ClassType)) and issubclass(clazz,StubImageFile))
-    stub_formats.add('MPEG') # MPEG is not registered properly as a stub
-    _read_formats = frozenset(Image.OPEN) - stub_formats
-    _write_formats = frozenset(Image.SAVE) - stub_formats
-    _sources = {
-        frmt:_source_classes.get(frmt,_PILSource)(frmt,clazz,accept,Image.SAVE.get(frmt))
+    static.sources = {
+        frmt:source_classes.get(frmt,_PILSource)(frmt,clazz,accept,Image.SAVE.get(frmt))
         for frmt,(clazz,accept) in Image.OPEN.iteritems()
         if not isinstance(clazz,(type,ClassType)) or not issubclass(clazz,StubImageFile)
         }
     # Add write-only formats
-    _sources.update({frmt:_source_classes.get(frmt,_PILSource)(frmt,None,None,Image.SAVE[frmt])
-                     for frmt in (_write_formats-_read_formats)})
+    static.sources.update({frmt:source_classes.get(frmt,_PILSource)(frmt,None,None,Image.SAVE[frmt])
+                           for frmt in (static.write_formats-static.read_formats)})
+
+    # Init the various stacks
+    stack_classes = {
+        'GIF' : _GIFStack,
+        'IM'  : _IMStack,
+        'SPIDER': _SPIDERStack,
+        'TIFF': _TIFFStack,
+        'DCX' : _DCXStack,
+        'MIC' : _MICStack,
+        'PSD' : _PSDStack,
+    }
+    static.stacks = {
+        frmt:stack_classes.get(frmt,_PILStack)(frmt,clazz,accept)
+        for frmt,(clazz,accept) in Image.OPEN.iteritems()
+        if isinstance(clazz,(type,ClassType)) and clazz.seek != Image.Image.seek
+    }
+
+    return static
+_static = delayed(__init) # has .exts, .read_formats, .write_formats, .sources, and .stacks
 
 class PIL(FileImageSource):
+    #pylint: disable=redefined-builtin
+    
     @staticmethod
     def __parse_opts(slice=None, **options):
         if slice is not None:
             # Slice was given, must be a stack-able type
-            if _stacks is None: _init_stacks()
             slice = int(slice)
             if slice < 0: raise ValueError('Slice must be a non-negative integers')
             options['slice'] = slice
-            return _stacks, options
-        if _sources is None: _init_source()
-        return _sources, options
+            return _static.stacks, options
+        return _static.sources, options
             
     @classmethod
     def open(cls, f, readonly=False, format=None, **options):
@@ -556,20 +801,18 @@ class PIL(FileImageSource):
 
     @classmethod
     def create(cls, filename, im, writeonly=False, format=None, **options):
-        if _sources is None: _init_source()
         if format is None:
             from os.path import splitext
-            format = Image.EXTENSION.get(splitext(filename)[1].lower())
+            format = _static.exts.get(splitext(filename)[1].lower())
             if format is None: raise ValueError('Unknown file extension')
-        return PIL(_sources[format].create(filename, im, writeonly, **options))
+        return PIL(_static.sources[format].create(filename, im, writeonly, **options))
 
     @classmethod
     def _creatable(cls, filename, ext, writeonly=False, format=None, **options):
-        if _sources is None: _init_source()
         if format is None:
-            format = Image.EXTENSION.get(ext)
+            format = _static.exts.get(ext)
             if format is None: return False
-        return _sources[format].creatable(writeonly, **options)
+        return _static.sources[format].creatable(writeonly, **options)
 
     @classmethod
     def name(cls): return "PIL"
@@ -631,15 +874,15 @@ are available with this plugin.""")
     @classmethod
     def __add_exts(cls, formats):
         frmt2exts = {}
-        for ext,frmt in Image.EXTENSION.iteritems(): frmt2exts.setdefault(frmt,[]).append(ext)
+        for ext,frmt in _static.exts.iteritems(): frmt2exts.setdefault(frmt,[]).append(ext)
         return [frmt+((' ('+(', '.join(frmt2exts[frmt])) + ')') if frmt in frmt2exts else '')
                 for frmt in formats]
 
     @classmethod
     def formats(cls, read, write):
-        if _sources is None: _init_source()
-        if read: return (_read_formats & _write_formats) if write else (_read_formats - _write_formats)
-        elif write: return _write_formats - _read_formats
+        if read: return (_static.read_formats & _static.write_formats) if write else \
+                        (_static.read_formats - _static.write_formats)
+        elif write: return _static.write_formats - _static.read_formats
         else: return frozenset()
 
     def __init__(self, source):
@@ -656,259 +899,16 @@ are available with this plugin.""")
     def _set_filename(self, filename):
         self._source.rename(self._rename, filename)
 
-########## Image Stack ##########
-# TODO: support local for GIF-stack?
-class _PILStack(_PILSource):
-    """Class handling general stacks"""
-    _z = 0
-    _single_slice = False
-    def __init__(self, frmt, open, accept, save=None):
-        super(_PILStack, self).__init__(frmt, open, accept, None)
-    def open(self, file, readonly, slice=None, **options):
-        s = super(_PILStack, self).open(file, readonly, **options)
-        if not s.is_stack: raise ValueError("File is not a stack")
-        if slice is not None:
-            s.seek(slice)
-            s._single_slice = True
-        return s
-        
-    @property
-    def is_stack(self): return True
-    @property
-    def header_stack_info(self): return self._get_hdr()
-    @property
-    def header_info(self): return self._get_hdr() if self._single_slice else {}
-    def _get_hdr(self):
-        """Get the headers for the current slice"""
-        h = {'format':self.im.format}
-        h.update(self.im.info)
-        return h
-    def seek(self, z):
-        if self._z == z: return
-        if self._z > z:
-            # we need to go all the way to the end and then reset to the beginning
-            #try:
-            #    while True:
-            #        self._z += 1
-            #        self.im.seek(self._z)
-            #except (EOFError, ValueError): pass
-            self._z = 0
-            self.im.seek(0)
-        while self._z != z:
-            try:
-                self._z += 1
-                self.im.seek(self._z)
-            except (EOFError, ValueError):
-                self._z -= 1
-                raise ValueError('Slice index out of range')
-    def _for_each_slice(self, func):
-        lst, start_z = [], self._z
-        self.seek(0)
-        while True:
-            try: lst.append(func()); self.seek(self._z+1)
-            except (EOFError, ValueError) as ex: break
-        try: self.seek(start_z)
-        except StandardError: pass
-        return lst
-    def slices(self, stack):
-        # Default behavior for slices is to read all of them store them. This is pretty bad, but
-        # nothing we can really do. The good thing is many formats have a better solution.
-        return self._for_each_slice(lambda:_PILSlice(stack, self, self._z))
-class _PILSlice(FileImageSlice):
-    def __init__(self, stack, pil, z):
-        super(_PILSlice, self).__init__(stack, z)
-        self._set_props(pil.dtype, pil.shape)
-        self._data = pil.data
-        self._header = pil.header_info
-    @property
-    def header(self): return self._header
-    def _get_props(self): pass
-    def _get_data(self): return self._data
-    def _set_data(self): raise RuntimeError() # this can never be called
-
-class _PILStackWithSliceHeaders(_PILStack):
-    """A PIL stack that has possibly different headers for each slice."""
-    __metaclass__ = ABCMeta
-    
-    @abstractmethod
-    def _get_all_hdrs(self):
-        """Get a list of all headers for the entire stack."""
-        pass
-    
-    __stk_hdr = None
-    __slc_hdrs = None
-    @property
-    def header_stack_info(self):
-        if self.__stk_hdr is None:
-            self.__slc_hdrs = self._get_all_hdrs()
-            self.__stk_hdr = self.__extract_stack_headers(self.__slc_hdrs)
-        return self.__stk_hdr
-    @property
-    def header_info(self):
-        if self._single_slice: return self._get_hdr()
-        if self.__slc_hdrs is None:
-            self.__slc_hdrs = self._get_all_hdrs()
-            self.__stk_hdr = self.__extract_stack_headers(self.__slc_hdrs)
-        return self.__slc_hdrs[self._z]
-    @staticmethod
-    def __extract_stack_headers(headers):
-        """
-        Extracts the "stack" headers from a list of "slice" headers according to the following:
-          * any header itme that is identical across all slices is deemed part of the stack header
-            and removed from each slice
-          * any header key that only exists for the first slice is moved to the stack header (except
-            if there is only one slice)
-          * if there are no slices, the current headers are assumed to be for the entire stack.
-        Returns the stack header (dict). The slice headers (list of dict) is modified in-place.
-        """
-        if len(headers) == 0: return self._get_hdr()
-        
-        from itertools import islice
-        def _remove_items(d, keys):
-            for k in keys: del d[k]
-        def _move_items(d, dsrc, keys):
-            for k in keys: d[k] = dsrc[k]; del dsrc[k]
-        
-        # Calculate the items that all slices have identical and update
-        h_stack = set(headers[0].iteritems())
-        for h in islice(headers, 1, None): h_stack &= h.viewitems()
-        h_stack = dict(h_stack)
-        h_stack_keys = h_stack.keys()
-        for h in headers: _remove_items(h, h_stack_keys)
-
-        # Calculate keys unique to the first slice and update
-        if len(headers) > 1:
-            h_stack_keys = set(headers[0])
-            for h in islice(headers, 1, None): h_stack_keys -= h.viewkeys()
-            _move_items(h_stack, headers[0], h_stack_keys)
-
-        return h_stack
-
-class _GIFStack(_PILStackWithSliceHeaders):
-    def _get_all_hdrs(self): return self._for_each_slice(self._get_hdr)
-    
-class _RandomAccessPILStack(_PILStack):
-    """
-    A PIL stack for formats that allow random-access of slices. Each format exposes the total
-    number of slices differently though, so there are subclasses for that.
-    """
-    __metaclass__ = ABCMeta
-    @abstractproperty
-    def depth(self): return 0
-    def seek(self, z):
-        if self._z == z: return
-        if z >= self.depth: raise ValueError('Slice index out of range')
-        try: self.im.seek(z)
-        except (EOFError, ValueError): raise ValueError('Slice index out of range')
-        self._z = z
-    def slices(self, stack):
-        return [_RandomAccessPILSlice(stack, self, z) for z in xrange(self.depth)]
-class _RandomAccessPILSlice(FileImageSlice):
-    def __init__(self, stack, pil, z):
-        super(_RandomAccessPILSlice, self).__init__(stack, z)
-        pil.seek(z)
-        self._set_props(pil.dtype, pil.shape)
-        self._pil = pil
-    @property
-    def header(self):
-        self._pil.seek(self._z)
-        return self._pil.header_info
-    def _get_props(self): pass
-    def _get_data(self):
-        self._pil.seek(self._z)
-        return self._pil.data
-    def _set_data(self): raise RuntimeError() # this can never be called
-
-class _RandomAccessPILStackWithSliceHeaders(_PILStackWithSliceHeaders, _RandomAccessPILStack):
-    def _get_all_hdrs(self):
-        d = self.depth
-        if d == 0: return []
-        headers = [None]*d
-        self.im.seek(0)
-        for z in xrange(d):
-            self.im.seek(z)
-            headers[z] = self._get_hdr()
-        self.im.seek(self._z)
-        return headers
-
-class _IMStack(_RandomAccessPILStack):
-    @property
-    def depth(self): return self.im.info["File size (no of images)"]
-class _SPIDERStack(_RandomAccessPILStackWithSliceHeaders):
-    @property
-    def depth(self): return self.im.nimages
-    @property
-    def is_stack(self): return self.im.istack != 0
-class _DCXStack(_RandomAccessPILStackWithSliceHeaders):
-    @property
-    def depth(self): return len(self.im._offset)
-class _MICStack(_RandomAccessPILStackWithSliceHeaders):
-    @classmethod
-    def depth(self): return len(self.im.images)
-    @classmethod
-    def is_stack(self): return self.im.category == Image.CONTAINER
-class _TIFFStack(_RandomAccessPILStackWithSliceHeaders):
-    # Not quite random-access because we don't know the depth until we have gone all the way
-    # through once. Also, internally, it does use increment and reset but is fast since it can skip
-    # all of the image data.
-    __depth = None
-    @property
-    def depth(self):
-        if self.__depth is None:
-            z = 0
-            while True:
-                try: self.im.seek(z); z += 1
-                except (EOFError, ValueError): break
-            self.__depth = z
-        return self.__depth
-    def _get_hdr(self):
-        h = super(_TIFFStack, self)._get_hdr()
-        h.update(_get_tiff_tags(self.im))
-        return h
-class _PSDStack(_RandomAccessPILStack):
-    # PIL reads the PSD image "oddly". The entire merged image is in frame=0. The others are the
-    # layers in order. However, once you go to any other frame you can never return 0. So what we
-    # are going to do is say if the image is opened as a 2D image then we will so the entire merged
-    # image. If we open it as a stack we will only go for the other layers (and not the merged image
-    # ever). Another problem is that PIL doesn't seem to always be able to extract the layers, but I
-    # might be using a too-new version of Photoshop...
-    @classmethod
-    def depth(self): return len(self.im.layers)
-    def seek(self, idx):
-        if idx >= self.depth: raise ValueError('Slice index out of range')
-        try: self.im.seek(idx+1) # +1 for skipping the entire merged image
-        except (EOFError, ValueError): raise ValueError('Slice index out of range')
-
-_stacks = None
-def _init_stack():
-    from types import ClassType
-    global _stacks
-    if _mode2dtype is None: _init_pil()
-    _stack_classes = {
-        'GIF' : _GIFStack,
-        'IM'  : _IMStack,
-        'SPIDER': _SPIDERStack,
-        'TIFF': _TIFFStack,
-        'DCX' : _DCXStack,
-        'MIC' : _MICStack,
-        'PSD' : _PSDStack,
-    }
-    _stacks = {
-        frmt:_stack_classes.get(frmt,_PILStack)(frmt,clazz,accept)
-        for frmt,(clazz,accept) in Image.OPEN.iteritems()
-        if isinstance(clazz,(type,ClassType)) and clazz.seek != Image.Image.seek
-        }
-
 class PILStack(FileImageStack):
+    #pylint: disable=redefined-builtin
+    
     @classmethod
     def open(cls, f, readonly=True, format=None, **options):
-        if _stacks is None: _init_stack()
-        return PILStack(_open_source(_stacks, format, f, readonly, **options))
+        return PILStack(_open_source(_static.stacks, format, f, readonly, **options))
     
     @classmethod
     def _openable(cls, filename, f, readonly=True, format=None, **options):
-        if _stacks is None: _init_stack()
-        return _openable_source(_stacks, format, f, filename, readonly, **options)
+        return _openable_source(_static.stacks, format, f, filename, readonly, **options)
 
     # TODO: support writing
     # Need to add create/creatable and many other things (start by looking for raise RuntimeError()).
@@ -950,8 +950,7 @@ Supported image formats:""")
         
     @classmethod
     def formats(cls):
-        if _stacks is None: _init_stack()
-        return _stacks.keys()
+        return _static.stacks.keys()
 
     def __init__(self, stack):
         self._stack = stack
@@ -968,7 +967,7 @@ class PILHeader(FileImageStackHeader):
         self._fields = {k:FixedField(lambda x:x,v,False) for k,v in data.iteritems()}
         super(PILHeader, self).__init__(data)
     def save(self):
-        if self._imstack._readonly: raise AttributeError('header is readonly')
+        if self._imstack._readonly: raise AttributeError('header is readonly') #pylint: disable=protected-access
     def _update_depth(self, d): raise RuntimeError() # not possible since it is always read-only
     def _get_field_name(self, f):
         return f if f in self._fields else None

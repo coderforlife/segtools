@@ -1,5 +1,3 @@
-#pylint: disable=protected-access
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -7,7 +5,6 @@ from __future__ import unicode_literals
 
 from abc import ABCMeta, abstractmethod
 from collections import Iterable, OrderedDict
-from io import open
 from itertools import repeat, izip
 from numbers import Integral
 from weakref import proxy
@@ -15,14 +12,13 @@ import functools
 
 from numpy import ndarray, ceil
 
+from ._handler_manager import HandlerManager
 from .._stack import ImageStack, HomogeneousImageStack, ImageSlice, Homogeneous
 from .._util import String
 from ..types import is_image, get_im_dtype
 from ..source import ImageSource
-from ._single import FileImageSource
-from ...imstack import Help, Opt
+from ...imstack import Opt
 from ...general.datawrapper import DictionaryWrapperWithAttr
-from ...general.utils import all_subclasses
 
 __all__ = ['FileImageStack','HomogeneousFileImageStack','FileImageSlice','FileImageStackHeader','Field','FixedField','NumericField']
 
@@ -31,15 +27,7 @@ def check_int(i):
     if int(i) == i: return int(i)
     raise ValueError()
 
-class _FileImageStackMeta(ABCMeta):
-    """The meta-class for file image stacks, which extends ABCMeta and calls Help.register if applicable"""
-    def __new__(cls, clsname, bases, dct):
-        c = super(_FileImageStackMeta, cls).__new__(cls, clsname, bases, dct)
-        n = c.name()
-        if n is not None: Help.register((n,c.__name__), c.print_help)
-        return c
-
-class FileImageStack(ImageStack):
+class FileImageStack(ImageStack, HandlerManager):
     """
     A stack of 2D image slices on disk. This is either backed by a file format that already has
     multiple slices (like MRC, MHA/MHD, and TIFF) or a collection of seperate 2D image files.
@@ -51,45 +39,31 @@ class FileImageStack(ImageStack):
 
     When writing, slices are typically saved immediately but the header typically is not. Call
     the save() function to force all data including the header to be saved.
+
+    Note: this class provides a daunting amount that can optionally be implemented. Most
+    implementions will likely only target usability by the command-line interface. If that is the
+    case, the following is the extent that is used within that interface. Note that the class-
+    methods are only required if it is to be directly accessible by the command-line and not through
+    the class-methods of another stack.
+     * For loadable or savable:
+        - class-methods: name and print_help
+        - slice property header is meaningful
+        - the header is never modified
+     * For loadable:
+        - class-methods: open and _openable accepting readonly=True and filename_or_file is always a filename
+        - methods: close if meaningful
+        - properties: stack if meaningful
+        - if not also savable:
+          - _delete and _insert can raise RuntimeErrors
+          - slices can have _set_data raise a RuntimeError
+     * For savable:
+        - class-methods: create and _creatable accepting writeonly=True
+        - methods: close and save if meaningful
+        - _delete can raise a RuntimeError
+        - _insert can raise a RuntimeError if idx != the current depth
+        - if not also savable:
+          - slices can have _get_data raise a RuntimeError
     """
-
-    __metaclass__ = _FileImageStackMeta
-
-    @classmethod
-    def is_handler(cls, handler, read=True):
-        """Checks that the given string is a valid handler for image stack files."""
-        return any(handler == cls.name() and (read and cls._can_read() or not read and cls._can_write())
-                   for cls in all_subclasses(cls))
-
-    @classmethod
-    def handlers(cls, read=True):
-        """Get a list of all image stack handlers except the special file-collection stack."""
-        handlers = []
-        for cls in all_subclasses(cls):
-            h = cls.name()
-            if h is not None and (read and cls._can_read() or not read and cls._can_write()):
-                handlers.append(h)
-        return handlers
-
-    @classmethod
-    def __open_handlers(cls, readonly=False, handler=None):
-        for cls in all_subclasses(cls):
-            if cls._can_read() and (readonly or cls._can_write()) and \
-               (handler is None or handler == cls.name()):
-                yield cls
-
-    @classmethod
-    def __openable_by(cls, filename, readonly=False, handler=None, **options):
-        handlers = (h for h in all_subclasses(cls) if h._can_read() and (readonly or h._can_write()))
-        if handler is not None:
-            for h in handlers:
-                if handler == h.name(): return cls
-            raise ValueError('No image stack handler named "'+handler+'" for opening files')
-        for h in handlers:
-            with open(filename, 'rb') as f:
-                if h._openable(filename, f, readonly, **options): return h
-        raise ValueError('Unable to find image stack handler for opening file "'+filename+'"')
-
     @classmethod
     def open(cls, filename, readonly=False, handler=None, **options):
         """
@@ -99,8 +73,7 @@ class FileImageStack(ImageStack):
         Extra options are only supported by some handlers.
         """
         if isinstance(filename, String):
-            return cls.__openable_by(filename, readonly, handler, **options). \
-                   open(filename, readonly, **options)
+            return HandlerManager.open.im_func(cls, filename, readonly, handler, **options)
         elif isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
             return FileCollectionStack.open(filename, readonly, handler, **options)
@@ -114,29 +87,16 @@ class FileImageStack(ImageStack):
         Otherwise it needs to be an iterable of file names. Extra options are only supported by
         some handlers.
         """
-        try:
-            if isinstance(filename, String):
-                cls.__openable_by(filename, readonly, handler, **options); return True
-            elif isinstance(filename, Iterable):
-                from ._collection import FileCollectionStack
-                return FileCollectionStack.openable(filename, readonly, handler, **options)
-        except StandardError: pass
-        return False
+        if isinstance(filename, String):
+            return HandlerManager.openable.im_func(cls, filename, readonly, handler, **options)
+        elif isinstance(filename, Iterable):
+            from ._collection import FileCollectionStack
+            return FileCollectionStack.openable(filename, readonly, handler, **options)
+        else:  return False
 
     @classmethod
-    def __creatable_by(cls, filename, writeonly=False, handler=None, **options):
-        from os.path import splitext
-        ext = splitext(filename)[1].lower()
-        handlers = (h for h in all_subclasses(cls) if h._can_write() and (writeonly or h._can_read()))
-        if handler is not None:
-            for h in handlers:
-                if handler == cls.name(): return h
-            raise ValueError('No image source handler named "'+handler+'" for creating files')
-        for h in handlers:
-            with open(filename, 'rb') as f:
-                if cls._creatable(filename, ext, writeonly, **options): return h
-        raise ValueError('Unable to find image source handler for creating file "'+filename+'"')
-
+    def _create_trans(cls, im): return ImageStack.as_image_stack(im)
+    
     @classmethod
     def create(cls, filename, ims, writeonly=False, handler=None, **options):
         """
@@ -157,8 +117,7 @@ class FileImageStack(ImageStack):
         stack.
         """
         if isinstance(filename, String):
-            return cls.__creatable_by(filename, writeonly, handler, **options). \
-                   create(filename, [ImageSource.as_image_source(im) for im in ims], writeonly, **options)
+            return HandlerManager.create.im_func(cls, filename, ims, writeonly, handler, **options)
         elif filename is None or isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
             return FileCollectionStack.create(filename, [ImageSource.as_image_source(im) for im in ims], writeonly, handler, **options)
@@ -172,92 +131,17 @@ class FileImageStack(ImageStack):
         by some file handlers. When filenames is None or an empty iterable then you need to give a
         "pattern" option with an extension and %d in it.
         """
-        try:
-            if isinstance(filename, String):
-                cls.__creatable_by(filename, writeonly, handler, **options); return True
-            elif filename is None or isinstance(filename, Iterable):
-                from ._collection import FileCollectionStack
-                return FileCollectionStack.creatable(filename, writeonly, handler, **options)
-        except StandardError: pass
-        return False
-
-    @classmethod
-    def _openable(cls, filename, f, readonly, **opts): #pylint: disable=unused-argument
-        """
-        [To be implemented by handler, default is nothing is openable]
-
-        Return if a file is openable as a FileImageStack given the filename, file object, and
-        dictionary of options. If this returns True then the class must provide a static/class
-        method like:
-            `open(filename_or_file, readonly, **options)`
-        Option keys are always strings, values can be either strings or other values (but strings
-        must be accepted for any value and you must convert, if possible). While _openable should
-        return False if there any unknown option keys or option values cannot be used, open should
-        throw exceptions.
-        """
-        return False
-
-    @classmethod
-    def _creatable(cls, filename, ext, writeonly, **opts): #pylint: disable=unused-argument
-        """
-        [To be implemented by handler, default is nothing is creatable]
-
-        Return if a filename/ext (ext always lowercase and includes .) is creatable as a
-        FileImageStack given the dictionary of options. If this returns True then the class must
-        provide a static/class method like:
-            `create(filename, list_of_ImageSources, writeonly, **options)`
-        Option keys are always strings, values can be either strings or other values (but strings
-        must be accepted for any value and you must convert, if possible). While _creatable should
-        return False if there any unknown option keys or option values cannot be used, create should
-        throw exceptions.
-
-        Note that the "writeonly" flag is only used for optimization and may not always been
-        honored. It is the word of the caller they will not use any functions that get data from
-        the stack. The handler may ignore this and treat it as read/write.
-        """
-        return False
-
-    @classmethod
-    def _can_read(cls):
-        """
-        [To be implemented by handler, default is readable]
-
-        Returns True if this handler can, under any circumstances, read image stacks.
-        """
-        return True
-
-    @classmethod
-    def _can_write(cls):
-        """
-        [To be implemented by handler, default is writable]
-
-        Returns True if this handler can, under any circumstances, write image stacks.
-        """
-        return True
-
-    @classmethod
-    def name(cls):
-        """
-        [To be implemented by handler, default causes the handler to not have a help page, be
-        unusable by name, and not be listed, but still can handle things]
-
-        Return the name of this image stack handler to be displayed in help outputs.
-        """
-        return None
-
-    @classmethod
-    def print_help(cls, width):
-        """
-        [To be implemented by handler, default prints nothing]
-
-        Prints the help page of this image stack handler.
-        """
-        pass
+        if isinstance(filename, String):
+            return HandlerManager.creatable.im_func(cls, filename, writeonly, handler, **options)
+        elif filename is None or isinstance(filename, Iterable):
+            from ._collection import FileCollectionStack
+            return FileCollectionStack.creatable(filename, writeonly, handler, **options)
+        else: return False
 
     def __init__(self, header, slices, readonly=False):
         super(FileImageStack, self).__init__(slices)
         self._header = header
-        header._imstack = proxy(self)
+        header._imstack = proxy(self) #pylint: disable=protected-access
         self._readonly = bool(readonly)
 
     # General
@@ -273,12 +157,13 @@ class FileImageStack(ImageStack):
     @staticmethod
     def _print_header(header, width=None, first_indent=None, indent=2, sub_indent=20):
         if header is None or len(header) == 0: return
+        flt_wdth = 50 if width is None else width-sub_indent
         def _filter(x):
             if isinstance(x, bytes) and not all((32 <= ord(c) < 128) or (c in (b'\t\r\n\v')) for c in x):
                 x = "<%d bytes of data>" % len(x)
             else:
                 x = unicode(x)
-                if len(x) > 50: x = x[:47]+"..."
+                if len(x) > flt_wdth: x = x[:(flt_wdth-3)]+"..."
             return x
         from textwrap import TextWrapper
         non1st = ' '*indent
@@ -328,7 +213,7 @@ class FileImageStack(ImageStack):
                 FileImageStack._print_header(self.header, width)
             line = "{z:0>%d}: {w}x{h} {dt} {nb}kb" % z_width
             for z,im in enumerate(self._slices):
-                nb = im.w*im.h*im.dtype.itemsize//1024
+                nb = int(im.w*im.h*im.dtype.itemsize//1024)
                 print(fill(line.format(z=z, w=im.w, h=im.h, dt=im_dtype_desc(im.dtype), nb=nb)))
                 FileImageStack._print_header(im.header, width, None, z_width+2)
 
@@ -373,6 +258,7 @@ class FileImageStack(ImageStack):
     def __update_cache(self, c): self._cache = OrderedDict(izip(c, repeat(True)))
 
     def _delete_slices(self, start, stop):
+        #pylint: disable=protected-access
         ss = stop - start
 
         # Update cache
@@ -383,10 +269,11 @@ class FileImageStack(ImageStack):
         self._d -= ss
         for z in xrange(start, self._d): self._slices[z]._update(z)
         self._header._update_depth(self._d)
-        if self._d <= 1: self._homogeneous = Homogeneous.Both
-        elif self._homogeneous != Homogeneous.Both: self._homogeneous = None # may have become homogeneous with the deletion
+        if self._d <= 1: self._homogeneous = Homogeneous.All
+        elif self._homogeneous != Homogeneous.All: self._homogeneous = None # may have become homogeneous with the deletion
 
     def _insert_slices(self, idx, slices):
+        #pylint: disable=protected-access
         ln = len(slices)
 
         # Update slices and depth
@@ -544,6 +431,7 @@ class HomogeneousFileImageStack(HomogeneousImageStack, FileImageStack):
     """
     An file-based image stack where every slice has the same shape and data type.
     """
+    #pylint: disable=protected-access
     def __init__(self, header, slices, w, h, dtype, readonly=False):
         super(HomogeneousFileImageStack, self).__init__(w, h, dtype, slices, {'header':header,'readonly':readonly})
     def print_detailed_info(self, width=None):
@@ -573,10 +461,11 @@ class FileImageSlice(ImageSlice):
     implementor must either call _set_props during initialization or implement a non-trivial
     _get_props function (the trivial one would be def _get_props(self): pass).
     """
+    #pylint: disable=protected-access
     def __init__(self, stack, z): super(FileImageSlice, self).__init__(stack, z)
 
     @property
-    def header(self):
+    def header(self): #pylint: disable=no-self-use
         """
         Get the 'header' for this slice. This is completely optional and it is perfectly fine to
         leave this returning None (the default). The information returned by this (in a dictionary)
@@ -586,7 +475,7 @@ class FileImageSlice(ImageSlice):
         return None
 
     @ImageSlice.data.setter
-    def data(self, im):
+    def data(self, im): #pylint: disable=arguments-differ
         if self._stack._readonly: raise ValueError('cannot set data for readonly image stack')
         self._cache_data(self._set_data(ImageSource.as_image_source(im)))
 
@@ -637,6 +526,7 @@ class FileImageStackHeader(DictionaryWrapperWithAttr):
     are not header fields you must either have them in the class definition or interact with
     self.__dict__.
     """
+    #pylint: disable=protected-access
     __metaclass__ = ABCMeta
     def __init__(self, data=None, check=True):
         if '_data' not in self.__dict__: self.__dict__['_data'] = None
@@ -768,7 +658,7 @@ class Field(object):
         self._cast = cast
         self.ro    = ro
         self.opt   = opt
-        # TODO: use default value somewhere
+        self.default = default # TODO: use default value somewhere
     def cast(self, v, h): return self._cast(v) #pylint: disable=unused-argument
 class FixedField(Field):
     """

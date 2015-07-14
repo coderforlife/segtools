@@ -123,14 +123,14 @@ Examples:""")
 
         elif re_search(numeric_pattern, path): # Numeric Pattern
             self._kwargs = {k:args.pop(k) for k in args.named.keys() if k not in ('start','step','stop')}
-            before, digits, after = re_search.match.groups()
+            before, _, after = re_search.match.groups()
             start, step, stop = args.get_all(oStart, oStep, oStop)
             self._file = (before, after, start, step, stop)
             self._name = _pattern_desc(self._name, start, step, stop)
 
         else: # 3D Image File
             if len(args.positional)>0: raise ValueError('All options must be specified as named options')
-            if isfile(path) and not FileImageStack.openable(path, True, self._handler, **args.named): #pylint: disable=star-args
+            if isfile(path) and not FileImageStack.openable(path, True, self._handler, **args.named):
                 # if the file does not yet exist, it may after some other operation, so only check if it exists now
                 raise ValueError("Unable to open '%s' with given options" % path)
             self._file   = path
@@ -289,7 +289,7 @@ Examples:""")
 
         else: # 3D Image File
             if len(args.positional)>0: raise ValueError('You must provide all options as named options.')
-            if not FileImageStack.creatable(path, **args.named): raise ValueError("Unable to create '%s' with given options" % path) #pylint: disable=star-args
+            if not FileImageStack.creatable(path, **args.named): raise ValueError("Unable to create '%s' with given options" % path)
             self._file   = path
             self._kwargs = args.named # arguments get passed straight to the iamge stack creator
             self._name = "'%s'" % self._name

@@ -1,5 +1,3 @@
-# pylint: disable=protected-access
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -21,6 +19,8 @@ class FileCollectionStack(FileImageStack):
     """
     An image stack that is composed of many 2D image files. It uses FileImageSource for each slice.
     """
+    
+    #pylint: disable=protected-access
 
     @classmethod
     def open(cls, files, readonly=False, handler=None, pattern=None, start=0, step=1, **options):
@@ -65,7 +65,7 @@ class FileCollectionStack(FileImageStack):
             num_files_found = next((i for i,f in enumerate(files) if not os.path.isfile(f)), len(files))
             return (not readonly or num_files_found == len(files)) and \
                    all(FileImageSource.openable(f, readonly, handler, **options) for f in files[:num_files_found]) and \
-                   all(FileImageSource.createable(f, False, handler, **options) for f in files[num_files_found:])
+                   all(FileImageSource.creatable(f, False, handler, **options) for f in files[num_files_found:])
         except StandardError: pass
         return False
 
@@ -228,13 +228,14 @@ def cast_pattern(s):
     return s
 
 class FileCollectionStackHeader(FileImageStackHeader):
+    #pylint: disable=protected-access
     """
     Header for a image file collection stack. The only fields are a tuple of the files being used.
     If there is a pattern for files to load, it along with the starting and step values are also
     available.
     """
     __fields_raw = {
-        'handler': Field(Field.cast_check(FileImageSource.is_handler), True, True),
+        'handler': Field(Field.cast_check(FileImageSource.is_handler), True, True), #pylint: disable=no-member
         'options': Field(dict, True, False),
         'files':   Field(tuple, True, False),
         'pattern': Field(cast_pattern, True, True),

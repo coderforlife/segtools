@@ -23,6 +23,7 @@ __all__ = ['Tasks', 'KB', 'MB', 'GB', 'TB']
 from abc import ABCMeta, abstractmethod
 from functools import total_ordering
 
+import sys
 from os import getcwd, getpid
 from os.path import exists, getmtime, join, normpath, realpath
 
@@ -42,6 +43,8 @@ from psutil import Process, virtual_memory # not a built-in library
 try: import saga # not a built-in library, but only required when using clustering
 except: pass
 
+# TODO: psutil now support futures, we don't need to do all the extra process management stuff
+
 this_proc = Process(getpid())
 
 def get_mem_used_by_tree(proc = this_proc):
@@ -54,11 +57,11 @@ def get_mem_used_by_tree(proc = this_proc):
     # Adding "if p.is_running()" would help but still have a window for the process to finish before getting the memory usage
     #return sum((p.get_memory_info()[0] for p in proc.get_children(True)), proc.get_memory_info()[0])
     if isinstance(proc, (int, long)): proc = Process(proc) # was given a PID
-    mem = proc.get_memory_info()[0]
-    for p in proc.get_children(True):
+    mem = proc.memory_info()[0]
+    for p in proc.children(True):
         try:
             if p.is_running():
-                mem += p.get_memory_info()[0]
+                mem += p.memory_info()[0]
         except: pass
     return mem
 
@@ -69,13 +72,13 @@ def get_time_used_by_tree(proc = this_proc):
     Return values is in seconds.
     """
     if isinstance(proc, (int, long)): proc = Process(proc) # was given a PID
-    time = sum(proc.get_cpu_times())
-    for p in proc.get_children(True):
+    t = sum(proc.cpu_times())
+    for p in proc.children(True):
         try:
             if p.is_running():
-                time += sum(p.get_cpu_times())
+                t += sum(p.cpu_times())
         except: pass
-    return time
+    return t
 
 def write_error(s):
     """
@@ -85,14 +88,13 @@ def write_error(s):
     color (not supported by OS or redirecting to a file) then just the string is
     written.
     """
-    from sys import stderr
     from os import name
 
-    try:    is_tty = stderr.isatty()
+    try:    is_tty = sys.stderr.isatty()
     except: is_tty = False
     
     if is_tty:
-        if name == "posix": stderr.write("\x1b[1;31m")
+        if name == "posix": sys.stderr.write("\x1b[1;31m")
         elif name == "nt":
             from ctypes import windll, Structure, c_short, c_ushort, byref
             k32 = windll.kernel32
@@ -104,11 +106,11 @@ def write_error(s):
             k32.GetConsoleScreenBufferInfo(handle, byref(csbi))
             prev = csbi.Color
             k32.SetConsoleTextAttribute(handle, 12)
-    stderr.write(s)
+    sys.stderr.write(s)
     if is_tty:
-        if name == "posix": stderr.write("\x1b[0m")
+        if name == "posix": sys.stderr.write("\x1b[0m")
         elif name == "nt":  k32.SetConsoleTextAttribute(handle, prev)
-    stderr.write("\n")
+    sys.stderr.write("\n")
 
 
 # These constants are for when giving a certain amount of memory pressure to a
@@ -141,8 +143,8 @@ class Task:
         self.done = False         # not done yet
         self._cpu_pressure = 1    # default number of CPUs is 1
         self._mem_pressure = 1*MB # default memory pressure is 1 MB
-    def __eq__(self, other): return type(self) == type(other) and self.name == other.name
-    def __lt__(self, other): return type(self) <  type(other) or  type(self) == type(other) and self.name < other.name
+    def __eq__(self, other): return type(self) == type(other) and self.name == other.name #pylint: disable=unidiomatic-typecheck
+    def __lt__(self, other): return type(self) <  type(other) or  type(self) == type(other) and self.name < other.name #pylint: disable=unidiomatic-typecheck
     def __hash__(self):      return hash(self.name+str(type(self)))
     def __repr__(self):      return self.name
 
@@ -161,7 +163,7 @@ class Task:
         self.pid = p.pid
         if self.parent._rusagelog:
             from .general.os_ext import wait4
-            pid, exitcode, rusage = wait4(self.pid, 0)
+            _, exitcode, rusage = wait4(self.pid, 0)
             del self.pid
             if exitcode: raise CalledProcessError(exitcode, str(self))
             self.parent._rusagelog.write('%s %f %f %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n' % (str(self), 
@@ -173,7 +175,7 @@ class Task:
             del self.pid
             if exitcode: raise CalledProcessError(exitcode, str(self))
             
-    def all_after(self, back_stack = set()):
+    def all_after(self, back_stack = frozenset()):
         """
         Get a set of all tasks that come after this task while performing a test for cycles.
         This can be an expensive operation but is cached so multiple calls to it are fast. The cache
@@ -191,7 +193,7 @@ class Task:
         """Clears the cached results of "all_after" recursively."""
         if self.__all_after:
             self.__all_after = None
-            for b in self.before: a._clear_cached_all_after()
+            for b in self.before: b._clear_cached_all_after()
     def mark_as_done(self):
         """
         Marks a task and all the tasks before it as done. This means when a task tree runs that includes them they will
@@ -371,9 +373,9 @@ class TaskUsingPythonProcess(Task):
             if isinstance(stdxxx, basestring):    return open(stdxxx, mode, 1)
             elif isinstance(stdxxx, (int, long)): return fdopen(stdxxx, mode, 1)
             return stdxxx # assume a file object
-        def __init__(target, args, kwargs, wd, stdin, stdout, stderr):
+        def __init__(self, target, args, kwargs, wd, stdin, stdout, stderr):
             def _setup_pyproc(target, args, kwargs, wd, stdin, stdout, stderr):
-                import sys, os
+                import os
                 from subprocess import STDOUT
                 os.chdir(wd)
                 if stdin:  sys.stdin  = TaskUsingPythonProcess.Popen._get_std(stdin,  'r')
@@ -595,7 +597,7 @@ class Tasks:
                 text = str(task)
                 if len(text) > 60: text = text[:56] + '...' + text[-1]
                 real_mem = '? '
-                timings = ''
+                timing = ''
                 try:
                     real_mem, t = task.current_usage()
                     real_mem = str(int(round(float(real_mem) / GB)))
@@ -611,7 +613,7 @@ class Tasks:
             print 'Upcoming: none'
         else:
             print 'Upcoming:'
-            for priority, task in sorted(self.__next):
+            for _, task in sorted(self.__next):
                 text = str(task)
                 if len(text) > 60: text = text[:56] + '...' + text[-1]
                 mem = str(int(round(float(task.mem_pressure) / GB))) + 'GB' if task.mem_pressure >= 0.5*GB else ''
@@ -701,7 +703,7 @@ class Tasks:
 
         # First do a fast check to see if the very next task is doable
         # This should be very fast and will commonly be where the checking ends
-        priority, task = self.__next[0]
+        _, task = self.__next[0]
         needed_cpu = min(self.max_tasks_at_once, task.cpu_pressure)
         if needed_cpu <= avail_cpu and task.mem_pressure <= avail_mem:
             heappop(self.__next)
@@ -712,7 +714,7 @@ class Tasks:
         # Second do a slow check of all upcoming tasks
         # This can be quite slow if the number of upcoming processes is long
         try:
-            priority, task, i = min((priority, task, i) for i, (priority, task) in enumerate(self.__next) if min(self.max_tasks_at_once, task.cpu_pressure) <= avail_cpu and task.mem_pressure <= avail_mem)
+            _, task, i = min((priority, task, i) for i, (priority, task) in enumerate(self.__next) if min(self.max_tasks_at_once, task.cpu_pressure) <= avail_cpu and task.mem_pressure <= avail_mem)
             self.__next[i] = self.__next.pop() # O(1)
             heapify(self.__next) # O(n) [TODO: could be made O(log(N)) with undocumented _siftup/_siftdown]
             self.__cpu_pressure += min(self.max_tasks_at_once, task.cpu_pressure)
@@ -767,7 +769,7 @@ class Tasks:
 
             # Set a signal handler
             try:
-                from signal import signal, SIGUSR1
+                from signal import signal, SIGUSR1 #pylint: disable=no-name-in-module
                 prev_signal = signal(SIGUSR1, self.display_stats)
             except: pass
 
@@ -809,7 +811,7 @@ class Tasks:
                     self.__conditional.wait(1)
                     secs += 1
                 for t in self.__running:
-                    try: p.kill()
+                    try: t.kill()
                     except: pass
 
         finally:
@@ -841,7 +843,7 @@ class Tasks:
         #comments = [line for line in lines if line[0] == '#']
         # Note: this will take the last found setting/command with a given and silently drop the others
         settings = {s[0].strip():s[1].strip() for s in (line[1:].split('=',1) for line in lines if line[0] == '*')} # setting => value
-        tasks = {line[20:].strip():line[:19] for line in lines if re.match('\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d\s', line)} # task string => date/time string
+        tasks = {line[20:].strip():line[:19] for line in lines if re.match(r'\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d\s', line)} # task string => date/time string
         #if len(lines) != len(comments) + len(settings) + len(commands): raise ValueError('Invalid file format for tasks log')
 
         # Check Settings
@@ -855,8 +857,8 @@ class Tasks:
             if not t: del tasks[n] # task no longer exists
             elif not t.settings.isdisjoint(changed_settings): changed.add(n) # settings changed
             else:
-                datetime = timegm(strptime(dt, Tasks.__time_format))
-                if any((exists(f) and getmtime(f) >= datetime for f in t.inputs)) or any(not exists(f) for f in t.outputs):
+                date_time = timegm(strptime(dt, Tasks.__time_format))
+                if any((exists(f) and getmtime(f) >= date_time for f in t.inputs)) or any(not exists(f) for f in t.outputs):
                     changed.add(n)
         for n in changed.copy(): changed.update(str(t) for t in self.find(n).all_after()) # add every task that comes after a changed task
 

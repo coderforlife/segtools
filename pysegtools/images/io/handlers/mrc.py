@@ -485,7 +485,7 @@ class MRCHeader(FileImageStackHeader):
         """Internal saving function"""
         f.seek(0)
         values = [self._data[field] for field in self._fields]
-        f.write(self._struct.pack(*values)) #pylint: disable=star-args
+        f.write(self._struct.pack(*values))
         for lbl in self._labels: f.write(lbl.ljust(LBL_LEN))
         f.write(' ' * LBL_LEN * (LBL_COUNT - len(self._labels)))
         if self._extra: f.write(self._extra)

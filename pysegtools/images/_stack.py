@@ -1,5 +1,3 @@
-#pylint: disable=protected-access
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -35,7 +33,7 @@ class ImageStack(object):
     len(). The [] also accepts slice-notation and iterables of indicies and returns a list of
     ImageSlice objects.
     """
-
+    #pylint: disable=protected-access
     __metaclass__ = ABCMeta
 
     @classmethod
@@ -118,7 +116,7 @@ class ImageStack(object):
         if Homogeneous.DType in self._homogeneous and dtype != s.dtype:
             self._homogeneous &= ~Homogeneous.DType
     def _has_homogeneous_prop(self, H, attr):
-        return self._homogeneous is not None and H in self._homogeneous and hasattr(self, a)
+        return self._homogeneous is not None and H in self._homogeneous and hasattr(self, attr)
 
     @property
     def is_homogeneous(self): return Homogeneous.All == self._get_homogeneous_info()[0]
@@ -132,13 +130,13 @@ class ImageStack(object):
     def h(self): return self.shape[0]
     @property
     def shape(self):
-        if self._has_homogeneous_prop(Homogeneous.Shape, '_shape'): return self._shape
+        if self._has_homogeneous_prop(Homogeneous.Shape, '_shape'): return self._shape #pylint: disable=no-member
         h = self._get_homogeneous_info()
         if Homogeneous.Shape not in h[0]: raise AttributeError('property unavailable on heterogeneous image stacks')
         return h[1]
     @property
     def dtype(self):
-        if self._has_homogeneous_prop(Homogeneous.DType, '_dtype'): return self._dtype
+        if self._has_homogeneous_prop(Homogeneous.DType, '_dtype'): return self._dtype #pylint: disable=no-member
         h = self._get_homogeneous_info()
         if Homogeneous.DType not in h[0]: raise AttributeError('property unavailable on heterogeneous image stacks')
         return h[2]
@@ -201,8 +199,7 @@ class ImageStack(object):
         if isinstance(idx, (Integral, slice)): return self._slices[idx]
         elif isinstance(idx, Iterable):        return [self._slices[i] for i in idx]
         else: raise TypeError('index')
-    def __iter__(self):
-        for i in xrange(self._d): yield self._slices[i]
+    def __iter__(self): return iter(self._slices)
 
 class HomogeneousImageStack(ImageStack):
     """
@@ -223,7 +220,7 @@ class HomogeneousImageStack(ImageStack):
             super(HomogeneousImageStack, self).__init__(slices)
         else:
             if slices is not None: super_init_args['slices'] = slices
-            super(HomogeneousImageStack, self).__init__(**super_init_args) #pylint: disable=star-args
+            super(HomogeneousImageStack, self).__init__(**super_init_args)
         self._w = w
         self._h = h
         self._shape = (h, w)
@@ -262,8 +259,7 @@ class ImageSlice(DeferredPropertiesImageSource):
     The implementor must either call _set_props during initialization or implement a non-trivial
     _get_props function (the trivial one would be def _get_props(self): pass).
     """
-    __metaclass__ = ABCMeta
-
+    #pylint: disable=protected-access
     def __init__(self, stack, z):
         self._stack = proxy(stack)
         self._z = z
@@ -288,7 +284,11 @@ class ImageSlice(DeferredPropertiesImageSource):
         (so that modifications to it do not effect the underlying image data) or an unwritable view.
         """
         pass
-
+    
+    @abstractmethod
+    def _get_props(self):
+        pass
+    
 # Some generic image stacks that are wrappers are other image datas
 class ImageStackArray(HomogeneousImageStack):
     """
@@ -306,7 +306,7 @@ class ImageStackArray(HomogeneousImageStack):
         super(ImageStackArray, self).__init__(sh[2], sh[1], dt,
             [ImageSliceFromArray(self, z, im, dt) for z,im in enumerate(arr)])
     @ImageStack.cache_size.setter
-    def cache_size(self, value): pass # prevent actual caching - all in memory
+    def cache_size(self, value): pass # prevent actual caching - all in memory #pylint: disable=arguments-differ
     @property
     def stack(self): return self.__arr_readonly
 class ImageSliceFromArray(ImageSlice):
@@ -318,7 +318,7 @@ class ImageSliceFromArray(ImageSlice):
     def _get_props(self): pass
     def _get_data(self): return self._im_readonly
     @ImageSlice.data.setter
-    def data(self, im):
+    def data(self, im): #pylint: disable=arguments-differ
         im = ImageSource.as_image_source(im)
         if self._shape != im.shape or self._dtype != im.dtype: raise ValueError('requires all slices to be the same data type and size')
         self._im[:,:,...] = im.data[:,:,...]

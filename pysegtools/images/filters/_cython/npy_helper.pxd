@@ -2,6 +2,8 @@
 
 # TODO: PY_VERSION_HEX?
 
+from libc.string cimport  memcmp, memcpy, memmove
+
 ############### Python ###############
 cdef extern from "Python.h":
     ctypedef int Py_intptr_t
@@ -177,7 +179,7 @@ cdef extern from *:
 ############### Helpers ###############
 ctypedef Py_intptr_t intp
 ctypedef Py_uintptr_t uintp
-cdef extern from "npy_helper.h":
+cdef extern from "_cython/npy_helper.h":
     # Makes Numpy a bit nicer to use from Cython
     # The half and complex classes below come from this header
     pass
@@ -463,6 +465,7 @@ cdef extern from "numpy/arrayobject.h":
     intp* PyArray_SHAPE(ndarray) nogil # == PyArray_DIMS
     intp PyArray_DIM(ndarray,int) nogil
     intp PyArray_SIZE(ndarray) nogil # calls product(shape)
+    int PyArray_ITEMSIZE(ndarray) nogil
     intp PyArray_NBYTES(ndarray) nogil # calls product(shape)*itemsize
     intp* PyArray_STRIDES(ndarray) nogil
     intp PyArray_STRIDE(ndarray,int) nogil
@@ -499,6 +502,7 @@ cdef extern from "numpy/arrayobject.h":
     ndarray PyArray_ContiguousFromAny(object, NPY_TYPES, int min_depth, int max_depth)
     ndarray PyArray_EMPTY(int ndims, intp* dims, NPY_TYPES, bint fortran)
     ndarray PyArray_ZEROS(int ndims, intp* dims, NPY_TYPES, bint fortran)
+    ndarray PyArray_Arange(double start, double stop, double step, NPY_TYPES)
     ndarray PyArray_Concatenate(object, int axis)
 
     ### Extracting from an array ###
@@ -513,6 +517,7 @@ cdef extern from "numpy/arrayobject.h":
     ### Sorting an array ###
     int PyArray_Sort(ndarray, int axis, NPY_SORTKIND) except -1 # in-place
     ndarray PyArray_LexSort(object, int axis)
+    ndarray PyArray_SearchSorted(ndarray, object values, NPY_SEARCHSIDE, PyObject*)
     
     ### Calculations ###
     ndarray PyArray_Any(ndarray, int axis, ndarray out)
