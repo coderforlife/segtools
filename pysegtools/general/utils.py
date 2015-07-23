@@ -80,3 +80,26 @@ def all_subclasses(cls):
     subcls = cls.__subclasses__() # pylint: disable=no-member
     for sc in list(subcls): subcls.extend(all_subclasses(sc))
     return subcls
+
+
+def load_plugins(name):
+    import sys, os.path
+    mod = sys.modules[name]
+    directory = os.path.dirname(mod.__file__)
+    plugins = [os.path.basename(f)[:-3] for f in os.listdir(directory)
+               if f[-3:] == ".py" and f[0] != "_" and os.path.isfile(os.path.join(directory, f))]
+    if hasattr(mod, 'load_plugins'): del mod.load_plugins
+    glbls = {
+            '__name__': name,
+            '__package__': mod.__package__,
+            '__file__': mod.__file__,
+            '__builtins__': __builtins__,
+            '__all__': plugins,
+        }
+    mod.__all__ = plugins
+    for plugin in plugins:
+        try:
+            setattr(mod, plugin, getattr(__import__(name, glbls, glbls, [plugin], 0), plugin))
+        except ImportError as ex:
+            import warnings
+            warnings.warn("Failed to load %s plugin '%s': %s"%(name,plugin,ex))
