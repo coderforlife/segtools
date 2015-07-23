@@ -4,7 +4,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 from abc import ABCMeta, abstractmethod
-from collections import Iterable, OrderedDict
+from collections import OrderedDict, Iterable, Sequence, Set, Mapping
 from itertools import repeat, izip
 from numbers import Integral
 from weakref import proxy
@@ -73,7 +73,7 @@ class FileImageStack(ImageStack, HandlerManager):
         Extra options are only supported by some handlers.
         """
         if isinstance(filename, String):
-            return HandlerManager.open.im_func(cls, filename, readonly, handler, **options)
+            return HandlerManager.open.__func__(cls, filename, readonly, handler, **options)
         elif isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
             return FileCollectionStack.open(filename, readonly, handler, **options)
@@ -88,11 +88,11 @@ class FileImageStack(ImageStack, HandlerManager):
         some handlers.
         """
         if isinstance(filename, String):
-            return HandlerManager.openable.im_func(cls, filename, readonly, handler, **options)
+            return HandlerManager.openable.__func__(cls, filename, readonly, handler, **options)
         elif isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
             return FileCollectionStack.openable(filename, readonly, handler, **options)
-        else:  return False
+        else: return False
 
     @classmethod
     def _create_trans(cls, im): return ImageStack.as_image_stack(im)
@@ -161,9 +161,13 @@ class FileImageStack(ImageStack, HandlerManager):
         def _filter(x):
             if isinstance(x, bytes) and not all((32 <= ord(c) < 128) or (c in (b'\t\r\n\v')) for c in x):
                 x = "<%d bytes of data>" % len(x)
+            elif isinstance(x, (Sequence, Set)):
+                x = ", ".join(unicode(y) for y in x)
+            elif isinstance(x, Mapping):
+                x = ", ".join("%s=%s"%(k,v) for k,v in x.iteritems())
             else:
                 x = unicode(x)
-                if len(x) > flt_wdth: x = x[:(flt_wdth-3)]+"..."
+            if len(x) > flt_wdth: x = x[:(flt_wdth-3)]+"..."
             return x
         from textwrap import TextWrapper
         non1st = ' '*indent
@@ -181,44 +185,21 @@ class FileImageStack(ImageStack, HandlerManager):
                 s += " "*(sub_indent - indent - 2 - len(k))
             print(fill(s+v))
             fill = fill_sub
-    def print_detailed_info(self, width=None):
-        from ..types import im_dtype_desc
-        fill = ImageStack._get_print_fill(width)
-        h,s,d = self._get_homogeneous_info()
+    def _print_general_header(self, width=None):
+        if self.header and len(self.header) > 0:
+            print(ImageStack._get_print_fill(width)("Header:"))
+            FileImageStack._print_header(self.header, width)
+    def _print_homo_slice_header_gen(self, width=None):
         z_width = len(str(self._d-1))
-        print(fill("Handler:     %s" % type(self).__name__))
-        if self._d == 0:
-            print(fill("Depth:      0"))
-            print(fill("Total Size: 0 kb"))
-            if self.header and len(self.header) > 0:
-                print(fill("Header:"))
-                FileImageStack._print_header(self.header, width)
-        elif h == Homogeneous.All:
-            print(fill("Dimensions: %d x %d x %d (WxHxD)" % (s[1], s[0], self._d)))
-            print(fill("Data Type:  %s" % im_dtype_desc(d)))
-            nb = s[1] * s[0] * d.itemsize
-            print(fill("Slice Size: %d kb" % (nb//1024)))
-            print(fill("Total Size: %d kb" % (nb*self._d//1024)))
-            if self.header and len(self.header) > 0:
-                print(fill("Header:"))
-                FileImageStack._print_header(self.header, width)
-            ind = "  {z:0>%d}: " % z_width
-            for z,im in enumerate(self._slices):
-                FileImageStack._print_header(im.header, width, ind.format(z=z), z_width+4)
-        else:
-            print(fill("Depth:      %d" % self._d))
-            print(fill("Total Size: %d kb" % (sum(im.w*im.h*im.dtype.itemsize for im in self._slices)//1024)))
-            if self.header and len(self.header) > 0:
-                print(fill("Header:"))
-                FileImageStack._print_header(self.header, width)
-            line = "{z:0>%d}: {w}x{h} {dt} {nb}kb" % z_width
-            for z,im in enumerate(self._slices):
-                nb = int(im.w*im.h*im.dtype.itemsize//1024)
-                print(fill(line.format(z=z, w=im.w, h=im.h, dt=im_dtype_desc(im.dtype), nb=nb)))
-                FileImageStack._print_header(im.header, width, None, z_width+2)
+        ind = "  {z:0>%d}: " % z_width
+        for z,im in enumerate(self._slices): yield FileImageStack._print_header(im.header, width, ind.format(z=z), z_width+4)
+    def _print_hetero_slice_header_gen(self, width=None):
+        gen = super(FileImageStack, self)._print_hetero_slice_header_gen(width)
+        z_width = len(str(self._d-1))
+        for im,_ in izip(self._slices, gen): yield FileImageStack._print_header(im.header, width, None, z_width+2)
 
 
-    # Internal slice maniplutions - primary functions to be implemented by base classes
+    # Internal slice manipulations - primary functions to be implemented by base classes
     # Getting and setting individual slices is done in the FileImageSlice objects
     @abstractmethod
     def _delete(self, idxs):
@@ -434,22 +415,6 @@ class HomogeneousFileImageStack(HomogeneousImageStack, FileImageStack):
     #pylint: disable=protected-access
     def __init__(self, header, slices, w, h, dtype, readonly=False):
         super(HomogeneousFileImageStack, self).__init__(w, h, dtype, slices, {'header':header,'readonly':readonly})
-    def print_detailed_info(self, width=None):
-        from ..types import im_dtype_desc
-        fill = ImageStack._get_print_fill(width)
-        z_width = len(str(self._d-1))
-        print(fill("Handler:    %s" % type(self).__name__))
-        print(fill("Dimensions: %d x %d x %d (WxHxD)" % (self._w, self._h, self._d)))
-        print(fill("Data Type:  %s" % im_dtype_desc(self._dtype)))
-        nb = self._w * self._h * self._dtype.itemsize
-        print(fill("Slice Size: %d" % (nb//1024)))
-        print(fill("Total Size: %d" % (nb*self._d//1024)))
-        if self.header and len(self.header) > 0:
-            print(fill("Header:"))
-            FileImageStack._print_header(self.header, width)
-        ind = "  {z:0>%d}: " % z_width
-        for z,im in enumerate(self._slices):
-            FileImageStack._print_header(im.header, width, ind.format(z=z), z_width+4)
     @abstractmethod
     def _delete(self, idxs): pass
     @abstractmethod

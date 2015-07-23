@@ -64,8 +64,8 @@ class ImageStack(object):
     def __len__(self): return self._d
     def __str__(self):
         """Gets a basic representation of this class as a string."""
-        if self._d == 0: return "(no slices)"
         h,s,d = self._get_homogeneous_info()
+        if d is None and self._d == 0: return "(no slices)"
         if h == Homogeneous.All: return "%s: %dx%dx%d %s" % (type(self).__name__, s[1], s[0], self._d, im_dtype_desc(d))
         line = "%0"+str(len(str(self._d-1)))+"d: %dx%d %s"
         return type(self).__name__+": "+", ".join(line%(z,im.w,im.h,im_dtype_desc(im.dtype)) for z,im in enumerate(self._slices))
@@ -73,26 +73,38 @@ class ImageStack(object):
     def _get_print_fill(width):
         from textwrap import TextWrapper
         return (lambda x:x) if width is None else TextWrapper(width=width, subsequent_indent=' '*12).fill
+    def _print_general_header(self, width_=None): pass
+    def _print_homo_slice_header_gen(self, width_=None): return xrange(self._d)
+    def _print_hetero_slice_header_gen(self, width=None):
+        fill = ImageStack._get_print_fill(width)
+        line = "{z:0>%d}: {w}x{h} {dt} {nb}kb" % len(str(self._d-1))
+        for z,im in enumerate(self._slices):
+            nb = int(im.w*im.h*im.dtype.itemsize//1024)
+            print(fill(line.format(z=z, w=im.w, h=im.h, dt=im_dtype_desc(im.dtype), nb=nb)))
     def print_detailed_info(self, width=None):
+        # we use deque to consume a generator completely and quickly
+        # (see https://docs.python.org/2/library/itertools.html#recipes)
+        from collections import deque
         fill = ImageStack._get_print_fill(width)
         h,s,d = self._get_homogeneous_info()
         print(fill("Handler:    %s" % type(self).__name__))
-        if self._d == 0:
+        if d is None and self._d == 0:
             print(fill("Depth:      0"))
             print(fill("Total Size: 0 kb"))
+            self._print_general_header(width)
         elif h == Homogeneous.All:
             print(fill("Dimensions: %d x %d x %d (WxHxD)" % (s[1], s[0], self._d)))
             print(fill("Data Type:  %s" % im_dtype_desc(d)))
             nb = s[1] * s[0] * d.itemsize
             print(fill("Slice Size: %d kb" % (nb//1024)))
             print(fill("Total Size: %d kb" % (nb*self._d//1024)))
+            self._print_general_header(width)
+            deque(self._print_homo_slice_header_gen(width), maxlen=0)
         else:
-            print(fill("Depth:      %d" % (self._d)))
+            print(fill("Depth:      %d" % self._d))
             print(fill("Total Size: %d kb" % (sum(im.w*im.h*im.dtype.itemsize for im in self._slices)//1024)))
-            line = "{z:0>%d}: {w}x{h} {dt} {nb}kb" % (len(str(self._d-1)))
-            for z,im in enumerate(self._slices):
-                nb = im.w*im.h*im.dtype.itemsize//1024
-                print(fill(line.format(z=z, w=im.w, h=im.h, dt=im_dtype_desc(im.dtype), nb=nb)))
+            self._print_general_header(width)
+            deque(self._print_hetero_slice_header_gen(width), maxlen=0)
 
     # Homogeneous interface
     def _get_homogeneous_info(self):
@@ -228,16 +240,6 @@ class HomogeneousImageStack(ImageStack):
         self._slc_pxls  = w * h
         self._slc_bytes = w * h * dtype.itemsize
         self._homogeneous = Homogeneous.All
-
-    def __str__(self): return "%s: %dx%dx%d %s" % (type(self).__name__, self._w, self._h, self._d, im_dtype_desc(self._dtype))
-    def print_detailed_info(self, width=None):
-        fill = ImageStack._get_print_fill(width)
-        print(fill("Handler:    %s" % type(self).__name__))
-        print(fill("Dimensions: %d x %d x %d (WxHxD)" % (self._w, self._h, self._d)))
-        print(fill("Data Type:  %s" % im_dtype_desc(self._dtype)))
-        nb = self._w * self._h * self._dtype.itemsize
-        print(fill("Slice Size: %d kb" % (nb//1024)))
-        print(fill("Total Size: %d kb" % (nb*self._d//1024)))
 
     def _get_homogeneous_info(self): return Homogeneous.All, self._shape, self._dtype
     def _update_homogeneous_set(self, z, shape, dtype): pass
