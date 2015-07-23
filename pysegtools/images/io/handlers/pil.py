@@ -14,6 +14,7 @@ from io import open #pylint: disable=redefined-builtin
 from sys import byteorder
 from abc import ABCMeta, abstractproperty, abstractmethod
 from types import ClassType
+from collections import namedtuple
 
 from PIL import Image
 from PIL.ImageFile import ImageFile, StubImageFile
@@ -726,15 +727,12 @@ def __init():
     # Add common extensions for the SPIDER format
     Image.register_extension("SPIDER", ".spi")
     Image.register_extension("SPIDER", ".stk")
-
-    static = object()
-    static.exts = Image.EXTENSION
-
+    
     stub_formats = set(frmt for frmt,(clazz,accept) in Image.OPEN.iteritems() if
                        isinstance(clazz,(type,ClassType)) and issubclass(clazz,StubImageFile))
     stub_formats.add('MPEG') # MPEG is not registered properly as a stub
-    static.read_formats  = frozenset(Image.OPEN) - stub_formats
-    static.write_formats = frozenset(Image.SAVE) - stub_formats
+    read_formats  = frozenset(Image.OPEN) - stub_formats
+    write_formats = frozenset(Image.SAVE) - stub_formats
 
     # Init the various sources
     source_classes = {
@@ -747,14 +745,14 @@ def __init():
             'TIFF': _TIFFSource,
             'WEBP': _WEBPSource,
         }
-    static.sources = {
+    sources = {
         frmt:source_classes.get(frmt,_PILSource)(frmt,clazz,accept,Image.SAVE.get(frmt))
         for frmt,(clazz,accept) in Image.OPEN.iteritems()
         if not isinstance(clazz,(type,ClassType)) or not issubclass(clazz,StubImageFile)
         }
     # Add write-only formats
-    static.sources.update({frmt:source_classes.get(frmt,_PILSource)(frmt,None,None,Image.SAVE[frmt])
-                           for frmt in (static.write_formats-static.read_formats)})
+    sources.update({frmt:source_classes.get(frmt,_PILSource)(frmt,None,None,Image.SAVE[frmt])
+                    for frmt in (write_formats-read_formats)})
 
     # Init the various stacks
     stack_classes = {
@@ -766,14 +764,15 @@ def __init():
         'MIC' : _MICStack,
         'PSD' : _PSDStack,
     }
-    static.stacks = {
+    stacks = {
         frmt:stack_classes.get(frmt,_PILStack)(frmt,clazz,accept)
         for frmt,(clazz,accept) in Image.OPEN.iteritems()
         if isinstance(clazz,(type,ClassType)) and clazz.seek != Image.Image.seek
     }
 
-    return static
-_static = delayed(__init) # has .exts, .read_formats, .write_formats, .sources, and .stacks
+    return __static(Image.EXTENSION, read_formats, write_formats, sources, stacks)
+__static = namedtuple('pil_static', ('exts','read_formats','write_fromats','sources','stacks'))
+_static = delayed(__init, __static)
 
 class PIL(FileImageSource):
     #pylint: disable=redefined-builtin
@@ -963,7 +962,7 @@ class PILHeader(FileImageStackHeader):
     _fields = None
     def __init__(self, stack, **options):
         data = stack.header_stack_info
-        #data['options'] = options
+        if len(options): data['options'] = options
         self._fields = {k:FixedField(lambda x:x,v,False) for k,v in data.iteritems()}
         super(PILHeader, self).__init__(data)
     def save(self):

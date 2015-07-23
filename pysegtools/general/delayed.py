@@ -67,7 +67,8 @@ def delayed(load, base=object):
         """
         Get the underlying value of this object, possibly loading it if it hasn't been loaded yet.
         """
-        val = load()
+        try: val = load()
+        except StandardError as ex: raise RuntimeError(ex)
         assert isinstance(val, base)
         for name in set(clazz.__dict__) - __specials:
             delattr(clazz, name)

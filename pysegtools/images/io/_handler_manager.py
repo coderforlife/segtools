@@ -52,7 +52,7 @@ class HandlerManager(object):
         handlers = (h for h in all_subclasses(cls) if h._can_read() and (readonly or h._can_write()))
         if handler is not None:
             for h in handlers:
-                if handler == h.name(): return cls
+                if handler == h.name(): return h
             raise ValueError('No handler named "%s"' % handler)
         for h in handlers:
             with open(filename, 'rb') as f:
