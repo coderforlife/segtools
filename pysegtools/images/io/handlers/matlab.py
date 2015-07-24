@@ -1,5 +1,3 @@
-#pylint: disable=protected-access
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -149,6 +147,7 @@ class _MAT45File(_MATFile): # a v4 or v5 file
     # subclass must define a class-variable '_entry' which is the class type to make entries with
     _entry = None
     _endian = None
+    #pylint: disable=protected-access
     @classmethod
     def _open(cls, filename, f, *args): # raises ValueError if probably not a MATLAB v4/5 file
         entries = OrderedDict()
@@ -305,6 +304,7 @@ class _MAT45DummyEntry(_MATDummyEntry): # a v4 or v5 dummy entry
 
 ###### MATLAB v4 Files ######
 class _MAT4Entry(_MAT45Entry):
+    #pylint: disable=protected-access
     __long_le = Struct(str('<l'))
     __structs = (Struct('<lllll'), Struct('>lllll'))
     __HDR_SIZE = 20
@@ -518,6 +518,7 @@ class _MAT4File(_MAT45File):
 
 ###### MATLAB v5 Files ######
 class _MAT5DummyEntry(_MAT45DummyEntry):
+    #pylint: disable=protected-access
     _is_subsys_data = False
     def _update_start(self, new_start):
         self._start = new_start
@@ -526,6 +527,7 @@ class _MAT5DummyEntry(_MAT45DummyEntry):
         if self._is_subsys_data: self._mat._set_ssdo(None)
 
 class _MAT5Entry(_MAT45Entry):
+    #pylint: disable=protected-access
     __class2dtype = {
         5  : 'sparse',
         6  : float64,
@@ -571,7 +573,7 @@ class _MAT5Entry(_MAT45Entry):
                 if is_compressed: raise ValueError()
                 with GzipFile(f, mode='rb', method='zlib') as gzf:
                     e = cls.open(mat, gzf, True)
-                e.__start_comp, e._start = e._start, start
+                e.__start_comp, e._start = e._start, start #pylint: disable=attribute-defined-outside-init
                 if f.seek(end) != end: raise ValueError()
                 return e
             elif dt != 'matrix': raise ValueError() # at the top level we only accept matrix or compressed
@@ -870,6 +872,7 @@ class _MAT5Entry(_MAT45Entry):
         return im
 
 class _MAT5File(_MAT45File):
+    #pylint: disable=protected-access
     _entry = _MAT5Entry
     _version = 0 # this is updated to 6 or 7 once an entry has been read (compressed or uses utf8/16/32 then it is 7)
     __mat2dtype = {
@@ -1074,6 +1077,7 @@ class _MAT5File(_MAT45File):
 ########### MATLAB v7.3 Files ###########
 class _MAT73File(_MATFile):
     """MAT v7.3 files do not support "ordering", so some methods won't work as expected."""
+    #pylint: disable=protected-access
     _version = 7.3
 
     @classmethod
@@ -1138,7 +1142,6 @@ class _MAT73File(_MATFile):
 
     def set(self, name, im):
         # The data is appended unless it can be placed into the old slot (means dtype and type need to be the same and shape must be compatible)
-        #TODO: reivew this since changing the entries to have full-shape
         if name not in self._entries: return self.append(name, im)
         entry = self._entries[name]
         if not entry.is_image: return self.__simple_set(name, im)
@@ -1372,6 +1375,7 @@ class MAT(FileImageSource):
 
     @classmethod
     def _uniq_name(cls, mat, prefix='image_'):
+        #pylint: disable=protected-access
         names = set(n for n in mat._entries if n.startswith(prefix))
         i = 0
         pattern = prefix + '%03d'
@@ -1498,6 +1502,7 @@ update the matrix with the given name.
         self._mat.rename(self._rename, filename)
 
 class MATStack(HomogeneousFileImageStack):
+    #pylint: disable=protected-access
     @staticmethod
     def __parse_pattern(names):
         start = names.index('#')
@@ -1753,6 +1758,7 @@ always found.
         for i,slc in enumerate(self._slices): ims[i,...] = slc
         return ims
 class _MATSlice(FileImageSlice):
+    #pylint: disable=protected-access
     def __init__(self, stack, dt, sh, z):
         super(_MATSlice, self).__init__(stack, z)
         self._set_props(dt, sh)
@@ -1765,6 +1771,7 @@ class _MATSlice(FileImageSlice):
         return im
 
 class MATSlices(FileImageStack):
+    #pylint: disable=protected-access
     def __init__(self, mat, entries, pattern='slice_%03d', readonly=False):
         self._mat = mat
         self._pattern = pattern
@@ -1806,7 +1813,7 @@ class _MATEntrySlice(FileImageSlice):
     def _get_data(self): return self._entry.data
     def _set_data(self, im):
         im = im.data
-        self._set_entry(self._stack._mat.set(self._entry.name, im))
+        self._set_entry(self._stack._mat.set(self._entry.name, im)) #pylint: disable=protected-access
         return im
 
 class _MATHeader(FileImageStackHeader):
@@ -1816,7 +1823,7 @@ class _MATHeader(FileImageStackHeader):
         self._fields = {k:FixedField(lambda x:x,v,False) for k,v in data.iteritems()}
         super(_MATHeader, self).__init__(data)
     def save(self):
-        if self._imstack._readonly: raise AttributeError('header is readonly')
+        if self._imstack._readonly: raise AttributeError('header is readonly') #pylint: disable=protected-access
     def _update_depth(self, d): pass
     def _get_field_name(self, f):
         return f if f in self._fields else None
