@@ -89,7 +89,7 @@ def unique_rows_merge(a, b):
 
 def number(a):
     """
-    Numbers an image while keeping order. Just like _renumber except that order is maintained.
+    Numbers an image while keeping order. Just like renumber except that order is maintained.
     The non-optimized version uses unique_fast and searchsorted.
     """
     # See scipy-lectures.github.io/advanced/image_processing/#measuring-objects-properties-ndimage-measurements for the unqiue/searchsorted method
@@ -107,7 +107,7 @@ def number(a):
     return out, N
 def number_rows(a):
     """
-    Numbers an image while keeping order. Just like _renumber except that order is maintained.
+    Numbers an image while keeping order. Just like renumber except that order is maintained.
     The non-optimized version uses unique_rows_fast and searchsorted.
     """
     # See scipy-lectures.github.io/advanced/image_processing/#measuring-objects-properties-ndimage-measurements for the unqiue/searchsorted method

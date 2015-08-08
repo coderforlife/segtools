@@ -12,6 +12,6 @@ compiler_opt = {
     }
 
 def make_ext(modname, pyxfilename):
-    return Extension(name=modname, sources=[pyxfilename], language="c++",
+    return Extension(name=modname, sources=[str(pyxfilename)], language="c++",
                      extra_compile_args=compiler_opt.get(compiler_name, []),
                      include_dirs=[dirname,numpy.get_include()])

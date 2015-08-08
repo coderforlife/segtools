@@ -444,8 +444,10 @@ Take an integer image (either signed or unsigned) and shrink the size of the int
 still fits the min and max values. By default this will shrink the image down to single bytes,
 keeping it signed or unsigned. You can also specify a minimum data type size and the integer size
 won't be reduced below that. If the minimum data type is not the same signed/unsigned as the image,
-the image will be converted if possible (an example of where it will raise an exception is if a the
-image is signed and has negative values and it is requested to be unsigned).
+the image will be converted if possible (for example an exception will be raised if the image is
+signed and has negative values and it is requested to be unsigned).
+
+The min_dt can be any integral single-channel data type (see --help data-types).
 
 [Technically, if the min_dt is larger than the current image's data-type the image will "grow", not
 shrink]
@@ -462,7 +464,7 @@ shrink]
     @classmethod
     def _produces(cls): return ('Shrunk image stack',)
     @classmethod
-    def _see_also(cls): return ('label','relabel','number')
+    def _see_also(cls): return ('label','relabel','number','data-types')
     def __str__(self): return 'shrink-int%s%s'%(
         ('' if self._min_dt is None else ' to '+im_dtype_desc(self._min_dt)),
         ('' if self._per_slice else ' - entire stack at-once'))

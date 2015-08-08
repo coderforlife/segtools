@@ -198,8 +198,8 @@ def __replace(ndarray[npy_number] k not None, ndarray[npy_unsignedinteger] v not
         <npy_number*>PyArray_DATA(a), <npy_unsignedinteger*>PyArray_DATA(out), PyArray_DIM(a,0))
 
 @fused(fallback=__replace_fallback)
-def __replace_rows(ndarray[npy_number, ndim=2] k not None, ndarray[npy_unsignedinteger, ndim=2] v not None,
-                   ndarray[npy_number, ndim=2] a not None, ndarray[npy_unsignedinteger, ndim=2] out not None):
+def __replace_rows(ndarray[npy_number, ndim=2] k not None, ndarray[npy_unsignedinteger, ndim=1] v not None,
+                   ndarray[npy_number, ndim=2] a not None, ndarray[npy_unsignedinteger, ndim=1] out not None):
     with nogil: map_replace_rows(
         <npy_number*>PyArray_DATA(k), <npy_unsignedinteger*>PyArray_DATA(v), PyArray_DIM(k,0),
         <npy_number*>PyArray_DATA(a), <npy_unsignedinteger*>PyArray_DATA(out), PyArray_DIM(a,0), PyArray_DIM(a,1))
