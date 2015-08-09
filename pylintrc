@@ -265,7 +265,7 @@ ignored-modules=
 
 # List of classes names for which member attributes should not be checked
 # (useful for classes with attributes dynamically set).
-ignored-classes=SQLObject,CommandEasy
+ignored-classes=SQLObject,CommandEasy,delayed.tuple,delayed.dict,delayed.frozenset
 
 # When zope mode is activated, add a predefined set of Zope acquired attributes
 # to generated-members.
