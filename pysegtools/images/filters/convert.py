@@ -179,35 +179,35 @@ class ThresholdImageStack(FilteredImageStack):
     def __init__(self, ims, thresh=1):
         if isinstance(thresh, Sequence):
             if len(thresh) < len(ims):
-                thresh += [thresh[-1]]*(len(ims)-len(thresh))
+                thresh = list(thresh) + [thresh[-1]]*(len(ims)-len(thresh))
         else:
             self._dtype, self._homogeneous = bool, Homogeneous.DType
             thresh = [thresh] * len(ims)
         super(ThresholdImageStack, self).__init__(ims,
-            [ThresholdImageSlice(self, z, im, t) for z,(im,t) in enumerate(izip(ims, thresh))])
+            [ThresholdImageSlice(im, self, z, t) for z,(im,t) in enumerate(izip(ims, thresh))])
 class ThresholdImageSlice(FilteredImageSlice):
-    def __init__(self, stack, z, im, thresh):
-        super(ThresholdImageSlice, self).__init__(stack, z, im)
+    def __init__(self, im, stack, z, thresh):
+        super(ThresholdImageSlice, self).__init__(im, stack, z)
         self.__threshold = thresh
         self._set_props(dtype(bool), None)
     def _get_props(self): self._set_props(None, self._input.shape)
-    def _get_data(self): return threshold(self._input, self.__threshold)
+    def _get_data(self): return threshold(self._input.data, self.__threshold)
 
 class RawConvertImageStack(FilteredImageStack):
     def __init__(self, ims, dt):
         if isinstance(dt, Sequence):
-            if len(dt) < len(ims): dt += [dt[-1]]*(len(ims)-len(dt))
+            if len(dt) < len(ims): dt = list(dt) + [dt[-1]]*(len(ims)-len(dt))
         else:
             self._dtype, self._homogeneous = dt, Homogeneous.DType
             dt = [dt] * len(ims)
         super(RawConvertImageStack, self).__init__(ims,
-            [RawConvertImageSlice(self, z, im, dt) for z,(im,dt) in enumerate(izip(ims, dt))])
+            [RawConvertImageSlice(im, self, z, dt) for z,(im,dt) in enumerate(izip(ims, dt))])
 class RawConvertImageSlice(FilteredImageSlice):
-    def __init__(self, stack, z, im, dt):
-        super(RawConvertImageSlice, self).__init__(stack, z, im)
+    def __init__(self, im, stack, z, dt):
+        super(RawConvertImageSlice, self).__init__(im, stack, z)
         self._set_props(dt, None)
     def _get_props(self): self._set_props(None, self._input.shape)
-    def _get_data(self): return raw_convert(self._input, self._dtype)
+    def _get_data(self): return raw_convert(self._input.data, self._dtype)
 
 class ConvertByteOrderImageStack(FilteredImageStack):
     def __init__(self, ims, new_byte_order):
@@ -220,18 +220,18 @@ class ConvertByteOrderImageStack(FilteredImageStack):
                     new_byte_orders += new_byte_orders[-1]*(len(ims)-len(new_byte_orders))
             except KeyError: raise ValueError('invalid new byte order')
         super(ConvertByteOrderImageStack, self).__init__(ims,
-            [ConvertByteOrderImageSlice(self, z, im, nbo)
+            [ConvertByteOrderImageSlice(im, self, z, nbo)
              for z,(im,nbo) in enumerate(izip(ims, new_byte_orders))])
 class ConvertByteOrderImageSlice(FilteredImageSlice):
-    def __init__(self, stack, z, im, new_byte_order):
-        super(ConvertByteOrderImageSlice, self).__init__(stack, z, im)
+    def __init__(self, im, stack, z, new_byte_order):
+        super(ConvertByteOrderImageSlice, self).__init__(im, stack, z)
         self.__new_byte_order = new_byte_order
     def _get_props(self):
         dt = self._input.dtype
         nbo = self.__new_byte_order
         if nbo == '~': nbo = '>' if get_dtype_endian(dt) == '<' else '<'
         self._set_props(dt.newbyteorder(nbo), self._input.shape)
-    def _get_data(self): return convert_byte_order(self._input, self.__new_byte_order)
+    def _get_data(self): return convert_byte_order(self._input.data, self.__new_byte_order)
 
 class ScaleImageStack(FilteredImageStack):
     def __init__(self, ims, in_scale=None, out_scale=None, dt=None):
@@ -261,13 +261,13 @@ class ScaleImageStack(FilteredImageStack):
         return self._stack_range
 class ScaleImageSlice(FilteredImageSlice):
     #pylint: disable=protected-access
-    def __init__(self, stack, z, im):
-        super(ScaleImageSlice, self).__init__(stack, z, im)
+    def __init__(self, im, stack, z):
+        super(ScaleImageSlice, self).__init__(im, stack, z)
         if stack._dtype is not None: self._set_props(stack._dtype, None)
     def _get_props(self):
         dt = self._stack._dtype if self._stack._dtype is not None else self._input.dtype
         self._set_props(dt, self._input.shape)
-    def _get_data(self): return self._stack._scale(self._input)
+    def _get_data(self): return self._stack._scale(self._input.data)
 
 
 ########## Commands ##########
@@ -295,7 +295,7 @@ using a comma-seperated list of thresholds, each slice can have a different thre
     def _see_also(cls): return ('invert','scale')
     def __str__(self):
         if len(self._threshold) == 1:
-            return ('threshold at %f' % self._threshold)
+            return ('threshold at %s' % self._threshold)
         else:
             return 'threshold at [%s]' % (",".join(str(t) for t in self._threshold))
     def execute(self, stack): stack.push(ThresholdImageStack(stack.pop(), self._threshold))
@@ -379,14 +379,14 @@ class ConvertScaleConvertCommand(CommandEasy):
         if x == 'data-type': return None
         if x in ('data', 'stack-data'): return x
         if len(x) == 0: raise ValueError
-        x = Opt.cast_tuple_of(Opt.cast_number(), 2, 2)
+        x = Opt.cast_tuple_of(Opt.cast_number(), 2, 2)(x)
         if isinstance(x, complex) or x[0] >= x[1]: raise ValueError
         return x
     @staticmethod
     def _cast_out_scale(x):
         if x == 'data-type': return None
         if len(x) == 0: raise ValueError
-        x = Opt.cast_tuple_of(Opt.cast_number(), 2, 2)
+        x = Opt.cast_tuple_of(Opt.cast_number(), 2, 2)(x)
         if isinstance(x, complex) or x[0] == x[1]: raise ValueError
         return x
     @staticmethod
