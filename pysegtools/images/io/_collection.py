@@ -169,7 +169,7 @@ class FileCollectionStack(FileImageStack):
         FileCollectionStack.__rename(reversed(self._slices[idx:self._d]), reversed(filenames))
         self._insert_slices(idx, [FileSlice(self, DummyFileImageSource(f), z)
                                   for z,f in izip(xrange(idx,idx+len(ims)),filenames)])
-        opts = self._header.options
+        opts = self._header.get('options', {})
         for im,f,slc in izip(ims, filenames, self._slices[idx:idx+len(ims)]):
             im = im.data # get the image data so we can use it multiple times without reloading
             src = ImageSource.as_image_source(im) # but we actually need it to be an image source
@@ -226,7 +226,7 @@ class FileCollectionStackHeader(FileImageStackHeader):
     """
     __fields_raw = {
         'handler': Field(Field.cast_check(FileImageSource.is_handler), True, True), #pylint: disable=no-member
-        'options': Field(dict, True, False),
+        'options': Field(dict, True, True),
         'files':   Field(tuple, True, False),
         'pattern': Field(cast_pattern, True, True),
         'start':   NumericField(int, 0, None, True, True, 0),
