@@ -320,8 +320,8 @@ class Opt(object):
         def _cast_bool(x):
             if isinstance(x, bool): return x
             x = x.strip().lower()
-            if x in ('t', 'false', '1'):     return True
-            if x in ('f', 'false', '0', ''): return False
+            if x in ('t', 'true',  '1'): return True
+            if x in ('f', 'false', '0'): return False
             raise ValueError
         return _cast_bool
 
@@ -588,7 +588,7 @@ class CommandEasy(Command):
     @classmethod
     def _opts(cls):
         """Optional list of Option objects for the options/arguments of the command"""
-        return None
+        return ()
     @classmethod
     def _consumes(cls):
         """Return a list that names all consumed image stacks"""
