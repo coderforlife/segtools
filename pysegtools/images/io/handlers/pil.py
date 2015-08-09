@@ -93,7 +93,14 @@ class DummyImage(Image.Image):
         self.format = frmt
         self.set(dt, shape)
     def set(self, dt, shape):
-        self.mode = _dtype2mode[dt]
+        dt, nchan = get_im_dtype_and_nchan(dt)
+        if nchan > 1:
+            if dt.type != uint8 or nchan > 4: raise ValueError
+            self.mode = ('LA','RGB','RGBA')[nchan-2]
+        elif dt.kind == 'b':
+            self.mode = '1'
+        else:
+            self.mode = _dtype2mode[dt.type][0]
         self.size = tuple(reversed(shape))
 
 def imsrc2pil(im):
@@ -309,7 +316,7 @@ class _PILSource(object):
             dt = dtype((dt.base, 2 if len(dt.shape) == 0 else (dt.shape[0]+1)))
         return dt
     @property
-    def dtype_raw(self): return _mode2dtype[self.im.palette.mode if self.im.mode=='P' else self.im.mode]
+    def dtype_raw(self): return _mode2dtype[self.im.palette.mode if self.im.mode == 'P' else self.im.mode]
     @property
     def shape(self): return tuple(reversed(self.im.size))
     def _get_palette(self, dt):
