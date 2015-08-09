@@ -461,7 +461,7 @@ class BackgroundMaskCommand(CommandEasy):
     def _desc(cls): return 'Calculate the background area as a mask, calculated from solid regions of color on the sides of the images. This color can be calculated from the image slices themselves or a predetermined color. This operates per-slice and not on the whole volume.'
     @classmethod
     def _opts(cls): return (
-        Opt('color', 'The current background color (see --help color) or \'auto\' to calculate it per-slice',
+        Opt('color', 'The current background color (see --help colors) or \'auto\' to calculate it per-slice',
             Opt.cast_or('auto', Opt.cast_check(is_color)), 'auto'),
         Opt('rect',  'Force the background area to be around a rectangular foreground',
             Opt.cast_bool(), False),
@@ -473,7 +473,7 @@ class BackgroundMaskCommand(CommandEasy):
     @classmethod
     def _produces(cls): return ('Background mask',)
     @classmethod
-    def _see_also(cls): return ('fill', 'crop', 'pad')
+    def _see_also(cls): return ('fill', 'crop', 'pad', 'invert', 'threshold', 'colors')
     def __str__(self): return 'calculate background padding '+(('of color %s '%self._color) if self._color=='auto' else '')+('(rectangular)' if self._rect else '')
     def execute(self, stack): stack.push(BackgroundMask(stack.pop(), None if self._color=='auto' else self._color, self._rect))
 
@@ -488,7 +488,7 @@ class FillCommand(CommandEasy):
     def _desc(cls): return 'Fill in a masked area. Besides solid colors, the fill color can be based on the non-masked area: either the mean value, mirrored, nearest, or wrapped.'
     @classmethod
     def _opts(cls): return (
-        Opt('fill', 'The name of a color to use to fill with, or one of the special values \'mean\', \'mirror\', \'reflect\', \'nearest\', or \'wrap\'',
+        Opt('fill', 'The name of a color (see --help colors) to use to fill with, or one of the special values \'mean\', \'mirror\', \'reflect\', \'nearest\', or \'wrap\'',
             _cast_fill, 'black'),
         Opt('rect', 'Force the non-masked area to be a rectangular space; this can cause large speedups with the special fills and allows \'wrap\'',
             Opt.cast_bool(), False),
@@ -498,7 +498,7 @@ class FillCommand(CommandEasy):
     @classmethod
     def _produces(cls): return ('Image with mask area filled in',)
     @classmethod
-    def _see_also(cls): return ('bg-mask', 'crop', 'pad')
+    def _see_also(cls): return ('bg-mask', 'crop', 'pad', 'colors')
     def __str__(self): return 'fill %swith %s'%(
         ('outside rectangular area ' if self._rect else ''),
         {'mean':'mean color','reflect':'reflection','wrap':'wrapping'}.get(self._fill, self._fill))
@@ -544,7 +544,7 @@ the color to fill in the entire masked area (even if it was inside the rectangle
 specified."""
     @classmethod
     def _opts(cls): return (
-        Opt('fill', 'The name of a color to use to fill with, or one of the special values \'mean\', \'mirror\', \'reflect\', \'nearest\', or \'wrap\'',
+        Opt('fill', 'The name of a color (see --help colors) to use to fill with, or one of the special values \'mean\', \'mirror\', \'reflect\', \'nearest\', or \'wrap\'',
             _cast_fill, 'black'),
         Opt('rect', 'Only fill in the added padding region; this can cause large speedups with the special fills and allows \'wrap\'',
             Opt.cast_bool(), False),
@@ -554,7 +554,7 @@ specified."""
     @classmethod
     def _produces(cls): return ('Padded image',)
     @classmethod
-    def _see_also(cls): return ('bg-mask', 'fill', 'crop')
+    def _see_also(cls): return ('bg-mask', 'fill', 'crop', 'colors')
     def __str__(self): return 'pad and fill %swith %s'%(
         ('padding ' if self._rect else ''),
         {'mean':'mean color','reflect':'reflection','wrap':'wrapping'}.get(self._fill, self._fill))

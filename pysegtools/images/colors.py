@@ -204,6 +204,9 @@ General rules for color values:""")
            "a comma or space seperated list of 3 or 4 floats/ints as above",
            "a hex value that starts with # that represents all channels together",
            "any Matplotlib single-letter or HTML color names or \'transparent\' if alpha is supported")
+    p.newline()
+    p.text("See also:")
+    p.list("data-types")
 Help.register(('color', 'colors', 'colour', 'colours'), __color_help)
 
 def __color_name_strip(x): return x.replace(' ', '').replace('-', '')

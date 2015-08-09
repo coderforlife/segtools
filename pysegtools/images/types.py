@@ -6,6 +6,7 @@ from __future__ import unicode_literals
 import numbers, re
 from numpy import dtype, iinfo, sctypes, promote_types, bool_, ndarray, ascontiguousarray
 from ._util import String, sys_endian
+from ..imstack import Help
 
 __all__ = [
     'create_im_dtype','get_im_dtype','get_im_dtype_and_nchan','im_dtype_desc','get_dtype_endian',
@@ -268,44 +269,43 @@ def get_im_min_max(im):
     mn, mx = im.min(), im.max()
     return (mn, mx) if mn < 0.0 or mx > 1.0 else __min_max_values[dt.type]
 
-####### Image dtype coercsion #####
-####def _astype(im,t): return im.astype(dtype=t)
-####def bit2rgb(im,t):
-####
-####_coerce = {
-####        IM_BIT:(IM_UINT8,IM_INT8,IM_UINT16,IM_UINT16_BE,IM_INT16,IM_INT16_BE,IM_UINT32,IM_UINT32_BE,IM_INT32,IM_INT32_BE,IM_UINT64,IM_UINT64_BE,IM_INT64,IM_INT64_BE,IM_FLOAT32,IM_FLOAT32_BE,IM_FLOAT64,IM_FLOAT64_BE,
-####                (IM_RGB24,x),(IM_RGBA32,x),
-####                IM_COMPLEX64,IM_COMPLEX64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,
-####                (IM_INT16_2,x),(IM_INT16_2_BE,x),)
-####        IM_UINT8:(IM_UINT16,IM_UINT16_BE,IM_INT16,IM_INT16_BE,IM_UINT32,IM_UINT32_BE,IM_INT32,IM_INT32_BE,IM_UINT64,IM_UINT64_BE,IM_INT64,IM_INT64_BE,IM_FLOAT32,IM_FLOAT32_BE,IM_FLOAT64,IM_FLOAT64_BE,
-####                (IM_RGB24,x),(IM_RGBA32,x),
-####                IM_COMPLEX64,IM_COMPLEX64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,
-####                (IM_INT16_2,x),(IM_INT16_2_BE,x),)
-####        IM_INT8:(IM_UINT16,IM_UINT16_BE,IM_INT16,IM_INT16_BE,IM_UINT32,IM_UINT32_BE,IM_INT32,IM_INT32_BE,IM_UINT64,IM_UINT64_BE,IM_INT64,IM_INT64_BE,IM_FLOAT32,IM_FLOAT32_BE,IM_FLOAT64,IM_FLOAT64_BE,IM_COMPLEX64,IM_COMPLEX64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,(IM_INT16_2,x),(IM_INT16_2_BE,x),)
-####        IM_UINT16:(IM_UINT16_BE,IM_UINT32,IM_UINT32_BE,IM_INT32,IM_INT32_BE,IM_UINT64,IM_UINT64_BE,IM_INT64,IM_INT64_BE,IM_FLOAT32,IM_FLOAT32_BE,IM_FLOAT64,IM_FLOAT64_BE,IM_COMPLEX64,IM_COMPLEX64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,)
-####        IM_UINT16_BE:(IM_UINT16,IM_UINT32,IM_UINT32_BE,IM_INT32,IM_INT32_BE,IM_UINT64,IM_UINT64_BE,IM_INT64,IM_INT64_BE,IM_FLOAT32,IM_FLOAT32_BE,IM_FLOAT64,IM_FLOAT64_BE,IM_COMPLEX64,IM_COMPLEX64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,)
-####        IM_INT16:(IM_INT16_BE,IM_UINT32,IM_UINT32_BE,IM_INT32,IM_INT32_BE,IM_UINT64,IM_UINT64_BE,IM_INT64,IM_INT64_BE,IM_FLOAT32,IM_FLOAT32_BE,IM_FLOAT64,IM_FLOAT64_BE,IM_COMPLEX64,IM_COMPLEX64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,(IM_INT16_2,x),(IM_INT16_2_BE,x),)
-####        IM_INT16_BE:(IM_INT16,IM_UINT32,IM_UINT32_BE,IM_INT32,IM_INT32_BE,IM_UINT64,IM_UINT64_BE,IM_INT64,IM_INT64_BE,IM_FLOAT32,IM_FLOAT32_BE,IM_FLOAT64,IM_FLOAT64_BE,IM_COMPLEX64,IM_COMPLEX64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,(IM_INT16_2,x),(IM_INT16_2_BE,x),)
-####        IM_UINT32:(IM_UINT32_BE,IM_UINT64,IM_UINT64_BE,IM_INT64,IM_INT64_BE,IM_FLOAT32,IM_FLOAT32_BE,IM_FLOAT64,IM_FLOAT64_BE,IM_COMPLEX64,IM_COMPLEX64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,)
-####        IM_UINT32_BE:(IM_UINT32,IM_UINT64,IM_UINT64_BE,IM_INT64,IM_INT64_BE,IM_FLOAT32,IM_FLOAT32_BE,IM_FLOAT64,IM_FLOAT64_BE,IM_COMPLEX64,IM_COMPLEX64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,)
-####        IM_INT32:(IM_INT32_BE,IM_UINT64,IM_UINT64_BE,IM_INT64,IM_INT64_BE,IM_FLOAT32,IM_FLOAT32_BE,IM_FLOAT64,IM_FLOAT64_BE,IM_COMPLEX64,IM_COMPLEX64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,)
-####        IM_INT32_BE:(IM_INT32,IM_UINT64,IM_UINT64_BE,IM_INT64,IM_INT64_BE,IM_FLOAT32,IM_FLOAT32_BE,IM_FLOAT64,IM_FLOAT64_BE,IM_COMPLEX64,IM_COMPLEX64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,)
-####        IM_UINT64:(IM_UINT64_BE,IM_FLOAT64,IM_FLOAT64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,)
-####        IM_UINT64_BE:(IM_UINT64,IM_FLOAT64,IM_FLOAT64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,)
-####        IM_INT64:(IM_INT64_BE,IM_FLOAT64,IM_FLOAT64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,)
-####        IM_INT64_BE:(IM_INT64,IM_FLOAT64,IM_FLOAT64_BE,IM_COMPLEX128,IM_COMPLEX128_BE,)
-####        IM_RGB24:((IM_RGBA32,x),),
-####        IM_RGBA32:(),
-####
-####    }
-####
-####def im_coerce_dtype(im,targets):
-####    im = im_standardize_dtype(im)
-####    if im.dtype in targets: return im
-####    t = _coerce[im.dtype]
-####    for t in _coerce:
-####        t,f = t if isinstance(t, tuple) else t,_astype
-####        if t in targets:
-####            try: return f(im,t)
-####            except: pass
-####    raise TypeError('Cannot change image type to supported format')
+
+##### Command-line help #####
+def __dtype_help(width):
+    p = Help(width)
+    p.title("Data Types")
+    p.text("""
+When printing out information about a stack or when converting image types, a 'data-type' is given.
+Below are the various supported image format data types.
+
+General format string: 
+    [N*]T#[-BE] 
+where N is the number of channels (only included if >1), T is the data type ('U' for unsigned
+integer, 'I' for signed integer, 'F' for floating-point number, and 'C' for complex), # is the
+number of bits (a multiple of 8), and -BE is included if the numbers are stored in big-endian
+format instead of little-endian. Not all combinations are possible (for example complex images
+cannot have any channels).
+
+Additionally, for unsigned integer images with 3 or 4 channels, RGB or RGBA is supported for the
+type (and the number of channels is left off). In this case, the number of bits must be a multiple
+of 24 or 32 (for RGB and RGBA respectively).
+
+Logical/boolean images/masks are given as U1 and is the only time 1 is allowed for the number of
+bits.
+
+The following data types are known by this installation (not including numbers of channels and
+endian varieties):
+""")
+    for types in (__bit_types, __uint_types, __int_types, __float_types, __cmplx_types):
+        p.list(*[im_dtype_desc(dt) for dt in sorted(
+                set(dtype(t).newbyteorder('<') for t in types),
+                key=lambda dt:dt.itemsize)])
+    for chans in (3,4):
+        p.list(*[im_dtype_desc(dt) for dt in sorted(
+                set(dtype((t, chans)).newbyteorder('<') for t in __uint_types),
+                key=lambda dt:dt.itemsize)])
+
+    p.newline()
+    p.text("See also:")
+    p.list("colors")
+Help.register(('data-type', 'data-types', 'types'), __dtype_help)

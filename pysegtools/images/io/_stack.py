@@ -47,8 +47,8 @@ class FileImageStack(ImageStack, HandlerManager):
     the class-methods of another stack.
      * For loadable or savable:
         - class-methods: name and print_help
-        - slice property header is meaningful
-        - the header is never modified
+        - slice property header if meaningful
+        - the header if never modified
      * For loadable:
         - class-methods: open and _openable accepting readonly=True and filename_or_file is always a filename
         - methods: close if meaningful
@@ -161,6 +161,8 @@ class FileImageStack(ImageStack, HandlerManager):
         def _filter(x):
             if isinstance(x, bytes) and not all((32 <= ord(c) < 128) or (c in (b'\t\r\n\v')) for c in x):
                 x = "<%d bytes of data>" % len(x)
+            elif isinstance(x, String):
+                x = unicode(x)
             elif isinstance(x, (Sequence, Set)):
                 x = ", ".join(unicode(y) for y in x)
             elif isinstance(x, Mapping):
