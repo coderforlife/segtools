@@ -1360,7 +1360,7 @@ _MAT_open = [_MAT4File.open, _MAT5File.open, _MAT73File.open if h5py_avail else 
 _MAT_create = {
     4: _MAT4File.create,
     6: _MAT5File.create,
-    7: lambda fn,mode:_MAT5File.create(fn,True),
+    7: lambda fn,mode:_MAT5File.create(fn,mode,True),
     7.3: _MAT73File.create if h5py_avail else None
     }
 
@@ -1624,7 +1624,7 @@ class MATStack(HomogeneousFileImageStack):
     @classmethod
     def _creatable(cls, filename, ext, writeonly=False,
                    name=None, names=None, mode=None, version=None, append=False, **options):
-        if len(options) > 0 or mode not in (None, 'slices', 'stack') or None not in (name, names): return False
+        if len(options) > 0 or ext != '.mat' or mode not in (None, 'slices', 'stack') or None not in (name, names): return False
         if name is not None and (mode == 'slices' or _is_invalid_matlab_name(name)): return False
         if names is not None and (mode == 'stack' or '#' not in names or _is_invalid_matlab_name(MATStack.__parse_pattern(names)%0)): return False
         if not _bool(append): return MAT._parse_vers(version) is not False
