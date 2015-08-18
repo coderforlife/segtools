@@ -306,7 +306,7 @@ class _MAT45DummyEntry(_MATDummyEntry): # a v4 or v5 dummy entry
 class _MAT4Entry(_MAT45Entry):
     #pylint: disable=protected-access
     __long_le = Struct(str('<l'))
-    __structs = (Struct('<lllll'), Struct('>lllll'))
+    __structs = (Struct(str('<lllll')), Struct(str('>lllll')))
     __HDR_SIZE = 20
     
     # Numeric format:
