@@ -32,6 +32,12 @@ def __get_python_version():
 def __get_pillow_version():
     try: import PIL; return PIL.PILLOW_VERSION if hasattr(PIL, 'PILLOW_VERSION') else False
     except ImportError: return False
+def __get_subprocess_version():
+    try:
+        import pip
+        return next(p.version for p in pip.get_installed_distributions() if p.key == 'subprocess32')
+    except (ImportError, StopIteration):
+        return __get_python_version()
 
 __req_modules = ( # module, target version, actual version (or False)
     ('numpy', '1.7', __version_getter('numpy')()),
@@ -41,8 +47,9 @@ __opt_modules = ( # module, target version, version getter, description (or None
     ('cython', '0.19', __version_getter('cython'), 'for some optimized libraries'),
     ('pillow', '2.0', __get_pillow_version, 'for loading common image formats'),
     # TODO: bioformats
-    ('h5py',   '2.0', __version_getter('h5py'), 'for loading MATLAB files'),
-    ('psutil', '2.0', __version_getter('psutil'), None),
+    ('h5py',   '2.0', __version_getter('h5py'), 'for loading MATLAB v7.3 files'),
+    ('psutil', '2.0', __version_getter('psutil'), 'for tasks'),
+    ('subprocess32', '3.2.6', __get_subprocess_version, 'for tasks on POSIX systems'),
     )
 
 def __basic_check():
@@ -66,12 +73,12 @@ def __basic_check():
 def __check():
     from distutils.version import StrictVersion as Vers
     checkbox = '\u2713' if sys.stdout.encoding in ('UTF-8','UTF-16') else '+'
-    print("Module    Required  Installed")
-    print("Python    v2.7      {0:<9}  {1}".format(__get_python_version(), 'x' if sys.version_info[0:2] != (2,7) else checkbox))
+    print("Module       Required  Installed")
+    print("Python       v2.7      {0:<9}  {1}".format(__get_python_version(), 'x' if sys.version_info[0:2] != (2,7) else checkbox))
     for name, target, vers in __req_modules:
         if vers is False: vers, mark = '-'*8, 'x'
         else: vers, mark = 'v'+vers, ('x' if Vers(target) > Vers(vers) else checkbox)
-        print("{0:<9} v{1:<8} {2:<9}  {3}".format(name, target, vers, mark))
+        print("{0:<12} v{1:<8} {2:<9}  {3}".format(name, target, vers, mark))
     print("")
     print("Optional:")
     for name, target, vers, desc in __opt_modules:
@@ -79,7 +86,7 @@ def __check():
         if vers is False: vers, mark = '-'*8, 'x'
         else: vers, mark = 'v'+vers, ('x' if Vers(target) > Vers(vers) else checkbox)
         desc = ('('+desc+')') if desc else ''
-        print("{0:<9} v{1:<8} {2:<9}  {3} {4}".format(name, target, vers, mark, desc))
+        print("{0:<12} v{1:<8} {2:<9}  {3} {4}".format(name, target, vers, mark, desc))
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == '--check':
