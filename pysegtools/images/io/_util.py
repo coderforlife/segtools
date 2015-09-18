@@ -118,17 +118,21 @@ def openfile(f, mode, compression=None, comp_level=9, off=None):
     wrapping the file in a compression handler (supports 'deflate', 'zlib', and 'gzip' along with
     'auto' for read streams to figure out what type of compression to use) and can seek the file
     to the starting offset for you (if negative and no compression, will seek from end).
+
+    When changing the mode, the mode doesn't really appear to be changed. For example, changing a
+    file from 'r+b' to 'wb' mode does not truncate the file and changing from append to write mode
+    still appends (although tell() becomes all messed up).
     """
-    if compression not in (None, 'deflate', 'zlib', 'gzip', 'auto') or compression and off < 0: raise ValueError
+    if compression not in (None, 'deflate', 'zlib', 'gzip', 'auto') or compression and off is not None and off < 0: raise ValueError
     compressing = compression is not None
     if compression == 'auto': compression = None
     if isinstance(f, String):
-        if compressing: return GzipFile(f, mode, type=compression, level=comp_level, start_off=off)
+        if compressing: return GzipFile(f, mode, method=compression, level=comp_level, start_off=off)
         f = io.open(f, mode)
-    elif isinstance(f, io.IOBase): f = f if hasattr(f, 'mode') and mode == f.mode else io.open(f.fileno(), mode)
-    elif not __is_py3 and (isinstance(f, file) or hasattr(f, 'fileno')): f = io.open(f.fileno(), mode)
+    elif isinstance(f, io.IOBase) or not __is_py3 and (isinstance(f, file) or hasattr(f, 'fileno')):
+        f = io.open(f.fileno(), mode, closefd=False)
     try:
-        if compressing: f = GzipFile(f, type=compression, level=comp_level, start_off=off)
+        if compressing: f = GzipFile(f, method=compression, level=comp_level, start_off=off)
         elif off:       f.seek(off, io.SEEK_END if off < 0 else io.SEEK_SET)
     except:
         f.close()
@@ -206,7 +210,7 @@ def imskip_ascii_raw(f, shape, dtype):
         total = prod(shape+dtype.shape)
         s = sx = f.read(max((total-i)*2-1, 0)) # at least one digit and one space per element
         while len(sx) > 0:
-            vals = s.split()
+            vals = s.split() # TODO: don't actually split the string - this is wasteful
             if s[-1].isspace(): s = ''
             else: s = vals[-1]; del vals[-1]
             i += len(vals)
@@ -226,12 +230,11 @@ def imsave_ascii_raw(f, im):
 def get_file_size(f):
     """Get the size of a file, either from the filename, the file-number, or seeking and telling."""
     if isinstance(f, String): return os.path.getsize(f)
-    else:
-        try:
-            return os.fstat(f.fileno()).st_size
-        except StandardError:
-            f.seek(0, io.SEEK_END)
-            return f.tell()
+    try:
+        return os.fstat(f.fileno()).st_size
+    except StandardError as ex:
+        f.seek(0, io.SEEK_END)
+        return f.tell()
 
 def _copy_data(f, src, dst, buf):
     f.seek(src)
