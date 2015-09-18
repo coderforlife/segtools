@@ -8,7 +8,7 @@ from __future__ import unicode_literals
 import sys, struct, functools
 from operator import mul
 from collections import Iterable
-from itertools import repeat
+#from itertools import repeat
 
 sys_endian = '<' if sys.byteorder == 'little' else '>'
 sys_64bit = sys.maxsize > 2**32
@@ -30,22 +30,26 @@ def splitstr(s, cast=lambda x:x, sep=None): return [cast(x) for x in s.split(sep
 def get_list(data, shape, cast=int, sep=None, otype=list):
     """
     Convert a string of values to a list of a particular data type. The data can also come from an
-    iterable in which case all elements are ensured then to be the right type. You can specify
-    either a single value or a tuple for the shape. The dtype defaults to int, but can be others.
-    The seperator in the string defaults to all whitespace. The output type defaults to a list, but
-    you can also set it to tuple to get an imutable output.
+    iterable in which case all elements are ensured to be the right type. You can specify either a
+    single value or a tuple for the shape. The dtype defaults to int, but can be others. The
+    seperator in the string defaults to all whitespace. The output type defaults to a list, but you
+    can also set it to tuple to get an imutable output.
     """
     shape = tuple(shape) if isinstance(shape, Iterable) else (shape,)
-    data = ((cast(x) for x in data.split(sep)) if isinstance(data, String) else ravel(data)) if isinstance(data, Iterable) else repeat(cast(data), prod(shape))
+    data = (cast(x) for x in data.split(sep)) if isinstance(data, String) else ravel(data)
+    #if isinstance(data, Iterable) else repeat(cast(data), prod(shape))
     return __reshape(data, shape, otype)
-def _bool(x):
+def _bool(x, strict_str=False):
     """
     Casts a value to a bool taking into acount the string values "true", "false", "t", "f", "1",
-    and "0" (not case-sensitive)
+    and "0" (not case-sensitive). If strict_str is True, only these string values are allowed
+    (otherwise other strings are sent to bool() which means an empty string is False and all other
+    strings are True).
     """
     if isinstance(x, String):
         if x.lower() in ('false', 'f', '0'): return False
         if x.lower() in ('true',  't', '1'): return True
+        if strict_str: raise ValueError('Invalid string to bool conversion')
     return bool(x)
 def dtype_cast(x, dtype):
     """Casts a value using a dtype specification."""
