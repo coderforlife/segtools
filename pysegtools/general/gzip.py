@@ -94,7 +94,7 @@ _uint16_be = struct.Struct(str('>H'))
 _uint32_be = struct.Struct(str('>L'))
 def _get_filename(f, default=None):
     if isinstance(f, String): return f
-    elif hasattr(f, 'name') and (len(f.name) < 2 or f.name[0] != '<' and f.name[-1] != '>'):
+    elif hasattr(f, 'name') and isinstance(f.name, String) and (len(f.name) < 2 or f.name[0] != '<' and f.name[-1] != '>'):
         return f.name
     return default
 def _gzip_header_str(s):
