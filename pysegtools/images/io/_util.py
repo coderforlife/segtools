@@ -232,7 +232,7 @@ def get_file_size(f):
     if isinstance(f, String): return os.path.getsize(f)
     try:
         return os.fstat(f.fileno()).st_size
-    except StandardError as ex:
+    except StandardError:
         f.seek(0, io.SEEK_END)
         return f.tell()
 
