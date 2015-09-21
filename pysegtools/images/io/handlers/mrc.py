@@ -114,8 +114,8 @@ class MRC(HomogeneousFileImageStack):
     @classmethod
     def create(cls, f, ims, writeonly=False, **options):
         """
-        Creates a new MRC file. Provide a filename or a file-like object. You must provide a shape as
-        a height and width tuple and a dtype image type. No extra options are supported.
+        Creates a new MRC file. Provide a filename or a file-like object. The image stack must
+        contain at least one image.
         """
         if len(options) > 0: raise ValueError('The MRC ImageStack does not support any additional configuration')
         if len(ims) == 0: raise ValueError('The MRC ImageStack requires at least one input image slice to be created')
@@ -132,6 +132,10 @@ class MRC(HomogeneousFileImageStack):
 
     @classmethod
     def name(cls): return "MRC"
+
+    @classmethod
+    def exts(cls): return ('.mrc','.rec')
+    
     @classmethod
     def print_help(cls, width):
         from ....imstack import Help
@@ -142,6 +146,8 @@ MRC file are common 3D images used by the program IMOD. When saving the file ext
 .ali, .preali, and .rec are recognized as MRC files.
 
 Limitations: all slices are required to be the same image type and shape.
+
+When saving the header fields amin, amax, and amean are always updated.
 
 Supported image types:""")
         p.list("grayscale (8-bit signed/unsigned int, 16-bit signed/unsigned big/small-endian int, 32-bit float)",

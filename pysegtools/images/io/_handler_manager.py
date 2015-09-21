@@ -22,7 +22,9 @@ class _HandlerManagerMeta(ABCMeta):
     def __new__(cls, clsname, bases, dct):
         c = super(_HandlerManagerMeta, cls).__new__(cls, clsname, bases, dct)
         n = c.name()
-        if n is not None: Help.register((n,c.__name__), c.print_help)
+        if n is not None:
+            names = (n,c.__name__) + tuple(ext.lstrip('.').lower() for ext in c.exts())
+            Help.register(names, c.print_help)
         return c
 
 class HandlerManager(object):
@@ -188,6 +190,19 @@ class HandlerManager(object):
         Return the name of this image handler to be displayed in help outputs.
         """
         return None
+
+    @classmethod
+    def exts(cls):
+        """
+        [To be implemented by handler, default returns empty tuple the handler to not have any extra
+        help page names]
+
+        Return a tuple of lower-case exts including the . that this image handler recongnizes for
+        writing (and common extensions for readable types). These are added as help pages. In some
+        cases it may make to not return any extensions even if extensions are used to determine if
+        a file can be created.
+        """
+        return ()
 
     @classmethod
     def print_help(cls, width):

@@ -928,6 +928,7 @@ class PILStack(FileImageStack):
 
     @classmethod
     def name(cls): return "PIL-Stack"
+
     @classmethod
     def print_help(cls, width):
         from ....imstack import Help

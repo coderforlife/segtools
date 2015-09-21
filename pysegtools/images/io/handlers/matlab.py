@@ -1444,6 +1444,9 @@ class MAT(FileImageSource):
     def name(cls): return "MAT"
 
     @classmethod
+    def exts(cls): return (".mat",)
+
+    @classmethod
     def print_help(cls, width):
         from ....imstack import Help
         p = Help(width)
