@@ -30,7 +30,7 @@ Image stack file formats supported:
  * PIL-supported formats including TIFF, GIF, PNG, and JPEG 
    see http://pillow.readthedocs.org/en/latest/handbook/image-file-formats.html
  * MAT
- * MHA/MHD (currently disabled)
+ * MHA/MHD
 
 Filters supported:
  * Stacks: split, combine, select slices
