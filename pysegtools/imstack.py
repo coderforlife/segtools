@@ -108,7 +108,7 @@ class Args(object):
     A collection of command arguments which can include both positional and named arguments. This
     class acts mostly like a dictionary except the keys can be ints (for positional arguments),
     strings (for named arguments), or the preferred tuple-of-int-and-string for an argument that
-    is possibly both positional and named.
+    is possibly both positional or named.
 
     Getting and deleting items also accept slices but this will only effect positional arguments.
     This is useful if you have a variable number of positional arguments first and want to remove
