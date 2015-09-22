@@ -236,8 +236,44 @@ def get_file_size(f):
         f.seek(0, io.SEEK_END)
         return f.tell()
 
-def __get_name_from_fd(path):
-    # TODO: use GetFileInformationByHandleEx, readlink(/proc/self/fd/###), or fcntl(fd, F_GETPATH, filePath) to convert file descriptors to paths
+def __get_name_from_fd(fd):
+    """
+    This tries to get a file name from a file descriptor. On Windows this is likely to succeed by
+    using GetFileInformationByHandleEx. On Linux and Mac OS X if the file has changed names or has
+    been deleted then None will be returned or the name will be flat out wrong. Linux uses readlink
+    on /proc/self/fd/# and Mac OS X uses fcntl(F_GETPATH).
+
+    In any case, this will return None in many cases when the path cannot be determined.
+    """
+    if os.name == 'nt':
+        from ctypes import Structure, windll, byref, sizeof
+        from ctypes.wintypes import HANDLE, INT, DWORD, BOOL, WCHAR
+        from msvcrt import get_osfhandle
+
+        FileNameInfo = 2
+        class FILE_NAME_INFO(Structure):
+            _fields_ = [("FileNameLength", DWORD), ("FileName", WCHAR*32767)]
+
+        GetFileInformationByHandleEx = windll.kernel32.GetFileInformationByHandleEx
+        GetFileInformationByHandleEx.argtypes = [HANDLE, INT, LPVOID, DWORD]
+        GetFileInformationByHandleEx.restype = BOOL
+
+        fni = FILE_NAME_INFO()
+        return fni.FileName[:fni.FileNameLength] if GetFileInformationByHandleEx(get_osfhandle(fd), FileNameInfo, byref(fni), sizeof(fni)) else None
+    
+    try:
+        ln = os.readlink('/proc/self/fd/%d' % fd)
+        return os.path.abspath(os.path.join('/proc/self/fd', ln))
+    except StandardError: pass
+
+    try:
+        from fcntl import fcntl
+        try: from fcntl import F_GETPATH
+        except ImportError: F_GETPATH = 50 # hard code Mac OS X value
+        fn = fcntl(fd, F_GETPATH, b'\0' * 1024).rstrip(b'\0')
+        return None if len(fn) == 1024 else fn
+    except StandardError: pass
+
     return None
 
 def get_file_name(f):
