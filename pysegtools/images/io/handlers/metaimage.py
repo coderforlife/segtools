@@ -785,7 +785,7 @@ class MetaImage(FileImageSource):
             fields['ElementDataFile'] = None
         elif 'ElementDataFile' not in fields:
             ext = ('.zlib' if fields.get('CompressedData',False) else '.bin') if fields['BinaryData'] else '.txt'
-            fields['ElementDataFile'] = os.path.basename(filename).splitext()[0] + ext
+            fields['ElementDataFile'] = os.path.splitext(os.path.basename(filename))[0] + ext
         elif fields['ElementDataFile'] in ('LOCAL','Local','local'): raise ValueError('Forbidden ElementDataFile sepcified')
         fields = parse_mha_fields(im.dtype, im.shape, fields)
         imsrc = MetaImage(filename, False, fields, None)
