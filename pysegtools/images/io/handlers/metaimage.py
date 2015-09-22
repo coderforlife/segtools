@@ -799,9 +799,9 @@ class MetaImage(FileImageSource):
 
     @classmethod
     def _creatable(cls, filename, ext, writeonly=False, **fields):
-        return (ext in ('.mha', '.mhd') and ('ElementDataFile' not in fields or 
-                not (ext == '.mhd' or fields['ElementDataFile'].startswith('LIST') or fields['ElementDataFile'] in ('LOCAL','Local','local')))
-                or len(fields.viewkeys() & MetaImage.__forbidden) == 0)
+        return (ext in ('.mha', '.mhd') and
+                ('ElementDataFile' not in fields or not (ext == '.mhd' or fields['ElementDataFile'].startswith('LIST') or fields['ElementDataFile'] in ('LOCAL','Local','local')))
+                and len(fields.viewkeys() & MetaImage.__forbidden) == 0)
 
     @classmethod
     def name(cls): return "MHA/MHD"
