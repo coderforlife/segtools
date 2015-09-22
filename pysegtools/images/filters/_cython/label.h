@@ -76,7 +76,7 @@ inline V map_renumber(const K* src, V* dst, const intptr_t size)
     V n = V();
     for (intptr_t i = 0; i < size; ++i)
     {
-        const map_t::const_iterator itr = map.find(src[i]);
+        const typename map_t::const_iterator itr = map.find(src[i]);
         if (itr == map.end()) { dst[i] = ++n; map[src[i]] = n; }
         else { dst[i] = itr->second; }
     }
@@ -92,7 +92,7 @@ inline V __map_renumber_rows(const K* src, V* dst, const intptr_t size, const in
     V n = V();
     for (intptr_t i = 0, j = 0; i < size; ++i, j += ncols)
     {
-        const map_t::const_iterator itr = map.find(src+j);
+        const typename map_t::const_iterator itr = map.find(src+j);
         if (itr == map.end()) { dst[i] = ++n; map[src+j] = n; }
         else { dst[i] = itr->second; }
     }
@@ -109,7 +109,7 @@ inline V __map_renumber_rows(const K* src, V* dst, const intptr_t size)
     V n = V();
     for (intptr_t i = 0, j = 0; i < size; ++i, j += ncols)
     {
-        const map_t::const_iterator itr = map.find(src+j);
+        const typename map_t::const_iterator itr = map.find(src+j);
         if (itr == map.end()) { dst[i] = ++n; map[src+j] = n; }
         else { dst[i] = itr->second; }
     }

@@ -470,8 +470,9 @@ template <typename F> struct sort_ops< complex<F> >
 {
     CONSTEXPR static inline bool lt(const complex<F>& a, const complex<F>& b)
     {
-        F ar = a.R, br = b.R, ai = a.I, bi = b.I;
-        return (ar<br) ? !LT_NAN(bi,ai) : ((ar>br) ? LT_NAN(ai,bi) : ((ar==br || (isnan(ar) && isnan(br))) ? sort_ops<F>::lt(ai,bi) : isnan(br)));
+        return (a.R<b.R) ? !LT_NAN(b.I,a.I) :
+		    ((a.R>b.R) ? LT_NAN(a.I,b.I) :
+			    ((a.R==b.R || (isnan(a.R) && isnan(b.R))) ? sort_ops<F>::lt(a.I,b.I) : isnan(b.R)));
     }
     CONSTEXPR static inline bool eq(const complex<F>& a, const complex<F>& b) { return sort_ops<F>::eq(a.R, b.R) && sort_ops<F>::eq(a.I, b.I); }
     CONSTEXPR static inline bool ne(const complex<F>& a, const complex<F>& b) { return sort_ops<F>::ne(a.R, b.R) || sort_ops<F>::ne(a.I, b.I); }
