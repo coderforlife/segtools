@@ -22,7 +22,7 @@ from numpy import uint8
 
 from .._stack import FileImageStack, FileImageSlice, FileImageStackHeader, FixedField
 from .._single import FileImageSource
-from .._util import check_file_obj
+from .._util import check_file_obj, get_file_name
 from ...types import get_im_dtype_and_nchan
 from ..._util import String, _bool
 from ....general.delayed import delayed
@@ -242,8 +242,7 @@ class _PILSource(object):
         # File-like object
         if not check_file_obj(file, True, not readonly, True): raise ValueError('Unusable file object')
         start = file.tell()
-        filename = file.name if (hasattr(file, 'name') and isinstance(file.name, String) and
-                                 len(file.name) > 0 and file.name[0] != '<' and file.name[-1] != '>') else ''
+        filename = get_file_name(file)
         try:
             return self.__open(self._open_pil_image(file, filename, **open_options),
                                filename, readonly, open_options, save_options)
@@ -778,7 +777,7 @@ def __init():
     }
 
     return __static(Image.EXTENSION, read_formats, write_formats, sources, stacks)
-__static = namedtuple('pil_static', ('exts','read_formats','write_fromats','sources','stacks'))
+__static = namedtuple('pil_static', ('exts','read_formats','write_formats','sources','stacks'))
 _static = delayed(__init, __static)
 
 class PIL(FileImageSource):
@@ -963,6 +962,8 @@ Supported image formats:""")
         self._stack = stack
         super(PILStack, self).__init__(PILHeader(stack), stack.slices(self), True)
     def close(self): self._stack.close()
+    @property
+    def filenames(self): return (self._stack.filename,)
     def _delete(self, idxs): raise RuntimeError() # not possible since it is always read-only
     def _insert(self, idx, ims): raise RuntimeError()
         

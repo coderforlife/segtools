@@ -46,6 +46,7 @@ class FileImageSource(DeferredPropertiesImageSource, HandlerManager):
 
     @property
     def filename(self):
+        """Get or set the primary file name."""
         return self._filename
     @filename.setter
     def filename(self, filename):
@@ -70,6 +71,15 @@ class FileImageSource(DeferredPropertiesImageSource, HandlerManager):
         # exists and is a directory or unremovable?
         #os.remove(filename)
         os.rename(self._filename, filename)
+
+    @property
+    def filenames(self):
+        """
+        Get all file names associated with this file (for example the primary file might only
+        contain header information and the data is saved in another file). By default this just
+        returns a tuple containing the primary filename.
+        """
+        return (self._filename,)
 
     @data.setter
     def data(self, im): #pylint: disable=arguments-differ

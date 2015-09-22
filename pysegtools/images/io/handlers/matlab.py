@@ -1702,6 +1702,8 @@ always found.
         h.update(entry.header)
         slices = [_MATSlice(self, dt, sh, z) for z in xrange(shape[0])]
         super(MATStack, self).__init__(_MATHeader(h), slices, shape[2], shape[1], dt, readonly)
+    @property
+    def filenames(self): return (self._mat.filename,)
     def _get_data(self):
         if self._data is None:
             self._data = self._entry.data
@@ -1790,6 +1792,8 @@ class MATSlices(FileImageStack):
                     if n is not None and n.startswith(x) and n.endswith(y) and n[a:len(n)-b].isdigit()] + [0])
     def close(self):
         if self._mat: self._mat.close(); self._mat = None
+    @property
+    def filenames(self): return (self._mat.filename,)
     def _delete(self, idx_ranges):
         idx = chain.from_iterable(xrange(start,stop) for start,stop in idx_ranges)
         del self._mat[[self._slices[i]._entry.name for i in idx]]

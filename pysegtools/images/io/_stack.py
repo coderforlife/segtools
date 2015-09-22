@@ -3,7 +3,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta, abstractmethod, abstractproperty
 from collections import OrderedDict, Iterable, Sequence, Set, Mapping
 from itertools import repeat, izip
 from numbers import Integral
@@ -95,6 +95,16 @@ class FileImageStack(ImageStack, HandlerManager):
         else: return False
 
     @classmethod
+    def open_cmd(cls, args, readonly=True):
+        """
+        Parses a open/load command line, like one that would be given to -L of imstack and opens the
+        image stack specified. The args can either be a pysegtools.Args object, a list of strings
+        (like sys.argv), or a single string that can be given to shlex.split.
+        """
+        from ._commands import LoadCommand
+        return LoadCommand.get_loader(args)[1](readonly)
+
+    @classmethod
     def _create_trans(cls, im): return ImageStack.as_image_stack(im)
     
     @classmethod
@@ -138,6 +148,19 @@ class FileImageStack(ImageStack, HandlerManager):
             return FileCollectionStack.creatable(filename, writeonly, handler, **options)
         else: return False
 
+    @classmethod
+    def create_cmd(cls, args, ims, writeonly=True):
+        """
+        Parses a create/save command line, like one that would be given to -S of imstack and saves
+        the image stack specified. The args can either be a pysegtools.Args object, a list of strings
+        (like sys.argv), or a single string that can be given to shlex.split.
+
+        If ims is None, then the command line is checked but the file is not openeded for saving.
+        """
+        from ._commands import SaveCommand
+        saver = SaveCommand.get_saver(args)[1]
+        if ims is not None: return saver(ims, writeonly)
+
     def __init__(self, header, slices, readonly=False):
         super(FileImageStack, self).__init__(slices)
         self._header = header
@@ -145,6 +168,14 @@ class FileImageStack(ImageStack, HandlerManager):
         self._readonly = bool(readonly)
 
     # General
+    @abstractproperty
+    def filenames(self):
+        """
+        Get the files that this image stack uses. Many formats will have just one file, but some may
+        have one for header and one for data, one for each slice, or some other strange combination.
+        If the filename is unknown (the image was opened from a file descriptor) this returns None.
+        """
+        pass
     def save(self):
         if self._readonly: raise AttributeError('readonly')
         self._header.save()

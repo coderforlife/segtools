@@ -11,7 +11,7 @@ from ._stack import FileImageStack, FileImageSlice, FileImageStackHeader, Field,
 from ._single import FileImageSource
 from ..types import get_im_dtype
 from ..source import ImageSource
-from .._util import String, Unicode
+from .._util import String, Unicode, ravel
 
 __all__ = ['FileCollectionStack']
 
@@ -136,6 +136,9 @@ class FileCollectionStack(FileImageStack):
             print(fill(line.format(z=z, w=im.w, h=im.h, dt=im_dtype_desc(im.dtype), nb=nb,
                                    filename=im._source.filename, handler=type(im._source).__name__)))
             yield FileImageStack._print_header(im.header, width, None, z_width+2)
+
+    @property
+    def filenames(self): return tuple(ravel(s._source.filenames for s in self._slices))
 
     @staticmethod
     def __rename(slices, filenames):

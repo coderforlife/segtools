@@ -8,10 +8,10 @@ from __future__ import unicode_literals
 import re
 numeric_pattern = re.compile("(^[^#]*)(#+)([^#]*[.][^#]+)$")
 
-from ...imstack import Command, Opt, Help
+from ...imstack import Command, Opt, Args, Help
 from ._stack import FileImageStack
 from ._single import FileImageSource
-from .._util import re_search
+from .._util import re_search, String
 
 @staticmethod
 def cast_num_pattern(s):
@@ -103,80 +103,93 @@ options for individual files.
 Examples:""")
         p.list("[ file1.png file2.png file3.png ]", "[ dir/*.png ]")
 
-    def __str__(self): return "Loading from %s"%self._name
+    def __str__(self): return "Loading from %s"%self._desc
     def __init__(self, args, stack):
+        self._desc, self._loader = LoadCommand.get_loader(args)
+        stack.push()
+    def execute(self, stack): stack.push(self._loader())
+
+    @classmethod
+    def get_loader(cls, args):
+        """
+        Parses a load command line, like one that would be given to -L of imstack. The args can
+        either be a pysegtools.Args object, a list of strings (like sys.argv), or a single string
+        that can be given to shlex.split.
+
+        Returns a textual description of the load command and a function that when called opens the
+        ImageStack (a wrapper around FileImageStack.open). The function takes a single optional
+        argument for "readonly" (default True).
+        """
+        if not isinstance(args, Args):
+            if isinstance(args, String):
+                import shlex
+                args = shlex.split(args)
+            args = Args(args)
+        
         from os.path import abspath, isfile
         if len(args.positional) == 0: raise ValueError("No file given to load")
-        stack.push()
-        self._name = args.pop(0)
-        self._handler = args.pop('handler', None)
+        desc = args.pop(0)
+        handler = args.pop('handler', None)
         stack_based = False # if we are loading a stack directly (True) or a series of files (False)
-        path = abspath(self._name)
-
-        if self._name == "[": # File image list
+        path = abspath(desc)
+        
+        if desc == "[": # File image list
             try: end = args.positional.index("]")
             except ValueError: raise ValueError("No terminating ']' in filename list")
             if len(args.positional) > end+1: raise ValueError("All options must be specified as named options")
-            self._file = [abspath(f) for f in args[:end]]
-            self._name = ("'"+("', '".join(args[:end]))+"'") if end else '<no files>'
-            self._kwargs = args.named
-
+            desc = ("'"+("', '".join(args[:end]))+"'") if end else '<no files>'
+            kwargs = args.named
+            filename = [abspath(f) for f in args[:end]]
+            def loader(readonly=True):
+                from glob import glob
+                files = []
+                for f in filename:
+                    if not isfile(f):
+                        if any(c in f for c in '*?['):
+                            fg = glob(f)
+                            if len(fg) > 0: files += fg; continue
+                        raise IOError("File %s does not exist" % f)
+                    files.append(f)
+                return FileImageStack.open(files, readonly, handler, **kwargs)
+        
         elif re_search(numeric_pattern, path): # Numeric Pattern
-            self._kwargs = {k:args.pop(k) for k in args.named.keys() if k not in ('start','step','stop')}
+            kwargs = {k:args.pop(k) for k in args.named.keys() if k not in ('start','step','stop')}
             before, _, after = re_search.match.groups()
             start, step, stop = args.get_all(oStart, oStep, oStop)
-            self._file = (before, after, start, step, stop)
-            self._name = _pattern_desc(self._name, start, step, stop)
+            desc = _pattern_desc(desc, start, step, stop)
+            def loader(readonly=True):
+                from glob import iglob
+                files = []
+                # TODO: could force number of digits using '[0-9]'*len(digits) in glob pattern instead of '*'
+                for f in iglob(before+'*'+after):
+                    if not f.startswith(before) or not f.endswith(after): continue # possible?
+                    num = f[len(before):-len(after)]
+                    if not num.isdigit(): continue
+                    i = int(num)
+                    if i<start or (stop is not None and i>stop) or ((i-start)%step)!=0: continue
+                    files.append((i, f))
+                return FileImageStack.open([f for i,f in sorted(files)], readonly, handler, **kwargs)
 
         else: # 3D Image File
             if len(args.positional)>0: raise ValueError('All options must be specified as named options')
-            if isfile(path) and not FileImageStack.openable(path, True, self._handler, **args.named):
+            if isfile(path) and not FileImageStack.openable(path, True, handler, **args.named):
                 # if the file does not yet exist, it may after some other operation, so only check if it exists now
                 raise ValueError("Unable to open '%s' with given options" % path)
-            self._file   = path
-            self._name = "'%s'" % self._name
-            self._kwargs = args.named
+            filename = path
+            desc = "'%s'" % desc
+            kwargs = args.named
             stack_based = True
+            def loader(readonly=True):
+                return FileImageStack.open(filename, readonly, handler, **kwargs)
 
-        if self._handler is not None:
-            if stack_based: FileImageStack.is_handler(self._handler, True)
-            else:           FileImageSource.is_handler(self._handler, True)
-            self._name += ' using handler "'+self._handler+'"'
-        if len(self._kwargs)>0:
-            self._name += " with options " + (", ".join("%s=%s"%(k,v) for k,v in self._kwargs.iteritems()))
+        if handler is not None:
+            if not (FileImageStack.is_handler if stack_based else FileImageSource.is_handler)(handler, True):
+                raise ValueError('Unknown handler name given')
+            desc += ' using handler "'+handler+'"'
+        if len(kwargs)>0:
+            desc += " with options " + (", ".join("%s=%s"%(k,v) for k,v in kwargs.iteritems()))
 
-    def _get_files(self):
-        from glob import glob, iglob
-        from os.path import isfile
-
-        if isinstance(self._file, list): # File image list
-            files = []
-            for f in self._file:
-                if not isfile(f):
-                    if any(c in f for c in '*?['):
-                        fg = glob(f)
-                        if len(fg) > 0: files += fg; continue
-                    raise IOError("File %s does not exist" % f)
-                files.append(f)
-            return files
-
-        elif isinstance(self._file, tuple): # Numeric Pattern
-            before, after, start, step, stop = self._file
-            files = []
-            # TODO: could force number of digits using '[0-9]'*len(digits) in glob pattern instead of '*'
-            for f in iglob(before+'*'+after):
-                if not f.startswith(before) or not f.endswith(after): continue # possible?
-                num = f[len(before):-len(after)]
-                if not num.isdigit(): continue
-                i = int(num)
-                if i<start or (stop is not None and i>stop) or ((i-start)%step)!=0: continue
-                files.append((i, f))
-            return [f for i,f in sorted(files)]
-
-        else: return self._file # 3D Image File
-
-    def execute(self, stack):
-        stack.push(FileImageStack.open(self._get_files(), True, self._handler, **self._kwargs))
+        return desc, loader
 
 
 class SaveCommand(Command):
@@ -254,66 +267,89 @@ individual files.
 
 Examples:""")
         p.list("-S [ file1.png file2.png file3.png ]")
-    def __str__(self): return "Saving to %s"%self._name
+    def __str__(self): return "Saving to %s"%self._desc
     def __init__(self, args, stack):
+        stack.pop()
+        self._desc, self._saver = SaveCommand.get_saver(args)
+
+    def execute(self, stack):
+        ims = self._saver(stack.pop())
+        Help.print_stack(ims)
+        ims.close()
+
+    @classmethod
+    def get_saver(cls, args):
+        """
+        Parses a save command line, like one that would be given to -S of imstack. The args can
+        either be a pysegtools.Args object, a list of strings (like sys.argv), or a single string
+        that can be given to shlex.split.
+
+        Returns a textual description of the save command and a function that when called creates
+        the ImageStack (a wrapper around FileImageStack.create). The function takes the image stack
+        to be saved and the optional argument for "writeonly" (default True).
+        """
+        if not isinstance(args, Args):
+            if isinstance(args, String):
+                import shlex
+                args = shlex.split(args)
+            args = Args(args)
+
         from os.path import abspath
         if len(args.positional) == 0: raise ValueError("No file given to save to")
-        stack.pop()
-        self._name = args.pop(0)
-        self._handler = args.pop('handler', None)
+        desc = args.pop(0)
+        handler = args.pop('handler', None)
         stack_based = False # if we are loading a stack directly (True) or a series of files (False)
-        path = abspath(self._name)
-
-        if self._name == "[": # File image list
+        path = abspath(desc)
+            
+        if desc == "[": # File image list
             try: end = args.positional.index("]")
             except ValueError: raise ValueError("No terminating ']' in filename list")
-            self._file = [abspath(f) for f in args[:end]]
-            self._name = ("'"+("', '".join(args[:end]))+"'") if end else '<no files>'
+            filename = lambda n:[abspath(f) for f in args[:end]]
+            desc = ("'"+("', '".join(args[:end]))+"'") if end else '<no files>'
             del args[:end+1]
-            self._kwargs = {k:args.pop(k) for k in args.named.keys() if k not in ('pattern','start','step')}
+            kwargs = {k:args.pop(k) for k in args.named.keys() if k not in ('pattern','start','step')}
             if len(args) > 0:
                 raw_pattern = args[(0,'pattern')]
                 pattern,start,step = args.get_all(oPattern, oStart, oStep)
-                self._kwargs.update(pattern=abspath(pattern),start=start,step=step)
-                self._name = ((self._name+' then using ') if end else '')+_pattern_desc(raw_pattern,start+end,step)
-                # TODO: for name's sake, pattern,start,step are both already in name and in kwargs
+                kwargs.update(pattern=abspath(pattern),start=start,step=step)
+                desc = ((desc+' then using ') if end else '')+_pattern_desc(raw_pattern,start+end,step)
+                # TODO: for desc's sake, pattern,start,step are both already in name and in kwargs
 
         elif re_search(numeric_pattern, path): # Numeric Pattern
-            self._kwargs = {k:args.pop(k) for k in args.named.keys() if k not in ('start','step')}
+            kwargs = {k:args.pop(k) for k in args.named.keys() if k not in ('start','step')}
             before, digits, after = re_search.match.groups()
             pattern = before+("%%0%dd"%len(digits))+after
             start, step = args.get_all(oStart, oStep)
-            self._file = (pattern, start, step)
-            self._name = _pattern_desc(self._name, start, step)
-            self._kwargs.update(pattern=pattern,start=start,step=step)
+            desc = _pattern_desc(desc, start, step)
+            kwargs.update(pattern=pattern,start=start,step=step)
+            filename = lambda n:[pattern%(i*step+start) for i in xrange(n)]
 
         else: # 3D Image File
             if len(args.positional)>0: raise ValueError('You must provide all options as named options.')
             if not FileImageStack.creatable(path, **args.named): raise ValueError("Unable to create '%s' with given options" % path)
-            self._file   = path
-            self._kwargs = args.named # arguments get passed straight to the iamge stack creator
-            self._name = "'%s'" % self._name
+            filename = lambda n:path
+            kwargs = args.named # arguments get passed straight to the iamge stack creator
+            desc = "'%s'" % desc
             stack_based = True
+            
+        if handler is not None:
+            if not (FileImageStack.is_handler if stack_based else FileImageSource.is_handler)(handler, True):
+                raise ValueError('Unknown handler name given')
+            desc += ' using handler "'+handler+'"'
+        opts = kwargs if stack_based else \
+               {k:v for k,v in kwargs.iteritems() if k not in ('pattern','start','step')}
+        if len(opts) > 0:
+            desc += " with options " + (", ".join("%s=%s"%(k,v) for k,v in opts.iteritems()))
 
-        if self._handler is not None:
-            if stack_based: FileImageStack.is_handler(self._handler, False)
-            else:           FileImageSource.is_handler(self._handler, False)
-            self._name += ' using handler "'+self._handler+'"'
-        opts = self._kwargs if stack_based else \
-               {k:v for k,v in self._kwargs.iteritems() if k not in ('pattern','start','step')}
-        if len(opts)>0:
-            self._name += " with options " + (", ".join("%s=%s"%(k,v) for k,v in opts.iteritems()))
-
-    def execute(self, stack):
-        from os.path import dirname
-        from ...general.utils import make_dir
-        ims = stack.pop()
-        files = self._file
-        if isinstance(files, tuple):
-            pattern, start, step = self._file
-            files = [pattern%(i*step+start) for i in xrange(len(ims))]
-        if any(not make_dir(dirname(f)) for f in (files if isinstance(files, list) else [files])): raise ValueError("Failed to create ouput directories")
-        ims = FileImageStack.create(files, ims, True, self._handler, **self._kwargs)
-        ims.save()
-        Help.print_stack(ims)
-        ims.close()
+        def saver(ims, writeonly=True):
+            from os.path import dirname
+            from ...general.utils import make_dir
+            fn = filename(len(ims))
+            if stack_based:
+                if any(not make_dir(dirname(f)) for f in fn): raise ValueError("Failed to create ouput directories")
+            elif not make_dir(dirname(fn)): raise ValueError("Failed to create ouput directory")
+            ims = FileImageStack.create(fn, ims, writeonly, handler, **kwargs)
+            ims.save()
+            return ims
+        
+        return desc, saver

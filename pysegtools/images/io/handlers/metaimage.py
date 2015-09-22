@@ -699,7 +699,7 @@ def save_mha_data(im, filename, fields):
 def __get_datafile(filename, fields):
     directory = os.path.dirname(filename)
     if 'ElementDataFile' not in fields:
-        ext = ('.gz' if fields['CompressedData'] else '.bin') if fields['BinaryData'] else '.txt'
+        ext = ('.zlib' if fields['CompressedData'] else '.bin') if fields['BinaryData'] else '.txt'
         filename = os.path.splitext(filename)[0]
         datafile = filename + ext
         if os.path.exists(datafile):
@@ -778,12 +778,15 @@ class MetaImage(FileImageSource):
     @classmethod
     def create(cls, filename, im, writeonly=False, **fields):
         if len(fields.viewkeys() & MetaImage.__forbidden) != 0: raise ValueError("Forbidden fields given")
+        fields.setdefault('BinaryData', True)
         mha = os.path.splitext(filename)[1].lower() == '.mha'
         if mha:
             if 'ElementDataFile' in fields: raise ValueError('Cannot specify ElementDataFile with MHA file extension')
             fields['ElementDataFile'] = None
-        elif fields.get('ElementDataFile') in ('LOCAL','Local','local'): raise ValueError('Forbidden ElementDataFile sepcified')
-        fields.setdefault('BinaryData', True)
+        elif 'ElementDataFile' not in fields:
+            ext = ('.zlib' if fields.get('CompressedData',False) else '.bin') if fields['BinaryData'] else '.txt'
+            fields['ElementDataFile'] = os.path.basename(filename).splitext()[0] + ext
+        elif fields['ElementDataFile'] in ('LOCAL','Local','local'): raise ValueError('Forbidden ElementDataFile sepcified')
         fields = parse_mha_fields(im.dtype, im.shape, fields)
         imsrc = MetaImage(filename, False, fields, None)
         imsrc.data = im
@@ -833,7 +836,7 @@ space-seperated list of values. The following header fields are treated speciall
                "CompressedData - default is false, if given as true or a number from 1-9 then data will be compressed (to the given compression level, default 6) [only allowed if BinaryData is true]",
                "BinaryDataByteOrderMSB - forces the saved data byte order [only allowed if BinaryData is true]",
                "HeaderSize - can only be used if extension is not MHA, causes the data to be written this far into the file, otherwise external files are replaced; can also be -1 if binary and not compressed to be placed at the end of an existing file; can also be a string which is used as the header of external files",
-               "ElementDataFile - can only be used if extension is not MHA, specifies the output file name(s), either a single file name or a sprintf-style file name with a %d-like item with optional numbers after the file name with start, stop, and step (defaults 0, width, and 1); file names that start with LIST or are LOCAL/Local/local are forbidden")
+               "ElementDataFile - can only be used if extension is not MHA, specifies the filename for the data; file names that start with LIST or are LOCAL/Local/local are forbidden; defaults to this filename with an extension of .bin, .zlib, or .txt depending on the format type")
         p.text("""And the following are forbidden:""")
         p.list('ObjectType', 'ObjectSubType', 'NDims', 'DimSize', 'CompressedDataSize',
                'ElementNumberOfChannels', 'ElementNBits', 'ElementType')
@@ -852,4 +855,9 @@ space-seperated list of values. The following header fields are treated speciall
         if im.dtype != self.dtype or im.shape != self.shape: raise ValueError()
         self.__headersize = save_mha_data(im, self._filename, self.__fields)
     def _set_filename(self, filename):
+        # TODO: if the data file name was derived from the file name, change it here too
         self._rename(filename)
+    @property
+    def filenames(self):
+        edf = self.__fields['ElementDataFile']
+        return (self._filename,) if edf is None else (self._filename,edf)

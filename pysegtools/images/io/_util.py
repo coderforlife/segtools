@@ -228,13 +228,30 @@ def imsave_ascii_raw(f, im):
             f.write(c.data)
 
 def get_file_size(f):
-    """Get the size of a file, either from the filename, the file-number, or seeking and telling."""
+    """Get the size of a file, either from the filename or the file-object."""
     if isinstance(f, String): return os.path.getsize(f)
     try:
         return os.fstat(f.fileno()).st_size
     except StandardError:
         f.seek(0, io.SEEK_END)
         return f.tell()
+
+def __get_name_from_fd(path):
+    # TODO: use GetFileInformationByHandleEx, readlink(/proc/self/fd/###), or fcntl(fd, F_GETPATH, filePath) to convert file descriptors to paths
+    return None
+
+def get_file_name(f):
+    """Get the absolute path of a file, either from the filename or file-object."""
+    if isinstance(f, String): return os.path.abspath(f)
+    if hasattr(file, 'name'):
+        if isinstance(file.name, String) and len(file.name) > 0 and file.name[0] != '<' and file.name[-1] != '>':
+            return os.path.abspath(file.name)
+        elif isinstance(file.name, Integral):
+            return __get_name_from_fd(file.name)
+    if hasattr(file, 'fileno'):
+        try: return __get_name_from_fd(file.fileno())
+        except StandardError: pass
+    return None
 
 def _copy_data(f, src, dst, buf):
     f.seek(src)

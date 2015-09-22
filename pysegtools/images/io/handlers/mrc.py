@@ -26,7 +26,7 @@ from ....general.enum import Enum, Flags
 from ...types import create_im_dtype, get_im_dtype_and_nchan, get_dtype_endian
 from ..._util import Unicode
 from .._stack import HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader, Field, FixedField
-from .._util import copy_data, openfile, imread_raw, imsave_raw, file_remove_ranges
+from .._util import copy_data, openfile, imread_raw, imsave_raw, file_remove_ranges, get_file_name
 
 __all__ = ['MRC']
 
@@ -165,6 +165,9 @@ Supported image types:""")
             self._file.close()
             self._file = None
 
+    @property
+    def filenames(self): return self._header._filename
+
     def _get_off(self, z): return self._off+z*self._slc_bytes
 
     def _delete(self, idx):
@@ -262,6 +265,7 @@ class MRCHeader(FileImageStackHeader):
     _fields = None
 
     # Specific to MRC
+    _filename = None
     _is_new = True
     _struct = None
     _labels = None
@@ -275,6 +279,7 @@ class MRCHeader(FileImageStackHeader):
 
     def _open(self, f, readonly):
         ### Opening an existing file ###
+        self._filename = get_file_name(f)
         f = openfile(f, 'rb' if readonly else 'r+b')
 
         # Parse Header
@@ -371,6 +376,7 @@ class MRCHeader(FileImageStackHeader):
         self._check()
 
         # Open file (truncates if existing) and write new header
+        self._filename = get_file_name(f)
         f = openfile(f, 'w+b')
         try:
             self._save(f)
