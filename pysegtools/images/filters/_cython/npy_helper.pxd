@@ -16,10 +16,8 @@ cdef extern from "Python.h":
     cdef PyObject* to_c "(PyObject*)" (object) # These don't really cast, they just trick Cython
     #cdef object to_py "(PyObject*)" (PyObject*)
 
-    cdef void Py_INCREF(object)
     cdef void Py_INCREF(PyObject*)
     cdef void Py_XINCREF(PyObject*)
-    cdef void Py_DECREF(object)
     cdef void Py_DECREF(PyObject*)
     cdef void Py_XDECREF(PyObject*)
     cdef void Py_CLEAR(PyObject*)
@@ -475,7 +473,6 @@ cdef extern from "numpy/arrayobject.h":
     NPY_TYPES PyArray_TYPE(ndarray) nogil # dtype.num
     int PyArray_ITEMSIZE(ndarray) nogil # dtype.itemsize
     PyObject* PyArray_BASE(ndarray) nogil # borrowed ref
-    intp PyArray_REFCOUNT(object) nogil
     intp PyArray_REFCOUNT(PyObject*) nogil
     bint PyArray_CanCastSafely(NPY_TYPES, NPY_TYPES)
 

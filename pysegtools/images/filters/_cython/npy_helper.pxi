@@ -126,18 +126,18 @@ init_fused_types()
 
 ########## Debug Functions ##########
 cdef _print_info(object o):
-    print("object at %08x [%d refs]" % (<uintp>(to_c(o)), PyArray_REFCOUNT(o)))
+    print("object at %08x [%d refs]" % (<uintp>(to_c(o)), PyArray_REFCOUNT(to_c(o))))
     sys.stdout.flush()
 cdef _print_info_arr(ndarray a):
     cdef str shape = 'x'.join(str(x) for x in a.shape)
     cdef str strides = ', '.join(str(x) for x in a.strides)
     print("array at %08x [%d refs]: %08x [%s] (%s) %04x; base: %08x" % (
-            <uintp>(to_c(a)), PyArray_REFCOUNT(a), <uintp>PyArray_DATA(a), shape, strides, PyArray_FLAGS(a), <uintp>PyArray_BASE(a)))
+            <uintp>(to_c(a)), PyArray_REFCOUNT(to_c(a)), <uintp>PyArray_DATA(a), shape, strides, PyArray_FLAGS(a), <uintp>PyArray_BASE(a)))
     sys.stdout.flush()
 cdef _print_info_dtype(dtype dt):
-    print("dtype at %08x [%d refs]" % (<uintp>(to_c(dt)), PyArray_REFCOUNT(dt)))
+    print("dtype at %08x [%d refs]" % (<uintp>(to_c(dt)), PyArray_REFCOUNT(to_c(dt))))
     sys.stdout.flush()
-def get_ref_count(object o): return PyArray_REFCOUNT(o)
+def get_ref_count(object o): return PyArray_REFCOUNT(to_c(o))
 
 
 ########## Utility Functions ##########
@@ -169,7 +169,7 @@ cdef inline ndarray __view_slice(ndarray a, intp ndim, intp* dims, intp* strides
     cdef PyArray_Descr* dt = PyArray_DESCR(a)
     Py_INCREF(<PyObject*>dt)
     cdef ndarray b = PyArray_NewFromDescr(&PyArray_Type, dt, ndim, dims, strides, data, flags, NULL)
-    Py_INCREF(a)
+    Py_INCREF(to_c(a))
     PyArray_SetBaseObject(b, a)
     return b
 
@@ -264,5 +264,5 @@ cdef inline ndarray __lexsort2D(ndarray a):
     cdef intp n = PyArray_DIM(a,1), i
     cdef list l = PyList_New(n)
     cdef ndarray c
-    for i in range(n): c = __view_col(a, i); Py_INCREF(c); PyList_SET_ITEM(l, n-i-1, c)
+    for i in range(n): c = __view_col(a, i); Py_INCREF(to_c(c)); PyList_SET_ITEM(l, n-i-1, c)
     return PyArray_TakeFrom(a, PyArray_LexSort(l, 0), 0, NULL, NPY_RAISE)
