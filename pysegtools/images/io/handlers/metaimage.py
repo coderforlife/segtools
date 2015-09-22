@@ -510,7 +510,7 @@ def __get_mha_reader(fields, shape, dt, headersize):
     if headersize == -1: headersize = -prod(shape)*dt.itemsize
     def read(datafile):
         off = headersize
-        if off < 0:
+        if off is not None and off < 0:
             off += get_file_size(datafile)
             if off < 0: raise ValueError('MHA/MHD file data file is not large enough for the pixel data')
         with openfile(datafile, 'rb', comp, off=off) as f:
