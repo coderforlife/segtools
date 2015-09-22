@@ -17,20 +17,35 @@ and man 2 getrusage for more information). It will not record Python function ta
 in a seperate process. On some forms of *nix the ru_maxrss and other fields will always be 0.
 """
 
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+
 # Only the Tasks class along with the byte-size constants are exported
-__all__ = ['Tasks', 'KB', 'MB', 'GB', 'TB']
+__all__ = ['Tasks', 'KB', 'MB', 'GB', 'TB', 'STDOUT', 'DEVNULL']
 
 from abc import ABCMeta, abstractmethod
 from functools import total_ordering
+from collections import Sequence, Iterable
+from numbers import Integral, Real
 
-import sys
-from os import getcwd, getpid
-from os.path import exists, getmtime, join, normpath, realpath
+import sys, os, math
+from os import getcwdu as getcwd, getpid, chdir
+from os.path import exists, getmtime, join, normpath
+join_norm = lambda path,*paths: normpath(join(path,*paths))
 
 from heapq import heapify, heappop, heappush
 
 from multiprocessing import cpu_count, Process as PyProcess
-from subprocess import Popen, CalledProcessError
+from subprocess import Popen, CalledProcessError, STDOUT
+if sys.version_info[0] < 3:
+    try:
+        from subprocess32 import Popen, CalledProcessError, STDOUT
+    except ImportError:
+        if os.name == 'posix':
+            import warnings
+            warnings.warn('Using the built-in subprocess module on POSIX in Python v2.7 is unreliable with tasks. Please install subprocess32.')
 from threading import Condition, Thread
 from pipes import quote
 
@@ -39,63 +54,67 @@ from time import gmtime, sleep, strftime, strptime, time
 from datetime import datetime
 import re
 
-from psutil import Process, virtual_memory # not a built-in library
+from psutil import Process, virtual_memory, Error as ProcessError # not a built-in library
 try: import saga # not a built-in library, but only required when using clustering
-except: pass
+except ImportError: saga = None
 
 # TODO: psutil now support futures, we don't need to do all the extra process management stuff
 
+#STDOUT = STDOUT
+DEVNULL = STDOUT-1
+
+String = str if (sys.version_info[0] == 3) else basestring
+
 this_proc = Process(getpid())
+time_format = '%Y-%m-%d %H:%M:%S' # static, constant
 
 def get_mem_used_by_tree(proc = this_proc):
     """
-    Gets the memory used by a process and all its children (RSS). If the process is not
-    provided, this process is used. The argument must be a pid or a psutils.Process object.
-    Return value is in bytes.
+    Gets the memory used by a process and all its children (RSS). If the process is not provided,
+    this process is used. The argument must be a pid or a psutils.Process object. Return value is in
+    bytes.
     """
     # This would be nice, but it turns out it crashes the whole program if the process finished between creating the list of children and getting the memory usage
     # Adding "if p.is_running()" would help but still have a window for the process to finish before getting the memory usage
     #return sum((p.get_memory_info()[0] for p in proc.get_children(True)), proc.get_memory_info()[0])
-    if isinstance(proc, (int, long)): proc = Process(proc) # was given a PID
+    if isinstance(proc, Integral): proc = Process(proc) # was given a PID
     mem = proc.memory_info()[0]
     for p in proc.children(True):
         try:
             if p.is_running():
                 mem += p.memory_info()[0]
-        except: pass
+        except ProcessError: pass
     return mem
 
 def get_time_used_by_tree(proc = this_proc):
     """
     Gets the CPU time used by a process and all its children (user+sys). If the process is not
-    provided, this process is used. The argument must be a pid or a psutils.Process object.
-    Return values is in seconds.
+    provided, this process is used. The argument must be a pid or a psutils.Process object. Return
+    value is in seconds.
     """
-    if isinstance(proc, (int, long)): proc = Process(proc) # was given a PID
+    if isinstance(proc, Integral): proc = Process(proc) # was given a PID
     t = sum(proc.cpu_times())
     for p in proc.children(True):
         try:
             if p.is_running():
                 t += sum(p.cpu_times())
-        except: pass
+        except ProcessError: pass
     return t
 
 def write_error(s):
     """
-    Writes out an error message to stderr in red text. This is done so that the
-    error messages from the Tasks system can be easily distinguished from the
-    errors from the underlying commands being run. If we cannot change the text
-    color (not supported by OS or redirecting to a file) then just the string is
-    written.
+    Writes out an error message to stderr in red text. This is done so that the error messages from
+    the Tasks system can be easily distinguished from the errors from the underlying commands being
+    run. If we cannot change the text color (not supported by OS or redirecting to a file) then just
+    the string is written.
     """
-    from os import name
-
-    try:    is_tty = sys.stderr.isatty()
-    except: is_tty = False
+    is_tty = False
+    try: is_tty = sys.stderr.isatty()
+    except AttributeError: pass
     
     if is_tty:
-        if name == "posix": sys.stderr.write("\x1b[1;31m")
-        elif name == "nt":
+        if os.name == "posix": sys.stderr.write("\x1b[1;31m")
+        elif os.name == "nt":
             from ctypes import windll, Structure, c_short, c_ushort, byref
             k32 = windll.kernel32
             handle = k32.GetStdHandle(-12)
@@ -108,10 +127,20 @@ def write_error(s):
             k32.SetConsoleTextAttribute(handle, 12)
     sys.stderr.write(s)
     if is_tty:
-        if name == "posix": sys.stderr.write("\x1b[0m")
-        elif name == "nt":  k32.SetConsoleTextAttribute(handle, prev)
+        if os.name == "posix": sys.stderr.write("\x1b[0m")
+        elif os.name == "nt":  k32.SetConsoleTextAttribute(handle, prev)
     sys.stderr.write("\n")
 
+def DFS(itr, above=()):
+    """
+    Returns the depth-first-search ordering of an iterable of iterables, emitting each of the
+    non-iterable nodes and strings (so in this case strings are considered non-iterable). Does not
+    support situations when an iterable contains itself, directly or indirectly (this would lead to
+    a stack overflow).
+    """
+    if any(itr is a for a in above): raise ValueError('recursive iterables not supported')
+    above += (itr,)
+    return (x for i in itr for x in (DFS(i, above) if isinstance(i, Iterable) and not isinstance(i, String) else (i,)))
 
 # These constants are for when giving a certain amount of memory pressure to a
 # task. So 1 GB can be easily written as 1*GB.
@@ -121,399 +150,391 @@ GB = 1024*1024*1024
 TB = 1024*1024*1024*1024
 
 @total_ordering
-class Task:
+class Task(object):
     """
-    Abstract Task class representing a single Task to be run.
+    Abstract Task class representing a single Task to be run. See Tasks.add for an explanation
+    of the arguments.
     """
     __metaclass__ = ABCMeta
-    def __init__(self, parent, name, inputs=(), outputs=(), settings=(), wd=None):
+    done = False # not done yet
+    _process = None # the current running process
+    __all_after = None # the cache for the all_after function
+    def __init__(self, name, inputs=(), outputs=(), settings=(), wd=None,
+                 stdin=None, stdout=None, stderr=None, stdout_append=False, stderr_append=False,
+                 mem=1*MB, cpu=1):
         #if len(outputs) == 0: raise ValueError('Each task must output at least one file')
-        self.parent = parent     # the Tasks object that owns this task
         self.name = name         # name of this task
-        self.wd = realpath(wd) if wd != None else getcwd() # working directory
-        if isinstance(inputs, basestring): inputs = (inputs,)
-        if isinstance(outputs, basestring): outputs = (outputs,)
-        if isinstance(settings, basestring): settings = (settings,)
-        self.inputs = frozenset(realpath(join(self.wd, f)) for f in inputs)
-        self.outputs = frozenset(realpath(join(self.wd, f)) for f in outputs)
-        self.settings = frozenset(settings)
+        if isinstance(inputs, String): inputs = (inputs,)
+        if isinstance(outputs, String): outputs = (outputs,)
+         # relative inputs / outputs / working directory
+        self.inputs = frozenset(normpath(f) for f in inputs)
+        self.outputs = frozenset(normpath(f) for f in outputs)
+        self.wd = wd
+        self.settings = frozenset((settings,) if isinstance(settings, String) else settings)
         self.before = set()       # tasks that come before this task
         self.after = set()        # tasks that come after this task
-        self.__all_after = None   # the cache for the all_after function
-        self.done = False         # not done yet
-        self._cpu_pressure = 1    # default number of CPUs is 1
-        self._mem_pressure = 1*MB # default memory pressure is 1 MB
+        # Standard streams
+        self.stdin  = self.__get_std(wd, stdin )
+        self.stdout = self.__get_std(wd, stdout)
+        self.stderr = self.__get_std(wd, stderr, True)
+        self.stdout_append = stdout_append
+        self.stderr_append = stderr_append
+        # CPU and memory pressure
+        if isinstance(cpu, Integral):
+            self._cpu = int(cpu)
+            if self._cpu <= 0: raise ValueError('Number of used CPUs must be positive')
+        else:
+            self._cpu = float(cpu)
+            if self._cpu <= 0.0 or self._cpu > 1.0: raise ValueError('Fraction of number of used CPUs must be [0.0, 1.0)')
+        self._mem = int(mem)
+        if self._mem < 0: raise ValueError('Amount of used memory must be non-negative')
+    @staticmethod
+    def __get_std(wd, std, is_stderr=False):
+        if std is None or std is DEVNULL or (std is STDOUT and is_stderr): return std
+        if isinstance(std, String): return join_norm(wd, std)
+        raise TypeError('standard stream must be either a filename, None, or subprocess.STDOUT (stderr only)')
     def __eq__(self, other): return type(self) == type(other) and self.name == other.name #pylint: disable=unidiomatic-typecheck
     def __lt__(self, other): return type(self) <  type(other) or  type(self) == type(other) and self.name < other.name #pylint: disable=unidiomatic-typecheck
     def __hash__(self):      return hash(self.name+str(type(self)))
-    def __repr__(self):      return self.name
+    def __str__(self):       return self.name
+    def __repr__(self):      return '<%s task "%s">' % (self.__class__.__name__, self.name)
 
+    def cpu(self, running):
+        return int(math.ceil(self._cpu*running.cores)) if isinstance(self._cpu, float) else \
+               min(running.cores, self._cpu)
+    def mem(self, running): return self._mem #plyint: disable=unused-argument
+    def workingdir(self, running):
+        return running.workingdir if self.wd is None else join_norm(running.workingdir, self.wd)
     @abstractmethod
-    def _run(self):
+    def run(self, running):
         """
-        Starts the task and waits, throws exceptions if something goes wrong.
-        This is in abstract method and is implemented in each derived class.
+        Starts the task and waits, throws exceptions if something goes wrong. The argument is the
+        current run, a RunningTasks object. This should call _run_proc, if not, is_running,
+        current_usage, terminate, and kill must all be overridden.
+
+        Note that this does not mark this task as done as that should be done in a controlled,
+        thread-safe, manner.
         """
-        pass # abstract method does nothing
-    def _run_proc(self, p):
+        pass
+
+    def _run_proc(self, pid, wait, running):
         """
-        The _run method for seperate process systems. The argument p is a Popen-like object that has
-        the attribute 'pid' and the method 'wait' that takes no arguments and retruns the exit code.
+        The basic run method for seperate processes. The pid is the process number and wait is a
+        function that takes no arguments, waits for the process to terminate, and returns the exit
+        code. The running argument is the RunningTasks object given to run().
         """
-        self.pid = p.pid
-        if self.parent._rusagelog:
+        self._process = Process(pid)
+        if running.rusagelog:
             from .general.os_ext import wait4
-            _, exitcode, rusage = wait4(self.pid, 0)
-            del self.pid
+            _, exitcode, ru = wait4(pid, 0)
+            self._process = None
             if exitcode: raise CalledProcessError(exitcode, str(self))
-            self.parent._rusagelog.write('%s %f %f %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n' % (str(self), 
-                rusage.ru_utime, rusage.ru_stime, rusage.ru_maxrss, rusage.ru_ixrss, rusage.ru_idrss, rusage.ru_isrss,
-                rusage.ru_minflt, rusage.ru_majflt, rusage.ru_nswap, rusage.ru_inblock, rusage.ru_oublock,
-                rusage.ru_msgsnd, rusage.ru_msgrcv, rusage.ru_nsignals, rusage.ru_nvcsw, rusage.ru_nivcsw))
+            running.rusagelog.write('%s %f %f %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n' % (str(self), 
+                ru.ru_utime, ru.ru_stime, ru.ru_maxrss, ru.ru_ixrss, ru.ru_idrss, ru.ru_isrss,
+                ru.ru_minflt, ru.ru_majflt, ru.ru_nswap, ru.ru_inblock, ru.ru_oublock,
+                ru.ru_msgsnd, ru.ru_msgrcv, ru.ru_nsignals, ru.ru_nvcsw, ru.ru_nivcsw))
         else:
-            exitcode = p.wait()
-            del self.pid
+            exitcode = wait()
+            self._process = None
             if exitcode: raise CalledProcessError(exitcode, str(self))
-            
-    def all_after(self, back_stack = frozenset()):
+    @property
+    def is_running(self): return self._process is not None
+
+    # The following 3 methods only work when we are running
+    def current_usage(self):
+        """
+        Gets the current memory (bytes) and total CPU usage (seconds) by this task. Throws
+        exceptions in many cases, including if the task does not support this operation.
+        """
+        return get_mem_used_by_tree(self._process), get_time_used_by_tree(self._process)
+    def terminate(self): self._process.terminate()
+    def kill(self): self._process.kill()
+
+    def all_after(self, back_stack=frozenset()):
         """
         Get a set of all tasks that come after this task while performing a test for cycles.
+        
         This can be an expensive operation but is cached so multiple calls to it are fast. The cache
         is cleared after any tasks are added to the tree though.
         """
-        if self.__all_after == None:
+        if self.__all_after is None:
+            if back_stack is None: back_stack = set()
             if self in back_stack: raise ValueError('Tasks are cyclic')
-            back_stack = back_stack.copy()
-            back_stack.add(self)
+            back_stack = back_stack.union((self,))
             after = self.after.copy()
             for a in self.after: after.update(a.all_after(), back_stack)
             self.__all_after = frozenset(after)
         return self.__all_after
+    def add_after(self, task):
+        """
+        Adds a task or tasks (if a sequence) to be after this task. This makes sure that this task
+        is added before the given task/tasks and does some internal bookkeeping. The after and
+        before sets should not be modified directly.
+        """
+        if isinstance(task, Task):
+            self.after.add(task)
+            task.before.add(self)
+        else:
+            self.after.update(task)
+            for t in task: t.before.add(self)
+        self._clear_cached_all_after()
     def _clear_cached_all_after(self):
         """Clears the cached results of "all_after" recursively."""
-        if self.__all_after:
+        if self.__all_after is not None:
             self.__all_after = None
-            for b in self.before: b._clear_cached_all_after()
+            for b in self.before: b._clear_cached_all_after() #pylint: disable=protected-access
     def mark_as_done(self):
         """
-        Marks a task and all the tasks before it as done. This means when a task tree runs that includes them they will
-        not be run.
+        Marks a task and all the tasks before it as done. This means when a task tree runs that
+        includes them they will not be run.
         """
         self.done = True
         for t in self.before:
             if not t.done: t.mark_as_done()
-
-    @property
-    def cpu_pressure(self): return self._cpu_pressure
-    @property
-    def mem_pressure(self): return self._mem_pressure
-    def pressure(self, cpu=None, mem=None):
-        """
-        Gives the task a certain amount of CPU and/or memory pressure (in bytes). The task will not start unless there
-        is sufficient memory and CPUs available. The default for a new task is 1 CPU and 1 MB of memory.
-
-        Note: The CPU count is actually a count against "max tasks at once", not actual available CPUs. Max tasks at
-        once does default to the total number of CPUs though.
-
-        If a task requires more CPUs then will be allowed, it will only be run when no other tasks are running.
-        If a task requries more memory then can be given, it will never run.
-        """
-        if cpu != None:
-            cpu = int(cpu)
-            if cpu <= 0: raise ValueError('Number of used CPUs must be positive')
-            self._cpu_pressure = cpu
-        if mem != None:
-            mem = int(mem)
-            if mem < 0: raise ValueError('Amount of used memory must be non-negative')
-            self._mem_pressure = mem
-    def current_usage(self):
-        """
-        Gets the current memory (bytes) and total CPU usage (seconds) by this task. Throws exceptions in many cases,
-        including if the task does not support this operation.
-        """
-        p = Process(self.pid)
-        return get_mem_used_by_tree(p), get_time_used_by_tree(p)
-    def terminate(self): Process(self.pid).terminate()
-    def kill(self):      Process(self.pid).kill()
-
+    
 class TaskUsingProcess(Task):
     """
     A single Task that runs using a seperate process. 
     """
-    def __init__(self, parent, cmd, inputs=(), outputs=(), settings=(), wd=None, stdin=None, stdout=None, stderr=None):
+    def __init__(self, cmd, **kwargs):
         """
-        Create a new Task using a process. The cmd can either be a command-line
-        string or a iterable of command-line parts. The stdin/stdout/stderr can
-        be strings (for files), a file-like object, or None for default.
+        Create a new Task that will run a command line using a process. The cmd can either be a
+        command-line string (parseable with shlex.split) or an iterable of command-line parts that
+        are converted to strings (nested iterables are expanded). Other arguments are passed
+        directly to the Task constructor.
         """
-        if isinstance(cmd, basestring):
+        if isinstance(cmd, String):
             import shlex
             cmd = shlex.split(cmd)
         else:
-            cmd = [str(a) for a in cmd]
-        self.cmd    = cmd
-        self.stdin  = stdin
-        self.stdout = stdout
-        self.stderr = stderr
-        Task.__init__(self, parent, "`%s`" % " ".join(quote(str(s)) for s in cmd), inputs, outputs, settings, wd)
-    def _run(self):
-        stdin  = open(self.stdin,  'r', 1) if isinstance(self.stdin,  basestring) else self.stdin
-        stdout = open(self.stdout, 'w', 1) if isinstance(self.stdout, basestring) else self.stdout
-        stderr = open(self.stderr, 'w', 1) if isinstance(self.stderr, basestring) else self.stderr
-        self._run_proc(Popen(self.cmd, cwd=self.wd, stdin=stdin, stdout=stdout, stderr=stderr))
+            cmd = [unicode(arg) for arg in DFS(cmd)]
+        self.cmd = cmd
+        name = "`%s`" % " ".join(quote(s) for s in cmd)
+        super(TaskUsingProcess, self).__init__(name, **kwargs)
+    def run(self, running):
+        owns_in, owns_out, owns_err = False, False, False
+        wd = self.workingdir(running)
+        try:
+            def open_std(std, mode, bufsize):
+                if isinstance(std, String): return open(join_norm(wd, std), mode, bufsize), True
+                if std is DEVNULL: return open(os.devnull, mode, bufsize), True
+                return std, False # either None or STDOUT
+            stdin,  owns_in  = open_std(self.stdin,  'r', 1)
+            stdout, owns_out = open_std(self.stdout, 'a' if self.stdout_append else 'w', 1)
+            stderr, owns_err = open_std(self.stderr, 'a' if self.stderr_append else 'w', 0)
+            p = Popen(self.cmd, cwd=wd, stdin=stdin, stdout=stdout, stderr=stderr)
+            self._run_proc(p.pid, p.wait, running)
+        finally:
+            if owns_in:  stdin.close()
+            if owns_out: stdout.close()
+            if owns_err: stderr.close()
+
 class TaskUsingCluster(TaskUsingProcess):
     """
     A single Task that runs using a seperate process, either locally or on a cluster.
-    THIS IS UNTESTED
+    TODO: THIS IS UNTESTED (and incomplete)
     """
-    def __init__(self, parent, cmd, inputs=(), outputs=(), settings=(), wd=None, stdin=None, stdout=None, stderr=None):
-        # We need copies of the original (relative) intputs and outputs for sending to the server
-        self._orig_inputs = frozenset(inputs)
-        self._orig_outputs = frozenset(outputs)
-        TaskUsingProcess.__init__(self, parent, cmd, inputs, outputs, settings, wd, stdin, stdout, stderr)
-    def _run(self):
-        if self.parent._cluster:
-            # TODO: rusagelog
-            # TODO: SGE properties: name queue project
+    def __init__(self, cmd, **kwargs):
+        """See Task and TaskUsingProcess for arguments."""
+        self._job = None
+        super(TaskUsingCluster, self).__init__(cmd, **kwargs)
+    def run(self, running):
+        if not running.cluster: return super(TaskUsingCluster, self).run(running)
+        
+        # TODO: rusagelog
+        # TODO: SGE properties: name queue project
 
-            # Set the command to be run
-            desc = saga.job.Description()
-            desc.executable = self.cmd[0]
-            desc.arguments = self.cmd[1:]
-            desc.environment = TODO
-            if isinstance(self.stdin, basestring): desc.input = self.stdin
-            elif self.stdin != None: raise ValueError("Commands running on a cluster do not support using non-file STDIN")
-            if isinstance(self.stdout, basestring): desc.output = self.stdout
-            elif self.stdout != None: raise ValueError("Commands running on a cluster do not support using non-file STDOUT")
-            if isinstance(self.stderr, basestring): desc.error = self.stderr
-            elif self.stderr != None: raise ValueError("Commands running on a cluster do not support using non-file STDERR")
-            #desc.working_directory = self.wd # TODO
+        # Set the command to be run
+        desc = saga.job.Description()
+        desc.executable = self.cmd[0]
+        desc.arguments = self.cmd[1:]
+        #desc.environment = TODO
 
-            # Set the CPU and memory hints
-            desc.total_cpu_count = self._cpu_pressure # TODO: determine target's CPU capabilities
-            if self._mem_pressure > 1*MB: desc.total_physical_memory = self._mem_pressure / MB
+        # TODO: when None (redirect to current) what should we do?
+        # TODO: what about appending?
+        if isinstance(self.stdin, String): desc.input = self.stdin
+        elif self.stdin is not DEVNULL: raise ValueError("Commands running on a cluster only support filename and DEVNULL for STDIN")
+        if isinstance(self.stdout, String): desc.output = self.stdout
+        elif self.stdout is not DEVNULL: raise ValueError("Commands running on a cluster only support filename and DEVNULL for STDOUT")
+        if isinstance(self.stderr, String): desc.error = self.stderr
+        elif self.stderr is STDOUT: pass # TODO: support stdout redirection
+        elif self.stderr is not DEVNULL: raise ValueError("Commands running on a cluster only support filename, DEVUNLL, and STDOUT for STDERR")
 
-            # Set inputs and outputs
-            desc.file_transfer = ([x+" > "+y for x, y in zip(self.inputs,  self._orig_inputs )] +
-                                  [x+" < "+y for x, y in zip(self.outputs, self._orig_outputs)])
-            desc.cleanup = True
+        #desc.working_directory = self.wd # TODO
 
-            # TODO: are the stdin/stdout/stderr files copied automatically?
+        # Set the CPU and memory hints
+        desc.total_cpu_count = self._cpu # TODO: determine target's CPU capabilities and deal with fractional amounts
+        if self._mem > 1*MB: desc.total_physical_memory = self._mem // MB
 
-            self.job = self.parent._cluster.service.create_job(desc)
-            try:
-                self.job.run()
-                self.job.wait()
-                exitcode = self.job.exit_code
-            finally:
-                del self.job
-            if exitcode: raise CalledProcessError(exitcode, str(self))
-        else:
-            super(TaskUsingCluster, self)._run()
-    @Task.cpu_pressure.getter
-    def cpu_pressure(self): return 0 if self.parent._cluster else self._cpu_pressure
-    @Task.mem_pressure.getter
-    def mem_pressure(self): return 0 if self.parent._cluster else self._mem_pressure
+        # Set inputs and outputs (TODO: support NOT copying files, either because we know the files are on some shared setup or because another job produced them)
+        desc.file_transfer = ([join_norm(running.workingdir, i)+" > "+i for i in self.inputs ] +
+                              [join_norm(running.workingdir, o)+" < "+o for o in self.outputs])
+        desc.cleanup = True
+
+        # TODO: are the stdin/stdout/stderr files copied automatically?
+
+        self._job = running.cluster.service.create_job(desc)
+        try:
+            self._job.run()
+            self._job.wait()
+            exitcode = self._job.exit_code
+        finally:
+            self._job = None
+        if exitcode: raise CalledProcessError(exitcode, str(self))
+    # Clustered tasks don't effect our local resource usage
+    def cpu(self, running): return 0 if running.cluster else super(TaskUsingCluster, self).cpu(running)
+    def mem(self, running): return 0 if running.cluster else super(TaskUsingCluster, self).mem(running)
     def current_usage(self):
-        if self.parent._cluster:
-            return 0, (time() - TaskUsingCluster._get_time(self.job.started) if self.job == saga.job.RUNNING else 0)
-        else: return super(TaskUsingCluster, self).current_usage()
+        if self._job is None: return super(TaskUsingCluster, self).current_usage()
+        return 0, ((time() - TaskUsingCluster._get_time(self._job.started))
+                   if self._job.state == saga.RUNNING else 0)
+    @Task.is_running.getter
+    def is_running(self): return (self._job or self._process) is not None
     @staticmethod
     def _get_time(x):
-        if isinstance(x, (int,long,float)): return x
-        elif isinstance(x, basestring):     return strptime(x)
-        elif isinstance(x, datetime):       return (x-datetime.utcfromtimestamp(0)).total_seconds()
+        if   isinstance(x, Real):     return float(x)
+        elif isinstance(x, String):   return strptime(x)
+        elif isinstance(x, datetime): return (x-datetime.utcfromtimestamp(0)).total_seconds()
         else: raise ValueError()
     def terminate(self):
-        if hasattr(self, 'job'): self.job.cancel(1)
+        if self._job: self._job.cancel(1)
         else: super(TaskUsingCluster, self).terminate()
     def kill(self):
-        if hasattr(self, 'job'): self.job.cancel()
+        if self._job: self._job.cancel()
         else: super(TaskUsingCluster, self).kill()
-        
-class TaskUsingPythonFunction(Task):
-    """
-    Create a new Task that calls a Python function in the same process.
-    THIS IS UNTESTED
-    """
-    def __init__(self, parent, target, args, kwargs, inputs=(), outputs=(), settings=()):
-        """
-        The target must be a callable object (like a function). The args and
-        kwargs are a tuple and dictionary that are given to the target function
-        as the arguments and keyword arguments.
-        """
-        if not callable(target): raise ValueError('Target is not callable')
-        self.target = target
-        self.args   = args
-        self.kwargs = kwargs
-        kwargs = ""
-        for k,v in self.kwargs: kwargs += ", %s = %s" % (str(k), str(v))
-        if len(self.args) == 0: kwargs = kwargs.lstrip(', ')
-        Task.__init__(self, parent, "%s(%s%s)" % (self.target.__name__, ", ".join(self.args), kwargs), inputs, outputs, settings)
-    # We don't actually need to spawn a thread since there is a thread spawned essentially just for _run()
-    def _run(self): self.target(*self.args, **self.kwargs)
-    def current_usage(self): raise NotImplementedError()
-    def terminate(self): raise NotImplementedError()
-    def kill(self): raise NotImplementedError()
 
 class TaskUsingPythonProcess(Task):
     """
-    Create a new Task that calls a Python function in a different process.
-    THIS IS UNTESTED
-    """
-    class Popen:
-        """
-        This is a Popen-like class for Python multiprocessing processes. It supports the pid
-        attribute, the wait() function, and changing the working directory along with standard
-        inputs/outputs.
-        """
-        @staticmethod
-        def _get_std(stdxxx, mode):
-            from os import fdopen 
-            if isinstance(stdxxx, basestring):    return open(stdxxx, mode, 1)
-            elif isinstance(stdxxx, (int, long)): return fdopen(stdxxx, mode, 1)
-            return stdxxx # assume a file object
-        def __init__(self, target, args, kwargs, wd, stdin, stdout, stderr):
-            def _setup_pyproc(target, args, kwargs, wd, stdin, stdout, stderr):
-                import os
-                from subprocess import STDOUT
-                os.chdir(wd)
-                if stdin:  sys.stdin  = TaskUsingPythonProcess.Popen._get_std(stdin,  'r')
-                if stdout: sys.stdout = TaskUsingPythonProcess.Popen._get_std(stdout, 'w')
-                if stderr: sys.stderr = TaskUsingPythonProcess.Popen._get_std(stderr, 'w') if stderr != STDOUT else sys.stdout
-                target(*args, **kwargs)
-            p = PyProcess(_setup_pyproc, (target, args, kwargs, wd, stdin, stdout, stderr))
-            p.daemon = True
-            p.start()
-            self.proc = p
-        @property
-        def pid(self): return self.proc.pid
-        def wait(self): self.proc.join(); return self.proc.exitcode
-    def __init__(self, parent, target, args, kwargs, inputs=(), outputs=(), settings=(), wd=None, stdin=None, stdout=None, stderr=None):
-        """
-        The target must be a callable object (like a function). The args and
-        kwargs are a tuple and dictionary that are given to the target function
-        as the arguments and keyword arguments. The stdin/stdout/stderr can be
-        strings (for files), a file-like object, or None for default.
-        """
-        if not callable(target): raise ValueError('Target is not callable')
-        self.target = target
-        self.args   = args
-        self.kwargs = kwargs
-        self.stdin  = stdin
-        self.stdout = stdout
-        self.stderr = stderr
-        kwargs = ""
-        for k,v in self.kwargs: kwargs += ", %s = %s" % (str(k), str(v))
-        if len(self.args) == 0: kwargs = kwargs.lstrip(', ')
-        Task.__init__(self, parent, "%s(%s%s)" % (self.target.__name__, ", ".join(self.args), kwargs), inputs, outputs, settings, wd)
-    def _run(self):
-        self._run_proc(TaskUsingPythonProcess.Popen(self.target, self.args, self.kwargs, self.wd, self.stdin, self.stdout, sys.stderr))
+    Create a new Task that calls a Python function using a seperate process.
 
-class Tasks:
+    Functions are wrapped to suppport changing the working directory and the standard streams along
+    with also supporting callable objects that aren't functions but are pickle-able. That code is in
+    _task_wrapper.
     """
-    Represents a set of tasks that need to be run, possibly with dependencies on
-    each other. The tasks are run as efficiently as possible.
-    """
-    __time_format = '%Y-%m-%d %H:%M:%S' # static, constant
+    def __init__(self, func, args=(), kwargs={}, **kwargs_task): #pylint: disable=dangerous-default-value
+        """
+        The args and kwargs are the arguments passed to the target function. Other arguments are
+        passed directly to the Task constructor.
+        """
+        if not callable(func): raise ValueError('not callable')
+        self.func   = func
+        self.args   = list(args)
+        self.kwargs = dict(kwargs)
+        args = [repr(a) for a in args] + ["%s=%s" % (str(k), repr(v)) for k,v in kwargs.iteritems()]
+        name = "%s.%s(%s)" % (func.__module__, func.__name__, ", ".join(args))
+        super(TaskUsingPythonProcess, self).__init__(name, **kwargs_task)
 
-    def __init__(self, log, settings={}, max_tasks_at_once=None, workingdir=None, rusage_log=None):
+    def run(self, running):
+        from ._task_wrapper import _pyproc
+        wd = self.workingdir(running)
+        def get_std(std):
+            if isinstance(std, String): return join_norm(wd, std)
+            if std is DEVNULL: return os.devnull
+            if std is STDOUT: return -2 # the value of STDOUT, but need some known and controled constant
+            return None # only option left
+        p = PyProcess(target=_pyproc,
+                      args=(self.func, self.args, self.kwargs, wd,
+                            get_std(self.stdin),
+                            get_std(self.stdout), self.stdout_append,
+                            get_std(self.stderr), self.stderr_append))
+        p.daemon = True
+        p.start()
+        def _wait(): p.join(); return p.exitcode
+        self._run_proc(p.pid, _wait, running)
+
+class Tasks(object):
+    """
+    Represents a set of tasks that need to be run, possibly with dependencies on each other. The
+    tasks are run as efficiently as possible.
+    """
+
+    def __init__(self):
         """
         Create a new set of Tasks.
-          log
-            the filepath to a file where to read/write the log of completed
-            tasks to
-          settings
-            the setting names and their values for this run as a dictionary
-          max_tasks_at_once
-            the maximum number of tasks to run at one time, defaults to the
-            number of processors available
-          workingdir
-            the default working directory for all of the tasks, defaults to the
-            current working directory
-          rusage_log
-            only provide if on *nix - if provided the memory and time usage of
-            every task will be logged to the given file
         """
-        self.workingdir = realpath(workingdir) if workingdir else getcwd()
-        self.max_tasks_at_once = int(max_tasks_at_once) if max_tasks_at_once else cpu_count()
-        self.settings = settings
-        self.logname = normpath(join(self.workingdir, log))
-        self.rusage_log = realpath(join(self.workingdir, rusage_log)) if rusage_log else None
-        self.outputs    = {} # key is a filename, value is a task that outputs that file
-        self.inputs     = {} # key is a filename, value is a list of tasks that need that file as input
+        self.settings   = set() # list of setting names
+        self.outputs    = {}    # key is a relative filename, value is a task that outputs that file
+        self.inputs     = {}    # key is a relative filename, value is a list of tasks that need that file as input
         self.generators = set() # list of tasks that have no input files
         self.cleanups   = set() # list of tasks that have no output files
-        self.all_tasks  = {} # all tasks, indexed by their string representation
-        self.__conditional = None
+        self.all_tasks  = {}    # all tasks, indexed by their string representation
+        self.__running = None
 
-    def add(self, cmd, inputs=(), outputs=(), settings=(), can_run_on_cluster=False, wd=None, stdin=None, stdout=None, stderr=None):
+    def add(self, task, **kwargs):
         """
-        Adds a new task. The task does not run until sometime after run() is called.
-          cmd
-            an array of command line parts (with the first one being the program to run) or a
-            command line string
-          inputs, outputs, settings
-            lists/tuples of files or names of settings, used to determine dependencies between
-            individual tasks and if individual tasks can be skipped or not; each can be an empty
-            list implying the task generates files without any file input, performs cleanup tasks,
-            or only uses files
-          can_run_on_cluster
-            set to true if this process should/can run on a cluster if available
+        Adds a new task. The task does not run until sometime after run() is called. The added task
+        is retruned.
+
+        The main argument 'task' is a Task object or one of the following which can be converted
+        into a task object:
+            * list/tuple - converted into a TaskUsingProcess or TaskUsingCluster
+            * function - converted into a TaskUsingPythonFunction or TaskUsingPythonProcess
+
+        If task is a Task object, there are no additional arguments. Otherwise, the arguments
+        are given to the underlying Task constructor. They must all be given as keyword arguments.
+
+        For list/tuple tasks, a seperate process is started, either locally or on a 'cluster'. The
+        list/tuple is the command line to run with the first argument being the command and the
+        others being the arguments. Unlike Python's subprocess module, the arguments do no need to
+        be strings. If any argument is a tuple or list, it is expanded in-place. Everything else is
+        converted to a string with str. If you want the process to run remotely, set the option
+        'run_on_cluster' to True.
+
+        For function tasks, a callable object is needed. Additionally, that callable can take a set
+        of arguments given by the options 'args' and 'kwargs'. The function is run in a seperate
+        process. This is done using multiprocessing.Process so the callable and the arguments must
+        be picklable (if a function, it must be a top-level function and importable).
+
+        Additional arguments for creation of tasks:
+          inputs=(), outputs=(), settings=()
+            Lists/tuples of files or names of settings, used to determine dependencies between
+            individual tasks and if individual tasks can be skipped or not; each can be empty if the
+            task generates files without any file input, performs cleanup tasks, or only uses files
+            (note: if a string is given directly, it is automatically wrapped in a tuple); the
+            inputs and outputs should be relative file names to the overall working directory - not
+            the task's working directory
           wd
-            the working directory of the task, by default it is the working directory of the whole
-            set of tasks (which defaults to the current working directory)
+            the working directory of the task, relative to the working directory given to all tasks;
+            by default it is the directory of the whole set of tasks (which defaults to the current
+            working directory); the path to the executable (if running a comand line) should always
+            be absolute as the actual current directory when looking for the executable is
+            indeterminate
           stdin, stdout, stderr
-            set the standard input and outputs for the task, can be a file object, file descriptor
-            (positive int) or a filename; stderr can also be subprocess.STDOUT if it will output to
-            stdout; by default they are the same as the this process
+            set the standard input and outputs for the task, must be a filename (relative to the
+            task working directory) or tasks.DEVNULL for no input/output, stderr can also be
+            tasks.STDOUT to redirect it to stdout; by default they are the same as this process
+          stdout_append=False, stderr_append=False
+            if stdout or stderr is a filename and the correspending append value is set to True then
+            the output is appended to the file instead of replacing the file
+          mem=1*MB, cpu=1
+            Sets the expected maximal amount of memory and number of CPUs this task will consume
+            while running. These can effect how many tasks are run simultaneously or can determine
+            which cluster a process is sent to; the memory is an ammount in bytes and the CPU is
+            either a total number of CPUs (if an int) or a fraction of CPUs (if a float, rounded
+            up); if a task is running locally and there is not enough memory, it will never run,
+            however if there not enough cores a local task will still run by itself
         """
-        if can_run_on_cluster:
-            t= TaskUsingCluster(self, cmd, inputs, outputs, settings, wd if wd else self.workingdir)
+        if isinstance(task, Task):
+            if len(kwargs) > 0: raise ValueError('Adding a task object accepts no other arguments')
         else:
-            t = TaskUsingProcess(self, cmd, inputs, outputs, settings, wd if wd else self.workingdir)
-        return self._add(t)
-    def add_func(self, target, args=(), kwargs={}, inputs=(), outputs=(), settings=(), seperate_process=True, wd=None, stdin=None, stdout=None, stderr=None):
-        """
-        Adds a new task that is a Python function call. The task does not run until sometime after
-        run() is called.
-          target
-            a callable object (e.g. a function)
-          args, kwargs
-            the list of arguments and dictionary of keyword arguments passed to the function
-          inputs, outputs, settings
-            lists/tuples of files or names of settings, used to determine dependencies between
-            individual tasks and if individual tasks can be skipped or not; each can be an empty
-            list implying the task generates files without any file input, performs cleanup tasks,
-            or only uses files
-          seperate_process
-            if False then the task is run in the current process, which reduces some overhead but
-            does experience issues with working-directory and the global iterpreter lock
-          wd (only if seperate_process is False)
-            the working directory of the task, by default it is the working directory of the whole
-            set of tasks (which defaults to the current working directory)
-          stdin, stdout, stderr (only if seperate_process is False)
-            set the standard input and outputs for the task, can be a file object, file descriptor
-            (positive int) or a filename; stderr can also be subprocess.STDOUT if it will output to
-            stdout; by default they are the same as the this process
-        """
-        if seperate_process:
-            t = TaskUsingPythonProcess(self, target, args, kwargs, inputs, outputs, settings, wd if wd else self.workingdir)
-        elif wd:
-            raise ValueError('Working-directory cannot be changed except for seperate processes')
-        else:
-            t = TaskUsingPythonFunction(self, target, args, kwargs, inputs, outputs, settings)
-        return self._add(t)
-    def _add(self, task):
+            if kwargs.get('wd') == '.': del kwargs['wd']
+            if callable(task):
+                task = TaskUsingPythonProcess(task, **kwargs)
+            elif isinstance(task, Sequence):
+                task = TaskUsingCluster(task, **kwargs) if kwargs.pop('run_on_cluster', False) else \
+                       TaskUsingProcess(task, **kwargs)
+            else:
+                raise ValueError('%s could not be added because we don\'t know how to make is a task' % task)
+        return self.__add(task)
+    def __add(self, task):
         """
         Actual add function. Checks the task and makes sure the task is valid for this set of tasks.
         Updates the task graph (before and after links for this and other tasks).
         """
         # Processes the input and output information from the task
         # Updates all before and after lists as well
-        if len(task.settings - self.settings.viewkeys()) > 0: raise ValueError('Task had settings that were not originally specified')
         if not task.inputs.isdisjoint(task.outputs): raise ValueError('A task cannot output a file that it needs for input')
-        # A "generator" task is one with inputs, a "cleanup" task is one with outputs
+        # A "generator" task is one with only inputs, a "cleanup" task is one with only outputs
         is_generator, is_cleanup = len(task.inputs) == 0, len(task.outputs) == 0
         new_inputs  = task.inputs  | (self.overall_inputs() - task.outputs) # input files never seen before
         new_outputs = task.outputs | (self.overall_outputs() - task.inputs) # output files never seen before
@@ -524,27 +545,21 @@ class Tasks:
         # Add the task to the graph
         if is_cleanup: self.cleanups.add(task)
         else:
-            for o in task.outputs:
-                if o in self.outputs: raise ValueError('Each file can only be output by one task')
+            if any(o in self.outputs for o in task.outputs): raise ValueError('Each file can only be output by one task')
             for o in task.outputs:
                 self.outputs[o] = task
-                if o in self.inputs:
-                    task.after.update(self.inputs[o])
-                    task._clear_cached_all_after()
-                    for t in self.inputs[o]: t.before.add(task)
+                if o in self.inputs: task.add_after(self.inputs[o])
         if is_generator: self.generators.add(task)
         else:
             for i in task.inputs:
                 self.inputs.setdefault(i, []).append(task)
-                if i in self.outputs:
-                    task.before.add(self.outputs[i])
-                    self.outputs[i].after.add(task)
-                    self.outputs[i]._clear_cached_all_after()
+                if i in self.outputs: self.outputs[i].add_after(task)
+        self.settings |= task.settings
         self.all_tasks[str(task)] = task
         return task
-    def find(self, cmd):
+    def find(self, name):
         """Find a task from the string representation of the task."""
-        return self.all_tasks.get(cmd)
+        return self.all_tasks.get(name)
     def overall_inputs(self):
         """Get the overall inputs required from the entire set of tasks."""
         return self.inputs.viewkeys() - self.outputs.viewkeys() #set(self.inputs.iterkeys()) - set(self.outputs.iterkeys())
@@ -559,70 +574,71 @@ class Tasks:
         for t in overall_inputs: t.all_after()
         for t in self.generators: t.all_after()
 
-    def display_stats(self, signum = 0, frame = None):
+    def display_stats(self, signum_=0, frame_=None):
         """
         Writes to standard out a whole bunch of statistics about the current status of the tasks. Do
         not call this except while the tasks are running. It is automatically registered to the USR1
         signal on POSIX systems. The signum and frame arguments are not used but are required to be
         present for the signal handler.
         """
+        if self.__running is None: raise RuntimeError()
         
-        print '=' * 80
-        
+        print('=' * 80)
+
+        rnng = self.__running
         mem_sys = virtual_memory()
         mem_task = get_mem_used_by_tree()
-        mem_press = self.__mem_pressure
+        mem_press = rnng.mem_pressure
         mem_avail = mem_sys.available - max(mem_press - mem_task, 0)
-        print 'Memory (GB): System: %d / %d    Tasks: %d [%d], Avail: %d' % (
-            int(round(float(mem_sys.total - mem_sys.available) / GB)),
-            int(round(float(mem_sys.total) / GB)),
-            int(round(float(mem_task) / GB)),
-            int(round(float(mem_press) / GB)),
-            int(round(float(mem_avail) / GB)))
+        print('Memory (GB): System: %d / %d    Tasks: %d [%d], Avail: %d' % (
+            int(round(mem_sys.total - mem_sys.available / GB)), int(round(mem_sys.total / GB)),
+            int(round(mem_task / GB)), int(round(mem_press / GB)), int(round(mem_avail / GB))))
 
         task_done  = sum(1 for t in self.all_tasks.itervalues() if t.done)
-        task_next  = len(self.__next)
-        task_run   = len(self.__running)
+        task_next  = len(rnng.next)
+        task_run   = len(rnng.running)
         task_total = len(self.all_tasks)
-        task_press = self.__cpu_pressure
-        task_max = self.max_tasks_at_once
-        print 'Tasks:       Running: %d [%d] / %d, Done: %d / %d, Upcoming: %d' % (task_run, task_press, task_max, task_done, task_total, task_next)
+        task_press = rnng.cpu_pressure
+        task_max   = rnng.cores
+        print('Tasks:       Running: %d [%d] / %d, Done: %d / %d, Upcoming: %d' % (task_run, task_press, task_max, task_done, task_total, task_next))
 
-        print '-' * 80
+        print('-' * 80)
         if task_run == 0:
-            print 'Running: none (probably waiting for more memory)'
+            print('Running: none (probably waiting for more memory)')
         else:
-            print 'Running:'
-            for task in sorted(self.__running):
+            print('Running:')
+            for task in sorted(rnng.running):
                 text = str(task)
                 if len(text) > 60: text = text[:56] + '...' + text[-1]
                 real_mem = '? '
                 timing = ''
                 try:
                     real_mem, t = task.current_usage()
-                    real_mem = str(int(round(float(real_mem) / GB)))
+                    real_mem = str(int(round(real_mem / GB)))
                     t = int(round(t))
                     hours, mins, secs = t // (60*60), t // 60, t % 60
                     timing = ('%d:%02d:%02d' % (hours, mins - hours * 60, secs)) if hours > 0 else ('%d:%02d' % (mins, secs))
-                except: pass
-                mem = str(int(round(float(task.mem_pressure) / GB)))
-                print '%-60s %3sGB [%3s] %7s' % (text, real_mem, mem, timing)
+                except StandardError: pass
+                mem = str(int(round(task.mem(rnng) / GB)))
+                print('%-60s %3sGB [%3s] %7s' % (text, real_mem, mem, timing))
 
-        print '-' * 80
-        if len(self.__next) == 0:
-            print 'Upcoming: none'
+        print('-' * 80)
+        if len(rnng.next) == 0:
+            print('Upcoming: none')
         else:
-            print 'Upcoming:'
-            for _, task in sorted(self.__next):
+            print('Upcoming:')
+            for _, task in sorted(rnng.next):
                 text = str(task)
                 if len(text) > 60: text = text[:56] + '...' + text[-1]
-                mem = str(int(round(float(task.mem_pressure) / GB))) + 'GB' if task.mem_pressure >= 0.5*GB else ''
-                if task.mem_pressure <= mem_avail: mem += '*'
-                cpu = str(task.cpu_pressure) + 'x' if task.cpu_pressure >= 2 else ''
-                if min(task_max, task.cpu_pressure) <= (task_max - task_press): cpu += '*'
-                print '%4d %-60s %5s %4s' % (len(task.all_after()), text, mem, cpu) 
+                task_mem = task.mem(rnng)
+                mem = str(int(round(task_mem / GB))) + 'GB' if task_mem >= 0.5*GB else ''
+                if task_mem <= mem_avail: mem += '*'
+                task_cpu = task.cpu(rnng)
+                cpu = str(task_cpu) + 'x' if task_cpu >= 2 else ''
+                if task_cpu <= (task_max - task_press): cpu += '*'
+                print('%4d %-60s %5s %4s' % (len(task.all_after()), text, mem, cpu))
 
-        print '=' * 80
+        print('=' * 80)
     
     def __run(self, task):
         """
@@ -630,40 +646,40 @@ class Tasks:
         complete and then updates the information about errors, next, last, pressure, and running.
         """
         # Run the task and wait for it to finish
-        try: task._run()
-        except Exception as e: err = e
-        else:                  err = None
+        err = None
+        rnng = self.__running
+        try: task.run(rnng)
+        except StandardError as e: err = e
 
-        with self.__conditional:
-            if not self.__killing:
+        with rnng.conditional:
+            if not rnng.killing:
                 if err:
                     write_error("Error in task: " + str(err))
-                    self.__error = True
+                    rnng.error = True
                 else:
                     task.done = True # done must be marked in a locked region to avoid race conditions
                     # Update subsequent tasks
                     for t in task.after:
                         if not t.done and all(b.done for b in t.before):
-                            heappush(self.__next, (len(self.all_tasks) - len(t.all_after()), t))
-                    self.__last.discard(task)
+                            heappush(rnng.next, (len(self.all_tasks) - len(t.all_after()), t))
+                    rnng.last.discard(task)
                     # Log completion
-                    self.__log.write(strftime(Tasks.__time_format, gmtime(time()+1))+" "+str(task)+" \n") # add one second for slightly more reliability in determing if outputs are legal
+                    rnng.log.write(strftime(time_format, gmtime(time()+1))+" "+str(task)+" \n") # add one second for slightly more reliability in determing if outputs are legal
             # Remove CPU and memory pressures of this task
-            self.__cpu_pressure -= min(self.max_tasks_at_once, task.cpu_pressure)
-            self.__mem_pressure -= task.mem_pressure
+            rnng.cpu_pressure -= task.cpu(rnng)
+            rnng.mem_pressure -= task.mem(rnng)
             # This task is no longer running
-            self.__running.remove(task)
+            rnng.running.remove(task)
             # Notify waiting threads
-            self.__conditional.notify()
+            rnng.conditional.notify()
 
-    def __calc_next(self):
+    def _calc_next(self):
         """
         Calculate the list of tasks that have all prerequisites completed. This also verifies that
         the tasks are truly acyclic (the add() function only does a minimal check). Must be called
-        when __next is not locked in another thread (so either before any threads are started or
-        self.__conditional is acquired).
+        when self.__running.conditional is acquired or before any tasks are started.
 
-        The next list is not returned, but stored in self.__next.
+        The next list returned, and should be stored to self.__running.next.
 
         We recalculate the next list at the very beginning and periodically when going through the
         list of tasks just to make sure the list didn't get corrupted or something.
@@ -681,164 +697,192 @@ class Tasks:
                     first |= t.after
                     changed = True
         num_tasks = len(self.all_tasks)
-        self.__next = [(num_tasks - len(t.all_after()), t) for t in first if all(b.done for b in t.before)]
-        heapify(self.__next)
+        nxt = [(num_tasks - len(t.all_after()), t) for t in first if all(b.done for b in t.before)]
+        heapify(nxt)
+        return nxt
 
     def __next_task(self):
         """
         Get the next task to be run based on priority and memory/CPU usage. Updates the CPU and
         memory pressures assuming that task will be run.
 
-        Must be called while self.__conditional is acquired.
+        Must be called while self.__running.conditional is acquired.
         """
 
-        if len(self.__next) == 0 and len(self.__running) == 0:
+        rnng = self.__running
+        if len(rnng.next) == 0 and len(rnng.running) == 0:
             # Something went wrong... we have nothing running and nothing upcoming... recalulate the next list
-            self.__calc_next()
-        if len(self.__next) == 0 or self.max_tasks_at_once == self.__cpu_pressure: return None
+            rnng.next = self._calc_next()
+        if len(rnng.next) == 0 or rnng.cores == rnng.cpu_pressure: return None
 
         # Get available CPU and memory
-        avail_cpu = self.max_tasks_at_once - self.__cpu_pressure
-        avail_mem = virtual_memory().available - max(self.__mem_pressure - get_mem_used_by_tree(), 0)
+        avail_cpu = rnng.cores - rnng.cpu_pressure
+        avail_mem = virtual_memory().available - max(rnng.mem_pressure - get_mem_used_by_tree(), 0)
 
         # First do a fast check to see if the very next task is doable
         # This should be very fast and will commonly be where the checking ends
-        _, task = self.__next[0]
-        needed_cpu = min(self.max_tasks_at_once, task.cpu_pressure)
-        if needed_cpu <= avail_cpu and task.mem_pressure <= avail_mem:
-            heappop(self.__next)
-            self.__cpu_pressure += needed_cpu
-            self.__mem_pressure += task.mem_pressure
+        _, task = rnng.next[0]
+        needed_cpu, needed_mem = task.cpu(rnng), task.mem(rnng)
+        if needed_cpu <= avail_cpu and needed_mem <= avail_mem:
+            heappop(rnng.next)
+            rnng.cpu_pressure += needed_cpu
+            rnng.mem_pressure += needed_mem
             return task
 
         # Second do a slow check of all upcoming tasks
         # This can be quite slow if the number of upcoming processes is long
         try:
-            _, task, i = min((priority, task, i) for i, (priority, task) in enumerate(self.__next) if min(self.max_tasks_at_once, task.cpu_pressure) <= avail_cpu and task.mem_pressure <= avail_mem)
-            self.__next[i] = self.__next.pop() # O(1)
-            heapify(self.__next) # O(n) [TODO: could be made O(log(N)) with undocumented _siftup/_siftdown]
-            self.__cpu_pressure += min(self.max_tasks_at_once, task.cpu_pressure)
-            self.__mem_pressure += task.mem_pressure
+            _, task, i = min((priority, task, i) for i, (priority, task) in enumerate(rnng.next)
+                             if task.cpu(rnng) <= avail_cpu and task.mem(rnng) <= avail_mem)
+            rnng.next[i] = rnng.next.pop() # O(1)
+            heapify(rnng.next) # O(n) [TODO: could be made O(log(N)) with undocumented _siftup/_siftdown]
+            rnng.cpu_pressure += task.cpu(rnng)
+            rnng.mem_pressure += task.mem(rnng)
             return task
-        except: pass
+        except (ValueError, LookupError): pass
 
-    def run(self, cluster=None, verbose=False):
+        return None
+
+    def run(self, log, rusage_log=None, verbose=False, settings=None, workingdir=None,
+            cores=cpu_count(), cluster=None):
         """
-        Runs all the tasks in a smart order with many at once. Will not return until all tasks are done.
+        Runs all the tasks in a smart order with many at once. Will not return until all tasks are
+        done.
 
-        Giving a cluster (as a Cluster object) means that the cluster is used for any tasks that are added with can_run_on_cluster=True.
-        
-        Setting verbose to True will cause the time and the command to print whenever a new command is about to start.
+          log
+            the filepath to a file where to read/write the log of completed tasks to
+          rusage_log
+            if provided the memory and time usage of every task will be logged to the given file
+            (only provide if on *nix or Windows)
+          verbose
+            if set to True will cause the time and the command to print to stdout whenever a new
+            command is about to start
+          settings
+            the setting names and their current values for this run as a dictionary
+          workingdir
+            the default working directory for all of the tasks, defaults to the current working
+            directory
+          cores
+            the number of local cores to use, defaults to the number of processors available
+          cluster
+            a Cluster object that is used for any tasks that are added with run_on_cluster=True
         """
 
         # Checks
-        if self.__conditional != None: raise ValueError('Tasks already running')
+        if self.__running is not None: raise ValueError('Tasks already running')
         if  len(self.inputs) == 0 and len(self.generators) == 0  and len(self.outputs) == 0 and len(self.cleanups) == 0 : return
         if (len(self.inputs) == 0 and len(self.generators) == 0) or (len(self.outputs) == 0 and len(self.cleanups) == 0): raise ValueError('Invalid set of tasks (likely cyclic)')
         prev_signal = None
 
+        self.__check_acyclic()
+
         try:
-            # Create basic variables and lock
-            self._cluster = cluster
-            self.__error = False
-            self.__killing = False
-            self.__conditional = Condition() # for locking access to Task.done, cpu_pressure, mem_pressure, next, last, log, and error
-            self.__running = set()
-
-            # Setup log
-            done_tasks = self.__process_log() if exists(self.logname) else ()
-            self.__log = open(self.logname, 'w', 0)
-            for k,v in self.settings.iteritems(): self.__log.write("*"+k+"="+str(v)+"\n")
-            # TODO: log overall inputs and outputs
-            for dc in done_tasks:
-                if verbose: print "Skipping " + dc[20:].strip()
-                self.__log.write(dc+"\n")
-            if verbose and len(done_tasks) > 0: print '-' * 80
-            self._rusagelog = open(self.rusage_log, 'a', 1) if self.rusage_log else None
-
-            # Calcualte the set of first and last tasks
-            self.__calc_next() # These are the first tasks
-            last = {self.outputs[f] for f in self.overall_outputs()}
-            last |= self.cleanups
-            if len(last) == 0: raise ValueError('Tasks are cyclic')
-            self.__last = {t for t in last if not t.done}
-
-            # Get the initial pressures
-            self.__cpu_pressure = 0
-            self.__mem_pressure = get_mem_used_by_tree() + 1*MB # assume that the creation of threads and everything will add some extra pressure
+            self.__running = RunningTasks(self, log, rusage_log, verbose, settings, workingdir,
+                                          cores, cluster)
 
             # Set a signal handler
             try:
                 from signal import signal, SIGUSR1 #pylint: disable=no-name-in-module
                 prev_signal = signal(SIGUSR1, self.display_stats)
-            except: pass
+            except (ImportError, ValueError): pass
 
             # Keep running tasks in the tree until we have completed the root (which is self)
-            with self.__conditional:
-                while len(self.__last) != 0:
+            with self.__running.conditional:
+                while len(self.__running.last) != 0:
                     # Get next task (or wait until all tasks or finished or an error is generated)
-                    while len(self.__last) > 0 and not self.__error:
+                    while len(self.__running.last) > 0 and not self.__running.error:
                         task = self.__next_task()
                         if task != None: break
-                        self.__conditional.wait(30) # wait until we have some available [without the timeout CTRL+C does not work and we cannot see if memory is freed up on the system]
-                    if len(self.__last) == 0 or self.__error: break
+                        # Wait until we have some available [without the timeout CTRL+C does not work and we cannot see if memory is freed up on the system]
+                        self.__running.conditional.wait(30)
+                    if len(self.__running.last) == 0 or self.__running.error: break
 
                     # Run it
-                    self.__running.add(task)
+                    self.__running.running.add(task)
                     t = Thread(target=self.__run, args=(task,))
                     t.daemon = True
-                    if verbose: print strftime(Tasks.__time_format) + " Running " + str(task)
+                    if verbose: print(strftime(time_format) + " Running " + str(task))
                     t.start()
                     sleep(0) # make sure it starts
 
                 # There was an error, let running tasks finish
-                if self.__error and len(self.__running) > 0:
+                if self.__running.error and len(self.__running.running) > 0:
                     write_error("Waiting for other tasks to finish running.\nYou can terminate them by doing a CTRL+C.")
-                    while len(self.__running) > 0:
-                        self.__conditional.wait(60) # wait until a task stops [without the timeout CTRL+C does not work]
+                    while len(self.__running.running) > 0:
+                        # Wait until a task stops [without the timeout CTRL+C does not work]
+                        self.__running.conditional.wait(60)
 
         except KeyboardInterrupt:
 
             # Terminate and kill tasks
             write_error("Terminating running tasks")
-            with self.__conditional:
-                self.__killing = True
-                for t in self.__running:
+            with self.__running.conditional:
+                self.__running.killing = True
+                for t in self.__running.running:
                     try: t.terminate()
-                    except: pass
+                    except StandardError: pass
                 secs = 0
-                while len(self.__running) > 0 and secs < 10:
-                    self.__conditional.wait(1)
+                while len(self.__running.running) > 0 and secs < 10:
+                    self.__running.conditional.wait(1)
                     secs += 1
-                for t in self.__running:
+                for t in self.__running.running:
                     try: t.kill()
-                    except: pass
+                    except StandardError: pass
 
         finally:
             # Cleanup
             if prev_signal: signal(SIGUSR1, prev_signal)
-            if hasattr(self, '__log'):
-                self.__log.close()
-                del self.__log
-            if hasattr(self, '_rusagelog'):
-                if self._rusagelog: self._rusagelog.close()
-                del self._rusagelog
-            if hasattr(self, '__cpu_pressure'): del self.__cpu_pressure
-            if hasattr(self, '__mem_pressure'): del self.__mem_pressure
-            if hasattr(self, '__running'): del self.__running
-            if hasattr(self, '__next'): del self.__next
-            self.__conditional = None
-            del self._cluster
-            del self.__error
-            del self.__killing
+            if self.__running is not None: self.__running.close()
 
-    def __process_log(self):
+class RunningTasks(object):
+    def __init__(self, tasks, log, rusage_log, verbose, settings, wd, cores, cluster):
+        # Create basic variables and lock
+        if wd:
+            self._original_wd = getcwd()
+            wd = normpath(wd)
+            chdir(wd)
+        else:
+            wd = getcwd()
+        self.workingdir = wd
+        self.cores = max(int(cores), 1)
+        self.cluster = cluster
+        self.error = False
+        self.killing = False
+        self.conditional = Condition() # for locking access to Task.done, cpu_pressure, mem_pressure, next, last, log, and error
+        self.running = set()
+
+        # Setup log
+        self.settings = settings
+        if len(tasks.settings - settings.viewkeys()) > 0: raise ValueError('Not all settings given values')
+        log = join_norm(wd, log)
+        done_tasks = self.__process_log(tasks.all_tasks, log) if exists(log) else ()
+        self.log = open(log, 'w', 0)
+        for k,v in settings.iteritems(): self.log.write("*"+k+"="+str(v)+"\n")
+        # TODO: log overall inputs and outputs
+        for dc in done_tasks:
+            if verbose: print("Skipping " + dc[20:].strip())
+            self.log.write(dc+"\n")
+        if verbose and len(done_tasks) > 0: print('-' * 80)
+        self.rusagelog = open(join_norm(wd, rusage_log), 'a', 1) if rusage_log else None
+
+        # Calcualte the set of first and last tasks
+        self.next = tasks._calc_next() # These are the first tasks #pylint: disable=protected-access
+        last = {tasks.outputs[f] for f in tasks.overall_outputs()}
+        last |= tasks.cleanups
+        if len(last) == 0: raise ValueError('Tasks are cyclic')
+        self.last = {t for t in last if not t.done}
+
+        # Get the initial pressures
+        self.cpu_pressure = 0
+        self.mem_pressure = get_mem_used_by_tree() + 1*MB # assume that the creation of threads and everything will add some extra pressure
+
+    def __process_log(self, all_tasks, log):
         """
         This looks at the previous log file and determines which commands do not need to be run this
         time through. This checks for changes in the commands themselves, when the commands were run
         relative to their output files, and more.
         """
-        with open(self.logname, 'r+') as log: lines = [line.strip() for line in log]
+        with open(log, 'r+') as log: lines = [line.strip() for line in log]
         lines = [line for line in lines if len(line) != 0]
         #comments = [line for line in lines if line[0] == '#']
         # Note: this will take the last found setting/command with a given and silently drop the others
@@ -851,18 +895,23 @@ class Tasks:
         changed_settings.update(k for k in (self.settings.viewkeys() & settings.viewkeys()) if str(self.settings[k]).strip() != settings[k]) # all previous settings that changed value
 
         # Check Tasks / Files
-        changed = self.all_tasks.viewkeys() - tasks.viewkeys() # new tasks are not done
+        changed = all_tasks.viewkeys() - tasks.viewkeys() # new tasks are not done
         for n,dt in tasks.items(): # not iteritems() since we may remove elements
-            t = self.find(n)
+            t = all_tasks.get(n)
             if not t: del tasks[n] # task no longer exists
             elif not t.settings.isdisjoint(changed_settings): changed.add(n) # settings changed
             else:
-                date_time = timegm(strptime(dt, Tasks.__time_format))
+                date_time = timegm(strptime(dt, time_format))
                 if any((exists(f) and getmtime(f) >= date_time for f in t.inputs)) or any(not exists(f) for f in t.outputs):
                     changed.add(n)
-        for n in changed.copy(): changed.update(str(t) for t in self.find(n).all_after()) # add every task that comes after a changed task
+        for n in changed.copy(): changed.update(str(t) for t in all_tasks.get(n).all_after()) # add every task that comes after a changed task
 
         # Mark as Done
         done_tasks = tasks.viewkeys() - changed
-        for n in done_tasks: self.find(n).done = True
+        for n in done_tasks: all_tasks.get(n).done = True
         return sorted((tasks[n] + " " + n) for n in done_tasks)
+
+    def close(self):
+        if hasattr(self, '_original_wd'): chdir(self._original_wd)
+        if hasattr(self, 'log'): self.log.close()
+        if hasattr(self, 'rusagelog') and self.rusagelog: self.rusagelog.close()
