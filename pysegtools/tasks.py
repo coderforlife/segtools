@@ -592,7 +592,7 @@ class Tasks(object):
         mem_press = rnng.mem_pressure
         mem_avail = mem_sys.available - max(mem_press - mem_task, 0)
         print('Memory (GB): System: %d / %d    Tasks: %d [%d], Avail: %d' % (
-            int(round(mem_sys.total - mem_sys.available / GB)), int(round(mem_sys.total / GB)),
+            int(round((mem_sys.total - mem_sys.available) / GB)), int(round(mem_sys.total / GB)),
             int(round(mem_task / GB)), int(round(mem_press / GB)), int(round(mem_avail / GB))))
 
         task_done  = sum(1 for t in self.all_tasks.itervalues() if t.done)
@@ -624,7 +624,7 @@ class Tasks(object):
                 print('%-60s %3sGB [%3s] %7s' % (text, real_mem, mem, timing))
 
         print('-' * 80)
-        if len(rnng.next) == 0:
+        if task_next == 0:
             print('Upcoming: none')
         else:
             print('Upcoming:')
@@ -649,8 +649,18 @@ class Tasks(object):
         # Run the task and wait for it to finish
         err = None
         rnng = self.__running
-        try: task.run(rnng)
-        except StandardError as e: err = e
+        try:
+            task.run(rnng)
+        except (StandardError, CalledProcessError) as e:
+            err = e
+        except:
+            # Even with critical errors we still need to do some cleanup otherwise the process
+            # will just hang
+            rnng.error = True
+            with rnng.conditional:
+                rnng.running.remove(task)
+                rnng.conditional.notify()
+            raise
 
         with rnng.conditional:
             if not rnng.killing:
@@ -688,14 +698,14 @@ class Tasks(object):
         first = {t for f in self.overall_inputs() for t in self.inputs[f]}
         first |= self.generators
         if len(first) == 0: raise ValueError('Tasks are cyclic')
-        for t in first: t.all_after() # precompute these (while also checking for cyclic-ness)
+        for task in first: task.all_after() # precompute these (while also checking for cyclic-ness)
         changed = True
         while changed:
             changed = False
-            for t in first.copy():
-                if t.done:
-                    first.remove(t)
-                    first |= t.after
+            for task in first.copy():
+                if task.done:
+                    first.remove(task)
+                    first |= {a for a in task.after if all(b.done for b in a.before)}
                     changed = True
         num_tasks = len(self.all_tasks)
         nxt = [(num_tasks - len(t.all_after()), t) for t in first if all(b.done for b in t.before)]
@@ -735,12 +745,15 @@ class Tasks(object):
         try:
             _, task, i = min((priority, task, i) for i, (priority, task) in enumerate(rnng.next)
                              if task.cpu(rnng) <= avail_cpu and task.mem(rnng) <= avail_mem)
-            rnng.next[i] = rnng.next.pop() # O(1)
-            heapify(rnng.next) # O(n) [TODO: could be made O(log(N)) with undocumented _siftup/_siftdown]
+            if i == len(rnng.next) - 1:
+                rnng.next.pop()
+            else:
+                rnng.next[i] = rnng.next.pop() # O(1)
+                heapify(rnng.next) # O(n) [TODO: could be made O(log(N)) with undocumented _siftup/_siftdown]
             rnng.cpu_pressure += task.cpu(rnng)
             rnng.mem_pressure += task.mem(rnng)
             return task
-        except (ValueError, LookupError): pass
+        except (ValueError, LookupError) as ex: pass
 
         return None
 
@@ -775,11 +788,9 @@ class Tasks(object):
         if (len(self.inputs) == 0 and len(self.generators) == 0) or (len(self.outputs) == 0 and len(self.cleanups) == 0): raise ValueError('Invalid set of tasks (likely cyclic)')
         prev_signal = None
 
-        self.__check_acyclic()
-
         try:
-            self.__running = RunningTasks(self, log, rusage_log, verbose, settings, workingdir,
-                                          cores, cluster)
+            self.__running = rnng = RunningTasks(self, log, rusage_log, verbose, settings, workingdir,
+                                                 cores, cluster)
 
             # Set a signal handler
             try:
@@ -788,18 +799,18 @@ class Tasks(object):
             except (ImportError, ValueError): pass
 
             # Keep running tasks in the tree until we have completed the root (which is self)
-            with self.__running.conditional:
-                while len(self.__running.last) != 0:
+            with rnng.conditional:
+                while len(rnng.last) != 0:
                     # Get next task (or wait until all tasks or finished or an error is generated)
-                    while len(self.__running.last) > 0 and not self.__running.error:
+                    while len(rnng.last) > 0 and not rnng.error:
                         task = self.__next_task()
-                        if task != None: break
+                        if task is not None: break
                         # Wait until we have some available [without the timeout CTRL+C does not work and we cannot see if memory is freed up on the system]
-                        self.__running.conditional.wait(30)
-                    if len(self.__running.last) == 0 or self.__running.error: break
+                        rnng.conditional.wait(30)
+                    if len(rnng.last) == 0 or rnng.error: break
 
                     # Run it
-                    self.__running.running.add(task)
+                    rnng.running.add(task)
                     t = Thread(target=self.__run, args=(task,))
                     t.daemon = True
                     if verbose: print(strftime(time_format) + " Running " + str(task))
@@ -807,11 +818,11 @@ class Tasks(object):
                     sleep(0) # make sure it starts
 
                 # There was an error, let running tasks finish
-                if self.__running.error and len(self.__running.running) > 0:
+                if rnng.error and len(rnng.running) > 0:
                     write_error("Waiting for other tasks to finish running.\nYou can terminate them by doing a CTRL+C.")
-                    while len(self.__running.running) > 0:
+                    while len(rnng.running) > 0:
                         # Wait until a task stops [without the timeout CTRL+C does not work]
-                        self.__running.conditional.wait(60)
+                        rnng.conditional.wait(60)
 
         except KeyboardInterrupt:
 
