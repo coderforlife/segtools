@@ -4,7 +4,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 from numbers import Integral
-from itertools import repeat
+from itertools import repeat as irepeat, izip
 from sys import stdin, stdout
 from StringIO import StringIO
 
@@ -209,11 +209,11 @@ def histeq_exact(im, h_dst=256, mask=None, order=6):
     # Since there could be fractional amounts, make sure they are added up and put somewhere
     H_whole = floor(h_dst)
     R = __n_argmax(h_dst-H_whole, int(n-H_whole.sum()))
-    h_dst = H_whole.astype(int64, copy=False)
+    h_dst = H_whole.astype(intp, copy=False)
     h_dst[R] += 1
     del R, H_whole
     T = empty(idx.size, dtype=dt)
-    T[-n:] = repeat(linspace(mn, mx, len(h_dst)), h_dst)
+    T[-n:] = repeat(linspace(mn, mx, len(h_dst), dtype=dt), h_dst)
     del h_dst
     
     ##### Create the equalized image #####
@@ -303,7 +303,7 @@ class HistEqImageStack(UnchangingFilteredImageStack):
             if h_dst is None: h_dst = 256
             if h_src is not None: raise ValueError()
             order = 6
-            if isinstance(exact, Integral):
+            if not isinstance(exact, bool):
                 order = int(exact)
                 if order < 2 or order > 6: raise ValueError()
             self._histeq = lambda im,mk: histeq_exact(im, h_dst, mk, order=order)
@@ -324,13 +324,13 @@ class HistEqImageStack(UnchangingFilteredImageStack):
             mask = ImageStack.as_image_stack(mask)
             if mask.dtype != bool or len(mask) != len(ims): raise ValueError('mask must be of bool/logical type of the same shape as image')
         else:
-            mask = repeat(None)
+            mask = irepeat(None)
         super(HistEqImageStack, self).__init__(ims,
-            [HistEqImageSlice(im, self, z, mk) for z,(im,mk) in enumerate(ims, mask)])
+            [HistEqImageSlice(im, self, z, mk) for z,(im,mk) in enumerate(izip(ims, mask))])
     def _get_trans(self):
         #pylint: disable=protected-access
         if self._T is None:
-            h_src = zeros(256, int64)
+            h_src = zeros(256, intp)
             for slc in self._slices: h_src += imhist(slc._input.data, 256, slc.mask)
             self._T = histeq_trans(h_src, self._h_dst, self._ims.dtype)
         return self._T
@@ -340,7 +340,7 @@ class HistEqImageSlice(UnchangingFilteredImageSlice):
     def __init__(self, image, stack, z, mask):
         super(HistEqImageSlice, self).__init__(image, stack, z)
         self._mask = mask
-        if image.dtype.kind is 'c' or (image.ndim > 2 and image.shape[2] != 1): raise ValueError('only single-channel images can be histogramed')
+        if image.dtype.kind is 'c' or (len(image.shape) > 2 and image.shape[2:] != (1,)): raise ValueError('only single-channel images can be histogramed')
         if mask is not None and mask.shape != image.shape: raise ValueError('mask must be same shape as image')
     @property
     def mask(self): return None if self._mask is None else self._mask.data
@@ -398,13 +398,13 @@ pixels where the mask is True are counted.""")
     def execute(self, stack):
         ims = stack.pop()
         nbins = self.__nbins
-        mask = stack.pop() if self.__use_mask else repeat(None)
+        mask = stack.pop() if self.__use_mask else irepeat(None)
         if self.__per_slice:
-            H = empty((nbins, len(ims)), int64)
-            for i,(im,mk) in enumerate(zip(ims,mask)):
+            H = empty((nbins, len(ims)), intp)
+            for i,(im,mk) in enumerate(izip(ims,mask)):
                 H[:,i] = imhist(im, nbins, mk)
         else:
-            H = zeros(nbins, int64)
+            H = zeros(nbins, intp)
             for im,mk in zip(ims,mask):
                 H += imhist(im, nbins, mk)
         savetxt(stdout if self.__file == '-' else self.__file, H, '%u', '\t')
@@ -475,12 +475,13 @@ Exact Histogram Equalization References:
             ('bins from %s'%('stdin' if self.__hist=='-' else self.__hist)) if isinstance(self.__hist, String) else '%s equal bins'%self.__hist,
             ' using a mask' if self.__use_mask else '',
             ' across entire stack' if self.__src_hist is True else ('' if self.__src_hist is None else (' using source histogram from %s'%('stdin' if self.__src_hist=='-' else self.__src_hist))),
-            (' (order=%d)'%self.__exact) if isinstance(self.__exact, Integral) else '',
+            (' (order=%d)'%self.__exact) if not isinstance(self.__exact, bool) else '',
             )
     def __init__(self, args, stack):
         self.__hist,self.__use_mask,self.__exact,self.__src_hist,order = args.get_all(*HistEqCommand._opts())
         stack.pop()
         if self.__use_mask: stack.pop()
+        stack.push()
         if self.__exact and self.__src_hist != 'slice': raise ValueError('When exact is true, src_hist must be \'slice\'')
         if order != 6:
             if not self.__exact: raise ValueError('When exact is false, order cannot be used')
