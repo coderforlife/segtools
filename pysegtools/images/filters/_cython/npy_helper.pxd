@@ -476,6 +476,7 @@ cdef extern from "numpy/arrayobject.h":
     int PyArray_ITEMSIZE(ndarray) nogil # dtype.itemsize
     PyObject* PyArray_BASE(ndarray) nogil # borrowed ref
     intp PyArray_REFCOUNT(PyObject*) nogil
+    intp PyArray_REFCOUNT(object) nogil
     bint PyArray_CanCastSafely(NPY_TYPES, NPY_TYPES)
 
     ### Array data ###
