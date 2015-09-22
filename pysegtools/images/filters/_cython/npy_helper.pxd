@@ -16,8 +16,10 @@ cdef extern from "Python.h":
     cdef PyObject* to_c "(PyObject*)" (object) # These don't really cast, they just trick Cython
     #cdef object to_py "(PyObject*)" (PyObject*)
 
+    cdef void Py_INCREF(object)
     cdef void Py_INCREF(PyObject*)
     cdef void Py_XINCREF(PyObject*)
+    cdef void Py_DECREF(object)
     cdef void Py_DECREF(PyObject*)
     cdef void Py_XDECREF(PyObject*)
     cdef void Py_CLEAR(PyObject*)
