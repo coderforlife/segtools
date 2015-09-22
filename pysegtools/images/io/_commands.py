@@ -124,7 +124,7 @@ Examples:""")
             if isinstance(args, String):
                 import shlex
                 args = shlex.split(args)
-            args = Args(args)
+            args = Args(['load'] + list(args))
         
         from os.path import abspath, isfile
         if len(args.positional) == 0: raise ValueError("No file given to load")
@@ -292,7 +292,7 @@ Examples:""")
             if isinstance(args, String):
                 import shlex
                 args = shlex.split(args)
-            args = Args(args)
+            args = Args(['save'] + list(args))
 
         from os.path import abspath
         if len(args.positional) == 0: raise ValueError("No file given to save to")
