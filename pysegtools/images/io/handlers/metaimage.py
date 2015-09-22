@@ -1,3 +1,8 @@
+# See http://www.itk.org/Wiki/MetaIO/Documentation for details
+# Offical source:
+#   https://github.com/InsightSoftwareConsortium/ITK/tree/master/Modules/ThirdParty/MetaIO/src/MetaIO/src
+#   see metaImage.cxx, metaObject.cxx, and metaUtils.cxx
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
