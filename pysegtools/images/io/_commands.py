@@ -345,7 +345,7 @@ Examples:""")
             from os.path import dirname
             from ...general.utils import make_dir
             fn = filename(len(ims))
-            if stack_based:
+            if not stack_based:
                 if any(not make_dir(dirname(f)) for f in fn): raise ValueError("Failed to create ouput directories")
             elif not make_dir(dirname(fn)): raise ValueError("Failed to create ouput directory")
             ims = FileImageStack.create(fn, ims, writeonly, handler, **kwargs)
