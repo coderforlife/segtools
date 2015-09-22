@@ -853,7 +853,7 @@ space-seperated list of values. The following header fields are treated speciall
         return read_mha_data(self._filename, self.__fields, self.__headersize)
     def _set_data(self, im):
         if im.dtype != self.dtype or im.shape != self.shape: raise ValueError()
-        self.__headersize = save_mha_data(im, self._filename, self.__fields)
+        self.__headersize = save_mha_data(im.data, self._filename, self.__fields)
     def _set_filename(self, filename):
         # TODO: if the data file name was derived from the file name, change it here too
         self._rename(filename)
