@@ -166,7 +166,7 @@ Supported image types:""")
             self._file = None
 
     @property
-    def filenames(self): return self._header._filename
+    def filenames(self): return (self._header._filename,)
 
     def _get_off(self, z): return self._off+z*self._slc_bytes
 
