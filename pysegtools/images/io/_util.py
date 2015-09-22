@@ -245,9 +245,11 @@ def __get_name_from_fd(fd):
 
     In any case, this will return None in many cases when the path cannot be determined.
     """
+    # this function is full of OS-specific imports/members
+    #pylint: disable=no-member, import-error
     if os.name == 'nt':
         from ctypes import Structure, windll, byref, sizeof
-        from ctypes.wintypes import HANDLE, INT, DWORD, BOOL, WCHAR
+        from ctypes.wintypes import HANDLE, INT, LPVOID, DWORD, BOOL, WCHAR
         from msvcrt import get_osfhandle
 
         FileNameInfo = 2

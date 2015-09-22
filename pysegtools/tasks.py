@@ -753,7 +753,7 @@ class Tasks(object):
             rnng.cpu_pressure += task.cpu(rnng)
             rnng.mem_pressure += task.mem(rnng)
             return task
-        except (ValueError, LookupError) as ex: pass
+        except (ValueError, LookupError): pass
 
         return None
 
