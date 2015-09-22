@@ -191,7 +191,7 @@ class Task(object):
     @staticmethod
     def __get_std(wd, std, is_stderr=False):
         if std is None or std is DEVNULL or (std is STDOUT and is_stderr): return std
-        if isinstance(std, String): return join_norm(wd, std)
+        if isinstance(std, String): return normpath(std) if wd is None else join_norm(wd, std)
         raise TypeError('standard stream must be either a filename, None, or subprocess.STDOUT (stderr only)')
     def __eq__(self, other): return type(self) == type(other) and self.name == other.name #pylint: disable=unidiomatic-typecheck
     def __lt__(self, other): return type(self) <  type(other) or  type(self) == type(other) and self.name < other.name #pylint: disable=unidiomatic-typecheck
