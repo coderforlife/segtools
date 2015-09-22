@@ -505,7 +505,8 @@ class Tasks(object):
             tasks.STDOUT to redirect it to stdout; by default they are the same as this process
           stdout_append=False, stderr_append=False
             if stdout or stderr is a filename and the correspending append value is set to True then
-            the output is appended to the file instead of replacing the file
+            the output is appended to the file instead of replacing the file (relative to the task's
+            working directory)
           mem=1*MB, cpu=1
             Sets the expected maximal amount of memory and number of CPUs this task will consume
             while running. These can effect how many tasks are run simultaneously or can determine
