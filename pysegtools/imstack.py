@@ -174,9 +174,9 @@ class Args(object):
         if len(self._args)+len(self._kwargs) > len(opts): raise ValueError('Too many arguments given')
         names = [o.name for o in opts]
         bad = self._kwargs.viewkeys() - set(names)
-        if len(bad) > 0: raise ValueError('Invalid named argument "%s"', bad[0])
+        if len(bad) > 0: raise ValueError('Invalid named argument "%s"', next(iter(bad)))
         bad = self._kwargs.viewkeys() & set(names[:len(self._args)])
-        if len(bad) > 0: raise ValueError('Argument "%s" was given both as positional and named' % bad[0])
+        if len(bad) > 0: raise ValueError('Argument "%s" was given both as positional and named' % next(iter(bad)))
         return (self.__get((i,o.name))+(o,) for i,o in enumerate(opts))
     def get_all(self, *opts):
         """
