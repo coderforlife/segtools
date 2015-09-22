@@ -6,9 +6,9 @@ dirname = os.path.dirname(__file__)
 compiler_name = get_default_compiler() # TODO: this isn't the compiler that will necessarily be used, but is a good guess...
 compiler_opt = {
         'msvc'    : ['/D_SCL_SECURE_NO_WARNINGS','/EHsc','/O2','/DNPY_NO_DEPRECATED_API=7','/bigobj'],
-        'unix'    : ['-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'], # gcc/clang (whatever is system default)
-        'mingw32' : ['-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'],
-        'cygwin'  : ['-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'],
+        'unix'    : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'], # gcc/clang (whatever is system default)
+        'mingw32' : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'],
+        'cygwin'  : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'],
     }
 
 def make_ext(modname, pyxfilename):

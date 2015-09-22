@@ -472,7 +472,7 @@ cdef extern from "numpy/arrayobject.h":
     dtype PyArray_DTYPE(ndarray) nogil # borrowed ref # == PyArray_DESCR
     PyArray_Descr* PyArray_DESCR(ndarray) nogil # borrowed ref # same as above, but C object
     bint PyArray_EquivArrTypes(ndarray,ndarray)
-    NPY_TYPES PyArray_TYPE(ndarray) nogil # dtype.num
+    cdef NPY_TYPES PyArray_TYPE "(NPY_TYPES)PyArray_TYPE" (ndarray) nogil # dtype.num with a cast
     int PyArray_ITEMSIZE(ndarray) nogil # dtype.itemsize
     PyObject* PyArray_BASE(ndarray) nogil # borrowed ref
     intp PyArray_REFCOUNT(PyObject*) nogil
