@@ -1316,6 +1316,7 @@ class _MAT73Entry(_MATEntry):
             h['chunks'] = data.chunks
         return h
 
+    @property
     def data(self):
         entry, shape, dt = self._entry, self._shape, self._dtype
         if self._is_sparse:
