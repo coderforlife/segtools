@@ -56,8 +56,8 @@ def delayed(load, base=object):
     Create a delay-loaded object. Upon being used for the first time, the function `load` is called
     and this object will then act like the returned value.
 
-    The `base` can be set to the know return value type (or a super-class of it) to make this object
-    look more like the returned value before the value is loaded.
+    The `base` can be set to the known return value type (or a super-class of it) to make this
+    object look more like the returned value before the value is loaded.
     """
     if not callable(load): raise TypeError('load must be callable')
     if not isinstance(base, type): raise TypeError('base must be a type')
