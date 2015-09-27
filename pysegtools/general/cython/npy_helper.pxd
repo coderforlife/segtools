@@ -29,6 +29,9 @@ cdef extern from "Python.h":
     cdef PyObject* PyObject_GetAttrString(PyObject*, const char *attr_name) # except NULL - we check ourselves # new reference
     object PyObject_RichCompare(object, object, PyCompOp)
 
+    ##### CObject #####
+    object PyCObject_FromVoidPtr(void* cobj, void (*destr)(void *))
+
     ##### Types #####
     #ctypedef PyObject*(*unaryfunc)(PyObject*)
     ctypedef PyObject*(*binaryfunc)(PyObject*,PyObject*)
@@ -132,7 +135,7 @@ cdef extern from "Python.h":
         PyObject*     m_self
         PyObject*     m_module
     #ctypedef class types.FunctionType [object PyCFunctionObject]:
-    #	pass
+    #    pass
     #ctypedef FunctionType function
 
     ##### Exceptions #####
@@ -179,7 +182,7 @@ cdef extern from *:
 ############### Helpers ###############
 ctypedef Py_intptr_t intp
 ctypedef Py_uintptr_t uintp
-cdef extern from "_cython/npy_helper.h":
+cdef extern from "npy_helper.h":
     # Makes Numpy a bit nicer to use from Cython
     # The half and complex classes below come from this header
     pass
@@ -222,6 +225,10 @@ cdef extern from "numpy/arrayobject.h":
     ctypedef long double  npy_longdouble
     ctypedef fused npy_floating:
         npy_half
+        npy_float
+        npy_double
+        npy_longdouble
+    ctypedef fused npy_floating_basic: # does not include npy_half which is a bit annoying
         npy_float
         npy_double
         npy_longdouble
@@ -300,6 +307,25 @@ cdef extern from "numpy/arrayobject.h":
         npy_cfloat
         npy_cdouble
         npy_clongdouble
+    ctypedef fused npy_number_basic: # does not include npy_half or complex types which are a bit annoying
+        ##npy_integer
+        #npy_signedinteger
+        npy_byte
+        npy_short
+        npy_int
+        npy_long
+        npy_longlong
+        #npy_unsignedinteger
+        npy_ubyte
+        npy_ushort
+        npy_uint
+        npy_ulong
+        npy_ulonglong
+        ##npy_inexact
+        #npy_floating_basic
+        npy_float
+        npy_double
+        npy_longdouble
     # Other types and their combinations
     ctypedef void* npy_void
     ctypedef object npy_object
@@ -456,11 +482,14 @@ cdef extern from "numpy/arrayobject.h":
     # Technically everything that returns ndarray actually returns object but this works faster
     void import_array()
     intp PyArray_MultiplyList(intp* seq, int n)
+    PyArray_Descr* PyArray_DescrFromType(NPY_TYPES)
     
     ### Basic array properties ###
     # Assume a valid array, no errors
     bint PyArray_Check(object)
     int PyArray_FLAGS(ndarray) nogil
+    bint PyArray_ISCARRAY(ndarray) nogil
+    bint PyArray_ISFARRAY(ndarray) nogil
     int PyArray_NDIM(ndarray) nogil
     intp* PyArray_SHAPE(ndarray) nogil # == PyArray_DIMS
     intp PyArray_DIM(ndarray,int) nogil
@@ -492,12 +521,13 @@ cdef extern from "numpy/arrayobject.h":
     ndarray PyArray_Newshape(ndarray self, PyArray_Dims*, NPY_ORDER) # in-place if possible
     ndarray PyArray_Ravel(ndarray, NPY_ORDER) # in-place if possible
     #ndarray PyArray_Flatten(ndarray, NPY_ORDER) # not in-place
-    #ndarray PyArray_Transpose(ndarray, PyArray_Dims* permute) # in-place
+    ndarray PyArray_Transpose(ndarray, PyArray_Dims* permute) # in-place
     #ndarray PyArray_CopyAndTranspose(ndarray)
     
     ### Array creation ###
     ndarray PyArray_NewFromDescr(PyTypeObject*, PyArray_Descr*, int ndim, intp* dims, intp* strides, void* data, int flags, PyObject*) # steals dtype reference
-    int PyArray_SetBaseObject(ndarray, object) except -1
+    ndarray PyArray_SimpleNewFromData(int ndims, intp* dims, NPY_TYPES, void* data)
+    int PyArray_SetBaseObject(ndarray, object) except -1 # steals reference
     ndarray PyArray_CheckFromAny(object, PyArray_Descr*, int min_depth, int max_depth, int flags, PyObject*) # steals dtype reference
     ndarray PyArray_ContiguousFromAny(object, NPY_TYPES, int min_depth, int max_depth)
     ndarray PyArray_EMPTY(int ndims, intp* dims, NPY_TYPES, bint fortran)
@@ -521,6 +551,7 @@ cdef extern from "numpy/arrayobject.h":
     
     ### Calculations ###
     ndarray PyArray_Any(ndarray, int axis, ndarray out)
+    ndarray PyArray_MatrixProduct(object, object)
     dict PyArray_GetNumericOps()
     intp PyArray_CountNonzero(ndarray) except -1
 

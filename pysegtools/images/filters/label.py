@@ -28,7 +28,7 @@ __all__ = ['number','label','relabel','shrink_integer',
 # created can be moved between different "identical" systems. If the directory containing _label.pyx
 # is writable, it will be placed into that directory. If the directory is not writable, it will be
 # placed somewhere in ~/.pyxbld. It is aways checked for in those places before re-compiling.
-from . import _cython; _cython.install()
+from ...general import cython; cython.install()
 from . import _label
 def __squeeze_last(a): return a.squeeze(-1) if a.shape[-1] == 1 else a
 def _number2(a):

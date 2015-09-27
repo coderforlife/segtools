@@ -5,7 +5,10 @@
 # Cython helper module for label filters.
 # These are not required but are much faster then the pure-Python ones.
 
-include "_cython/npy_helper.pxi"
+from __future__ import division
+
+include "npy_helper.pxi"
+include "fused.pxi"
 
 __all__ = ['unique_fast', 'unique_rows_fast',
            'unique_merge', 'unique_rows_merge',
@@ -25,7 +28,7 @@ with_cython = True
 # file. For the most part only integral, floating-point, and complex are optimized. All others will
 # fall back to some other code.
 
-cdef extern from "_cython/label.h" nogil:
+cdef extern from "_label.h" nogil:
     pass
 
 cdef ndarray __unique_sorted(ndarray a):

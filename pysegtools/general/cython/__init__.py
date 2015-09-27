@@ -4,11 +4,16 @@ differences from pyximport though, including that PYD/SO files are always used i
 file (unless they are older) even if not running 'inplace'. This allows one to distribute the
 compiled code in some situations where inplace cannot be used. Also, it allows falling-back to pure
 Python code if loading the PYX fails (e.g. if Cython is not installed). The fallback document has
-the extension just has the extension .py. The final new feature is that the module is actually
+the same name with the extension .py. The final new feature is that the module is actually
 delay-loaded. This means that until an attribute is requested, the module is not actually loaded.
 
 Besides adding the above features, it lacks a few features the pyximport has. These include support
 for reloading modules and loading packages. These were removed for simplicity.
+
+This sets a few different defaults than the pyximport module. It sets a few compiler flags and
+options (language is C++, compile args that optimize code and disable NumPy deprecated API, and some
+other tweaks), and adds the many include directories (NumPy include directory, this module's
+directory, and the PYX file's directory).
 
 Note: internally this uses pyximport to build the Cython modules. If it is missing, the fallback
 code will always be used.
@@ -20,6 +25,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import sys, imp, types, shutil, os.path, warnings
+from distutils.ccompiler import get_default_compiler
 
 try:
     import pyximport
@@ -27,9 +33,23 @@ try:
 except ImportError:
     _have_pyximport = False
 
+try:
+    import numpy
+    _have_numpy = True
+except ImportError:
+    _have_numpy = False
+
 so_suffix = next((s for s,_,t in imp.get_suffixes() if t == imp.C_EXTENSION), '.so')
 cy_suffix = '.pyx'
 fb_suffix = '.py'
+
+includes = (os.path.dirname(__file__), numpy.get_include()) if _have_numpy else (os.path.dirname(__file__),)
+compiler_opts = {
+        'msvc'    : ['/D_SCL_SECURE_NO_WARNINGS','/EHsc','/O2','/DNPY_NO_DEPRECATED_API=7','/bigobj'],
+        'unix'    : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'], # gcc/clang (whatever is system default)
+        'mingw32' : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'],
+        'cygwin'  : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'],
+    }.get(get_default_compiler(), []) # TODO: this isn't the compiler that will necessarily be used, but is a good guess...
 
 warnings.filterwarnings('ignore', # stupid warning because Cython is confused...
                         'numpy[.]ndarray size changed, may indicate binary incompatibility',
@@ -63,7 +83,10 @@ def load_module(fullname, path, build_dir):
     
     if os.path.isfile(cy_file) and _have_pyximport:
         try:
+            # Wrap the 'get_distutils_extension' to apply our defaults
+            pyximport.build_module.__globals__['get_distutils_extension'] = __get_distutils_extension_wrap
             new_so_file = pyximport.build_module(fullname, cy_file, build_dir)
+            pyximport.build_module.__globals__['get_distutils_extension'] = pyximport.get_distutils_extension
             try:
                 shutil.copy2(new_so_file, so_file)
                 new_so_file = so_file
@@ -79,6 +102,16 @@ def load_module(fullname, path, build_dir):
         except ImportError: pass
     
     raise ImportError("Unable to load module %s from %s, %s, or %s" % (fullname, so_file, cy_file, fb_file))
+
+def __get_distutils_extension_wrap(modname, pyxfilename, *args):
+    #pylint: disable=protected-access
+    extension_mod,setup_args = pyximport.get_distutils_extension(modname, pyxfilename, *args)
+    extension_mod.include_dirs.extend(includes)
+    extension_mod.include_dirs.append(os.path.dirname(pyxfilename))
+    if extension_mod.language is None:
+        extension_mod.language = "c++"
+    extension_mod.extra_compile_args = compiler_opts + extension_mod.extra_compile_args
+    return extension_mod,setup_args
 
 def _load_mod(mod, path, build_dir):
     fullname = mod.__name__
@@ -117,10 +150,13 @@ class CythonFallbackLoader(object):
         return mod
 
 def install(build_dir=None, build_in_temp=True, setup_args=None):
+    #pylint: disable=protected-access
     if not build_dir:
         build_dir = os.path.join(os.path.expanduser('~'), '.pyxbld')
     build_dir = str(build_dir)
     if _have_pyximport:
+        # We have to install and uninstall the pyximporter so we can set the given options
         pyximport.uninstall(*pyximport.install(build_dir=build_dir, build_in_temp=build_in_temp, setup_args=setup_args))
     if not any(isinstance(i, CythonFallbackImporter) for i in sys.meta_path):
+        # Only install if we aren't already installed
         sys.meta_path.append(CythonFallbackImporter(build_dir))
