@@ -266,7 +266,7 @@ def __decompress_gzip(inpt):
         off += 2
     isize = _uint32.unpack_from(inpt, -4)[0]
     out = zlib.decompress(inpt[off:-8], -zlib.MAX_WBITS, isize)
-    if _uint32.unpack_from(inpt, -8)[0] != zlib.crc32(out): raise IOError("CRC32 check failed")
+    if _uint32.unpack_from(inpt, -8)[0] != (zlib.crc32(out) & 0xffff): raise IOError("CRC32 check failed")
     if isize != (len(out) & 0xffffffff): raise IOError("Incorrect length of data produced")
     return out
 def __decompress_zlib(inpt):
@@ -277,7 +277,7 @@ def __decompress_zlib(inpt):
     if method != 8 or wsize > zlib.MAX_WBITS or fdict: raise IOError('Unknown compression method')
     if header % 31 != 0: raise IOError('Header corrupted')
     out = zlib.decompress(inpt[2:-4], -wsize)
-    if _uint32_be.unpack_from(inpt, -4)[0] != zlib.adler32(out): raise IOError("Adler32 check failed")
+    if _uint32_be.unpack_from(inpt, -4)[0] != (zlib.adler32(out) & 0xffffffff): raise IOError("Adler32 check failed")
     return out
 
 def guess_file_compression_method(f):
