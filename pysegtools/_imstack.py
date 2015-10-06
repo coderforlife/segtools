@@ -6,7 +6,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 from .imstack import Command, CommandEasy, Opt, Help
-from .images._util import itr2str
+from .general import itr2str
 
 class SelectCommand(Command):
     @classmethod

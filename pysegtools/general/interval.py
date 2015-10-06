@@ -1,7 +1,7 @@
 # See https://pypi.python.org/pypi/interval - LGPL
 # This has been modified for styling and Python 3 transitions
 
-# Some changes that are still need to make it completely Python 3
+# Some changes that are still needed to make it completely Python 3
 # are the __cmp__ magic methods
 
 """Provides the Interval and IntervalSet classes

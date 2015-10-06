@@ -15,10 +15,9 @@ from numpy import lexsort, histogram, spacing, count_nonzero
 
 from ._stack import UnchangingFilteredImageStack, UnchangingFilteredImageSlice
 from .._stack import ImageStack
-from ...imstack import Command, Opt, Help
 from ..types import get_im_min_max, get_dtype_min_max, get_dtype_max, get_dtype_min, check_image_single_channel
-from .._util import String
-from ...general.delayed import delayed
+from ...imstack import Command, Opt, Help
+from ...general import String, delayed
 
 __all__ = ['imhist', 'histeq_trans', 'histeq_apply', 'histeq', 'histeq_exact']
 
@@ -174,9 +173,8 @@ def histeq_exact(im, h_dst=256, mask=None, order=6):
     to different images.
     
     This method takes more time and memory than the approximate ("standard") version. This has been
-    optimized for 8-bit images which take about twice the memory and ten times the time. While this
-    seems poor, its better than for other image types which can take seven times the memory and 40x
-    the time.
+    optimized for 8-bit images which take about twice the memory and 10x the time. While this may
+    seem poor, it's better than for other image types which can take 7x the memory and 40x the time.
 
     REFERENCES:
       1. Coltuc D. and Bolon P., 1999, "Strict ordering on discrete images and applications"

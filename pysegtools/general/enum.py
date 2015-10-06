@@ -19,7 +19,7 @@ String = str if sys.version_info[0] == 3 else basestring
 
 from .datawrapper import ReadOnlyDictionaryWrapper
 
-__all__ = ['Enum', 'IntEnum', 'unique', 'Flags', 'IntFlags']
+__all__ = ['Enum', 'IntEnum', 'unique_enum_values', 'Flags', 'IntFlags']
 
 class DynamicClassAttribute(object):
     """Route attribute access on a class to __getattr__.
@@ -476,7 +476,7 @@ class IntEnum(int, Enum):
     """Enum where members are also (and must be) ints"""
 
 
-def unique(enumeration):
+def unique_enum_values(enumeration):
     """Class decorator for enumerations ensuring unique member values."""
     duplicates = []
     for name, member in enumeration.__members__.items():

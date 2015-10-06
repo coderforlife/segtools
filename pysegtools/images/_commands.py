@@ -10,8 +10,8 @@ from __future__ import unicode_literals
 
 from itertools import chain, izip_longest, islice
 
+from ..general import itr2str
 from ._stack import ImageStack, ImageSlice, ImageStackArray, ImageStackCollection, Homogeneous
-from ._util import itr2str
 from ..imstack import Command, Help, Opt
 
 class ZCommand(Command):

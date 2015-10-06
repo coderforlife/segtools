@@ -8,10 +8,10 @@ from __future__ import unicode_literals
 import re
 numeric_pattern = re.compile("(^[^#]*)(#+)([^#]*[.][^#]+)$")
 
-from ...imstack import Command, Opt, Args, Help
 from ._stack import FileImageStack
 from ._single import FileImageSource
-from .._util import re_search, String
+from ...imstack import Command, Opt, Args, Help
+from ...general import re_search, String
 
 @staticmethod
 def cast_num_pattern(s):

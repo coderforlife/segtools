@@ -16,8 +16,7 @@ from ..types import check_image
 from .._stack import ImageStack, Homogeneous
 from ..colors import get_color, is_color
 from ...imstack import CommandEasy, Opt
-from ...general.datawrapper import DelayLoadedList
-from ...general.enum import Enum
+from ...general import DelayLoadedList, Enum
 
 __all__ = ['get_bg_color','get_bg_padding','get_bg_mask','fill','fill_padding','crop','pad']
 

@@ -27,7 +27,7 @@ out_width = max(get_terminal_width()-1, 24)
 fill = TextWrapper(width=out_width).fill
 stack_status_fill = TextWrapper(width=out_width, subsequent_indent='  ').fill
 
-from .general.enum import Enum
+from .general import Enum
 class Verbosity(int, Enum):
     No = 0
     Min = 1

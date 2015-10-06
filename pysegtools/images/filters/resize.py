@@ -8,9 +8,9 @@ from numpy import mean, median, empty
 from numpy.lib.stride_tricks import as_strided
 
 from ..types import check_image
-from .._util import splitstr
 from ._stack import FilteredImageStack, FilteredImageSlice
 from ...imstack import CommandEasy, Opt
+from ...general import splitstr
 
 __all__ = ['im_bin']
 

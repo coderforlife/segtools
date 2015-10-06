@@ -10,12 +10,12 @@ from collections import Sequence
 
 from numpy import empty, zeros, subtract, add, dtype, promote_types
 
-from .._util import sys_endian
 from ..types import check_image, create_im_dtype, im_dtype_desc
 from ..types import get_dtype_endian, get_im_dtype_and_nchan, get_im_min_max, get_dtype_min_max
 from ._stack import FilteredImageStack, FilteredImageSlice
 from .._stack import Homogeneous
 from ...imstack import CommandEasy, Opt
+from ...general import sys_endian
 
 __all__ = ['threshold', 'raw_convert', 'convert_byte_order', 'scale']
 

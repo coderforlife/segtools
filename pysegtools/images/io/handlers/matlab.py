@@ -20,14 +20,13 @@ from numpy import (complex64, complex128, float32, float64,
 import scipy.sparse
 
 from .._util import imread_raw, imsave_raw, get_file_size, copy_data, file_remove_ranges, FileInsertIO
-from ..._util import String, Byte, prod, sys_endian, sys_64bit, _bool
 from ...types import create_im_dtype, get_dtype_endian, is_image_desc, im_dtype_desc
 from ...types import im_complexify_dtype, im_decomplexify, im_decomplexify_dtype
 from ...source import ImageSource
 from ..._stack import ImageStack
 from .._single import FileImageSource
 from .._stack import FileImageStack, HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader, FixedField
-from ....general.gzip import GzipFile
+from ....general import GzipFile, String, Byte, prod, sys_endian, sys_64bit, _bool
 
 try:
     from h5py import File as HDF5File
@@ -35,7 +34,7 @@ try:
 except ImportError:
     h5py_avail = False
 
-__all__ = ['get_mat_version', 'MAT', 'MATStack']
+__all__ = ['get_mat_version', 'openmat', 'createmat', 'MAT', 'MATStack']
 
 __matlab_keywords = frozenset((
     'break', 'case', 'catch', 'classdef', 'continue', 'else', 'elseif', 'end', 'for', 'function'
@@ -1365,15 +1364,25 @@ _MAT_create = {
     7.3: _MAT73File.create if h5py_avail else None
     }
 
-class MAT(FileImageSource):
-    @classmethod
-    def _open(cls, filename, mode, no_vers_0=False):
-        with open(filename, 'rb') as f: vers = get_mat_version(f)
-        if vers is False: raise ValueError('Unknown MATLAB file version')
-        if vers == 2 and not h5py_avail: raise ValueError('MATLAB v7.3 file requires h5py library')
-        if vers == 0 and no_vers_0: raise ValueError("MAT v4 files do not support image stacks")
-        return _MAT_open[vers](filename, mode)
+def openmat(filename, mode='r+', no_vers_0=False):
+    if mode not in ('r', 'r+'): raise ValueError('Mode for opening MATLAB file must be r or r+')
+    with open(filename, 'rb') as f: vers = get_mat_version(f)
+    if vers is False: raise ValueError('Unknown MATLAB file version')
+    if vers == 2 and not h5py_avail: raise ValueError('MATLAB v7.3 file requires h5py library')
+    if vers == 0 and no_vers_0: raise ValueError("MAT v4 files do not support image stacks")
+    return _MAT_open[vers](filename, mode)
 
+def createmat(filename, mode='w+', version=None):
+    if mode not in ('w', 'w+'): raise ValueError('Mode for createing MATLAB file must be w or w+')
+    if version is None: version = 7.3 if h5py_avail else 7
+    elif isinstance(version, String) and len(version) > 0 and version[0] == 'v': version = version[1:]
+    try: version = float(version)
+    except ValueError: raise ValueError('Invalid version, must be one of 4, 6, 7, 7.3')
+    if version not in (4, 6, 7, 7.3): raise ValueError('Invalid version, must be one of 4, 6, 7, 7.3')
+    if version == 7.3 and not h5py_avail: raise ValueError('MATLAB v7.3 file requires h5py library')
+    return _MAT_create[version](filename, mode)
+
+class MAT(FileImageSource):
     @classmethod
     def _uniq_name(cls, mat, prefix='image_'):
         #pylint: disable=protected-access
@@ -1387,7 +1396,7 @@ class MAT(FileImageSource):
     @classmethod
     def open(cls, filename, readonly=False, name=None, **options):
         if len(options) > 0: raise ValueError('Invalid option given')
-        mat = MAT._open(filename, 'r' if readonly else 'r+')
+        mat = openmat(filename, 'r' if readonly else 'r+')
         try:
             if name is None:
                 e = next((e for e in mat if e.is_image_slice), None)
@@ -1411,15 +1420,12 @@ class MAT(FileImageSource):
         if _bool(append):
             if version is not None: raise ValueError('Cannot use options version and append together')
             if os.path.isfile(filename):
-                mat = MAT._open(filename, 'r+')
+                mat = openmat(filename, 'r+')
                 try: e = mat.append(MAT._uniq_name(mat), im.data) if name is None else mat.set(name, im.data)
                 except: mat.close(); raise
                 return MAT(mat, e, False, False)
             # else we let it open normally, file doesn't exist so no appending
-        version = MAT._parse_vers(version)
-        if version is False: raise ValueError('Invalid version option, must be one of 4, 6, 7, 7.3')
-        if version == 7.3 and not h5py_avail: raise ValueError('MATLAB v7.3 file requires h5py library')
-        mat = _MAT_create[version](filename, 'w' if writeonly else 'w+')
+        mat = createmat(filename, 'w' if writeonly else 'w+', version)
         try: e = mat.append(name or 'image', im.data)
         except: mat.close(); raise
         return MAT(mat, e, False, False)
@@ -1538,7 +1544,7 @@ class MATStack(HomogeneousFileImageStack):
                 pattern = MATStack.__parse_pattern(names)
                 if _is_invalid_matlab_name(pattern%0): raise ValueError('Invalid names for MAT file entries')
             elif any(_is_invalid_matlab_name(n) for n in names): raise ValueError('Invalid names for MAT file entries')
-        mat = MAT._open(filename, 'r' if readonly else 'r+', name is not None or mode == 'stack')
+        mat = openmat(filename, 'r' if readonly else 'r+', name is not None or mode == 'stack')
         try:
             if name is not None:
                 try: entry = mat[name]
@@ -1602,7 +1608,7 @@ class MATStack(HomogeneousFileImageStack):
         if _bool(append):
             if version is not None: raise ValueError('Cannot use options version and append together')
             if os.path.isfile(filename):
-                mat = MAT._open(filename, 'r+', name is not None or mode == 'stack')
+                mat = openmat(filename, 'r+', name is not None or mode == 'stack')
                 try:
                     if mode == 'stack':
                         entry = mat.append(MAT._uniq_name(mat, 'stack_'), stack) if name is None else mat.set(name, stack)
@@ -1612,10 +1618,7 @@ class MATStack(HomogeneousFileImageStack):
                         return MATSlices(mat, entries, names, False)
                 except: mat.close(); raise
             # else we let it open normally, file doesn't exist so no appending
-        version = MAT._parse_vers(version)
-        if version is False: raise ValueError('Invalid version option, must be one of 4, 6, 7, 7.3')
-        if version == 7.3 and not h5py_avail: raise ValueError('MATLAB v7.3 file requires h5py library')
-        mat = _MAT_create[version](filename, 'w' if writeonly else 'w+')
+        mat = createmat(filename, 'w' if writeonly else 'w+', version)
         try:
             if mode == 'stack':
                 entry = mat.append(name or 'stack', stack)

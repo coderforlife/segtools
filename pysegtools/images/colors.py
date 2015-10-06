@@ -9,8 +9,8 @@ from numbers import Integral, Real
 from collections import Iterable
 from numpy import array, bool_
 
+from ..general import String
 from .types import get_im_dtype_and_nchan, get_im_min_max
-from ._util import String
 from ..imstack import Help
 
 __all__ = ['get_color','is_color']

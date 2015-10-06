@@ -84,6 +84,7 @@ def load_module(fullname, path, build_dir):
     if os.path.isfile(cy_file) and _have_pyximport:
         try:
             # Wrap the 'get_distutils_extension' to apply our defaults
+            #pylint: disable=no-member
             pyximport.build_module.__globals__['get_distutils_extension'] = __get_distutils_extension_wrap
             new_so_file = pyximport.build_module(fullname, cy_file, build_dir)
             pyximport.build_module.__globals__['get_distutils_extension'] = pyximport.get_distutils_extension

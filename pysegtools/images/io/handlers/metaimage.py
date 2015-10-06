@@ -14,12 +14,10 @@ import os.path
 
 from numpy import empty
 
-from ....general.enum import Enum
-from ....general.delayed import delayed
-from ...types import create_im_dtype, get_dtype_endian, im_decomplexify, im_decomplexify_dtype
-from ..._util import String, Unicode, Byte, sys_endian, prod
 from .._util import openfile, get_file_size, imread_raw, imsave_raw, imread_ascii_raw, imsave_ascii_raw
 from .._single import FileImageSource
+from ...types import create_im_dtype, get_dtype_endian, im_decomplexify, im_decomplexify_dtype
+from ....general import Enum, String, Unicode, Byte, sys_endian, prod, delayed
 
 __sys_is_big_endian = sys_endian == '>'
 
@@ -85,7 +83,7 @@ def __get_header_fields(): #pylint: disable=too-many-locals
     from numpy import dtype, array, eye, fromiter
     from numpy import uint8, int8, uint16, int16, int32, uint32, uint64, int64, float32, float64
     
-    from ..._util import itr2str, get_list, _bool
+    from ....general.utils import itr2str, get_list, _bool
     
     class MHDField(object):
         __metaclass__ = ABCMeta

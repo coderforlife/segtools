@@ -5,7 +5,7 @@ from __future__ import unicode_literals
 
 import numbers, re
 from numpy import dtype, iinfo, sctypes, promote_types, bool_, ndarray, ascontiguousarray
-from ._util import String, sys_endian
+from ..general import String, sys_endian
 from ..imstack import Help
 
 __all__ = [

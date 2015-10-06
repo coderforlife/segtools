@@ -21,12 +21,10 @@ from itertools import izip
 from struct import Struct
 from numpy import int8, uint8, int16, uint16, int32, float32, complex64
 
-from ....general.datawrapper import ListWrapper, ReadOnlyListWrapper
-from ....general.enum import Enum, Flags
-from ...types import create_im_dtype, get_im_dtype_and_nchan, get_dtype_endian
-from ..._util import Unicode
 from .._stack import HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader, Field, FixedField
 from .._util import copy_data, openfile, imread_raw, imsave_raw, file_remove_ranges, get_file_name
+from ...types import create_im_dtype, get_im_dtype_and_nchan, get_dtype_endian
+from ....general import Unicode, Enum, Flags, ListWrapper, ReadOnlyListWrapper
 
 __all__ = ['MRC']
 

@@ -14,11 +14,10 @@ from numpy import ndarray, ceil
 
 from ._handler_manager import HandlerManager
 from .._stack import ImageStack, HomogeneousImageStack, ImageSlice, Homogeneous
-from .._util import String
 from ..types import is_image, get_im_dtype
 from ..source import ImageSource
 from ...imstack import Opt
-from ...general.datawrapper import DictionaryWrapperWithAttr
+from ...general import String, DictionaryWrapperWithAttr
 
 __all__ = ['FileImageStack','HomogeneousFileImageStack','FileImageSlice','FileImageStackHeader','Field','FixedField','NumericField']
 

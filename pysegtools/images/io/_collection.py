@@ -11,7 +11,7 @@ from ._stack import FileImageStack, FileImageSlice, FileImageStackHeader, Field,
 from ._single import FileImageSource
 from ..types import get_im_dtype
 from ..source import ImageSource
-from .._util import String, Unicode, ravel
+from ...general import String, Unicode, ravel
 
 __all__ = ['FileCollectionStack']
 

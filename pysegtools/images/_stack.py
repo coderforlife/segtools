@@ -11,7 +11,7 @@ from weakref import proxy
 
 from numpy import ndarray
 
-from ..general.enum import Flags
+from ..general import Flags
 from .types import is_image, check_image, get_im_dtype, im_dtype_desc
 from .source import ImageSource, DeferredPropertiesImageSource
 
