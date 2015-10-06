@@ -601,7 +601,7 @@ class Tasks(object):
         task_total = len(self.all_tasks)
         task_press = rnng.cpu_pressure
         task_max   = rnng.cores
-        print('Tasks:       Running: %d [%d] / %d, Done: %d / %d, Upcoming: %d' % (task_run, task_press, task_max, task_done, task_total, task_next))
+        print('Tasks:       Running: %d [%d] / %d, Done: %d / %d, Queue: %d' % (task_run, task_press, task_max, task_done, task_total, task_next))
 
         print('-' * 80)
         if task_run == 0:
@@ -625,9 +625,9 @@ class Tasks(object):
 
         print('-' * 80)
         if task_next == 0:
-            print('Upcoming: none')
+            print('Queue: none')
         else:
-            print('Upcoming:')
+            print('Queue:')
             for _, task in sorted(rnng.next):
                 text = str(task)
                 if len(text) > 60: text = text[:56] + '...' + text[-1]
