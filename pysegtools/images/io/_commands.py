@@ -300,13 +300,14 @@ Examples:""")
         handler = args.pop('handler', None)
         stack_based = False # if we are loading a stack directly (True) or a series of files (False)
         path = abspath(desc)
-            
+
         if desc == "[": # File image list
             try: end = args.positional.index("]")
             except ValueError: raise ValueError("No terminating ']' in filename list")
-            filename = lambda n:[abspath(f) for f in args[:end]]
-            desc = ("'"+("', '".join(args[:end]))+"'") if end else '<no files>'
+            filename_args = args[:end]
             del args[:end+1]
+            filename = lambda n:[abspath(f) for f in filename_args]
+            desc = ("'"+("', '".join(filename_args))+"'") if end else '<no files>'
             kwargs = {k:args.pop(k) for k in args.named.keys() if k not in ('pattern','start','step')}
             if len(args) > 0:
                 raw_pattern = args[(0,'pattern')]
