@@ -19,7 +19,6 @@ from numpy import (complex64, complex128, float32, float64,
                     uint8, uint16, uint32, uint64)
 import scipy.sparse
 
-from .._util import imread_raw, imsave_raw, get_file_size, copy_data, file_remove_ranges, FileInsertIO
 from ...types import create_im_dtype, get_dtype_endian, is_image_desc, im_dtype_desc
 from ...types import im_complexify_dtype, im_decomplexify, im_decomplexify_dtype
 from ...source import ImageSource
@@ -27,6 +26,7 @@ from ..._stack import ImageStack
 from .._single import FileImageSource
 from .._stack import FileImageStack, HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader, FixedField
 from ....general import GzipFile, String, Byte, prod, sys_endian, sys_64bit, _bool
+from ....general.io import array_read, array_save, get_file_size, copy_data, file_remove_ranges, FileInsertIO
 
 try:
     from h5py import File as HDF5File
@@ -474,7 +474,7 @@ class _MAT4Entry(_MAT45Entry):
         off = start + cls.__HDR_SIZE + namlen
         
         ### Save data
-        imsave_raw(f, im)
+        array_save(f, im)
 
         ### Make the entry
         return cls(mat, start, off, name, raw_shape, shape, raw_dt, dt)
@@ -493,7 +493,7 @@ class _MAT4Entry(_MAT45Entry):
     def data(self):
         f = self._mat._f
         f.seek(self._off)
-        im = imread_raw(f, self._raw_shape, self._raw_dt, 'F')
+        im = array_read(f, self._raw_shape, self._raw_dt, 'F')
         if self._shape != self._raw_shape: # sparse matrix
             im = im[:-1,:] # last row has shape, we already have that
             I = ascontiguousarray(im[:,0], dtype=intc); I -= 1 # row indices
@@ -1026,14 +1026,14 @@ class _MAT5File(_MAT45File):
     def _read_subelem_big(self, f, dt, shape, relax=False, sub_dt=None):
         """
         Like _read_subelem except designed for large arrays. Instead of read/frombuffer this uses
-        imread_raw (which uses either fromfile or readinto). The dtype and shape must always be
+        array_read (which uses either fromfile or readinto). The dtype and shape must always be
         known. Make sure the dtype has the right byteorder. If relax is True than the number of
         elements in the subelem must only be at least as many as the shape requests. Returns an
         ndarray of the given dtype and shape.
         """
         dt, nbytes, skip = self._read_tag(f, dt, None if relax else prod(shape), sub_dt=sub_dt)
         if not isinstance(dt, type) or relax and prod(shape) >= nbytes: raise ValueError()
-        data = imread_raw(f, shape, dtype(dt).newbyteorder(self._endian), 'F')
+        data = array_read(f, shape, dtype(dt).newbyteorder(self._endian), 'F')
         f.seek(skip-data.nbytes, SEEK_CUR)
         return data
     
@@ -1063,12 +1063,12 @@ class _MAT5File(_MAT45File):
 
     def _write_subelem_big(self, f, data):
         """
-        Like _write_subelem but uses imsave_raw instead of f.write. This is meant for large amounts
+        Like _write_subelem but uses array_save instead of f.write. This is meant for large amounts
         of data and can be faster.
         """
         dt, nbytes = data.dtype.type, data.nbytes
         self._write_tag(f, dt, nbytes)
-        imsave_raw(f, data)
+        array_save(f, data)
         pad = (4-nbytes) if nbytes <= 4 else (8-(nbytes%8))
         if pad not in (0,8) and f.write(b'\0'*pad) != pad: raise ValueError()
 

@@ -8,10 +8,11 @@ from .datawrapper import * #pylint: disable=wildcard-import
 from .delayed import delayed
 from .enum import * #pylint: disable=wildcard-import
 from .gzip import GzipFile, compress, decompress
-from .interval import Interval, IntervalSet, FrozenIntervalSet
 from .utils import sys_endian, sys_64bit, String, Unicode, Byte, prod, ravel, re_search, itr2str, splitstr, _bool
 
 # Also alias many of the module names
 from . import cython
+from . import interval
+from . import io
 from . import os_ext
 from . import utils

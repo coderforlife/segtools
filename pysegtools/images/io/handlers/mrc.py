@@ -22,9 +22,9 @@ from struct import Struct
 from numpy import int8, uint8, int16, uint16, int32, float32, complex64
 
 from .._stack import HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader, Field, FixedField
-from .._util import copy_data, openfile, imread_raw, imsave_raw, file_remove_ranges, get_file_name
 from ...types import create_im_dtype, get_im_dtype_and_nchan, get_dtype_endian
 from ....general import Unicode, Enum, Flags, ListWrapper, ReadOnlyListWrapper
+from ....general.io import copy_data, openfile, array_read, array_save, file_remove_ranges, get_file_name
 
 __all__ = ['MRC']
 
@@ -180,13 +180,13 @@ Supported image types:""")
         self._file.seek(self._get_off(idx)) # TODO: don't seek if it won't change position?
         for z,im in izip(xrange(idx, end), ims):
             im = im.data
-            imsave_raw(self._file, im)
+            array_save(self._file, im)
             self._slices[z]._cache_data(im)
 
     @property
     def stack(self):
         self._file.seek(self._off)
-        return imread_raw(self._file, (self._d,)+self._shape, self._dtype, 'C')
+        return array_read(self._file, (self._d,)+self._shape, self._dtype, 'C')
 
 class MRCSlice(FileImageSlice):
     def __init__(self, stack, header, z):
@@ -200,12 +200,12 @@ class MRCSlice(FileImageSlice):
         self._off = self._stack._get_off(z)
     def _get_data(self):
         self._file.seek(self._off) # TODO: don't seek if it won't change position?
-        return imread_raw(self._file, self._shape, self._dtype, 'C')
+        return array_read(self._file, self._shape, self._dtype, 'C')
     def _set_data(self, im):
         if self._shape != im.shape or self._dtype != im.dtype: raise ValueError('MRC files require all slices to be the same data type and size')
         self._file.seek(self._off) # TODO: don't seek if it won't change position?
         im = im.data
-        imsave_raw(self._file, im)
+        array_save(self._file, im)
         return im
 
 

@@ -22,9 +22,9 @@ from numpy import uint8
 
 from .._stack import FileImageStack, FileImageSlice, FileImageStackHeader, FixedField
 from .._single import FileImageSource
-from .._util import check_file_obj, get_file_name
 from ...types import get_im_dtype_and_nchan
 from ....general import String, delayed, _bool
+from ....general.io import check_file_obj, get_file_name
 
 from distutils.version import StrictVersion
 if not hasattr(Image, 'PILLOW_VERSION') or StrictVersion(Image.PILLOW_VERSION) < StrictVersion('2.0'):

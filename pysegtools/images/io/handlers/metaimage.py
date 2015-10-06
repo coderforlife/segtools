@@ -14,10 +14,10 @@ import os.path
 
 from numpy import empty
 
-from .._util import openfile, get_file_size, imread_raw, imsave_raw, imread_ascii_raw, imsave_ascii_raw
 from .._single import FileImageSource
 from ...types import create_im_dtype, get_dtype_endian, im_decomplexify, im_decomplexify_dtype
 from ....general import Enum, String, Unicode, Byte, sys_endian, prod, delayed
+from ....general.io import openfile, get_file_size, array_read, array_save, array_read_ascii, array_save_ascii
 
 __sys_is_big_endian = sys_endian == '>'
 
@@ -508,7 +508,7 @@ def read_mha_data(filename, fields, headersize):
 
 def __get_mha_reader(fields, shape, dt, headersize):
     binary = fields['BinaryData']
-    imread = imread_raw if binary else imread_ascii_raw
+    imread = array_read if binary else array_read_ascii
     comp = 'auto' if binary and fields['CompressedData'] else None
     if headersize == -1: headersize = -prod(shape)*dt.itemsize
     def read(datafile):
@@ -723,7 +723,7 @@ def __get_datafile(filename, fields):
     return datafile
 
 def __get_mha_writer(fields):
-    imsave = imsave_raw if fields['BinaryData'] else imsave_ascii_raw
+    imsave = array_save if fields['BinaryData'] else array_save_ascii
     
     level = fields.get('CompressedData', False)
     if level is True: level = 6

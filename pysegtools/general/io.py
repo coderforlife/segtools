@@ -1,4 +1,4 @@
-"""Utilities for IO library use."""
+"""IO Utilities."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -6,12 +6,15 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import os, sys, io
-from numpy import fromfile as npy_fromfile, nditer, empty
 from numbers import Integral
+from numpy import fromfile as npy_fromfile, nditer, empty, ascontiguousarray, asfortranarray
 
-from .._util import String, prod
-from ...general.gzip import GzipFile
-from ...general.enum import Flags
+from . import String, GzipFile, Flags, prod
+
+__all__ = ['FileMode', 'fromfile', 'tofile',
+           'check_file_obj', 'isfileobj', 'openfile', 'get_file_size', 'get_file_name',
+           'array_read', 'array_skip', 'array_save', 'array_read_ascii', 'array_skip_ascii', 'array_save_ascii',
+           'copy_data', 'fill_data', 'file_remove_ranges', 'FileInsertIO']
 
 __is_py3 = sys.version_info[0] == 3
 
@@ -139,68 +142,76 @@ def openfile(f, mode, compression=None, comp_level=9, off=None):
         raise
     return f
 
-def imread_raw(f, shape, dtype, order='C'):
+def array_read(f, shape, dtype, order='C'):
     """
-    Read the raw image data from a file or file-like object. The shape, dtype, and order are that of
-    the image. The shape does not include the dtype shape.
+    Read the array data from a file or file-like object. The shape, dtype, and order are that of the
+    data. The shape does not include the dtype shape.
     """
     if isfileobj(f):
         shape += dtype.shape
         return fromfile(f, dtype.base, count=prod(shape)).reshape(shape, order=order)
-    else:
-        im = empty(shape, dtype, order)
-        if f.readinto(im.data) != len(im.data): raise ValueError
-        return im
+    arr = empty(shape, dtype, order)
+    if f.readinto(arr.data) != len(arr.data): raise ValueError
+    return arr
 
-def imskip_raw(f, shape, dtype):
+def array_skip(f, shape, dtype):
     """
-    Skip the raw image data from a file or file-like object. The shape, dtype, and order are that of
-    the image. The shape does not include the dtype shape.
+    Skip the array data from a file or file-like object. The shape, dtype, and order are that of the
+    data. The shape does not include the dtype shape.
     """
     f.seek(prod(shape)*dtype.itemsize, io.SEEK_CUR)
 
-def imsave_raw(f, im):
-    """Save the raw image data to a file or file-like object."""
-    frtrn = im.flags.f_contiguous and not im.flags.c_contiguous
-    if isfileobj(f):
-        tofile(im.T if frtrn else im, f)
+def array_save(f, arr, order=None):
+    """
+    Save the array data to a file or file-like object. Default is to try to figure out the order
+    from the given array (defaulting to C if it is not or dual contiguous at all). You can force the
+    order by explicitly specifying it.
+    """
+    if   order == 'F': frtrn = True
+    elif order == 'C': frtrn = False
+    else: frtrn = arr.flags.f_contiguous and not arr.flags.c_contiguous
+    arr = asfortranarray(arr) if frtrn else ascontiguousarray(arr)
+    if isfileobj(f): tofile(arr.T if frtrn else arr, f)
     else:
-        for c in nditer(im,flags=['external_loop','buffered'],buffersize=max(16777216//im.itemsize,1),order='F' if frtrn else 'C'):
+        for c in nditer(arr,flags=('external_loop','buffered'),
+                        op_flags=('readonly','no_broadcast','contig','aligned'),
+                        buffersize=max(16777216//arr.itemsize,1),
+                        order='F' if frtrn else 'C'):
             f.write(c.data)
 
-def imread_ascii_raw(f, shape, dtype, order='C'):
+def array_read_ascii(f, shape, dtype, order='C'):
     """
-    Read the raw image data from a file or file-like object containing the textual respresention of
-    the values. The shape, dtype, and order are that of the image. The shape does not include the
-    dtype shape.
+    Read the array data from a file or file-like object containing the textual respresention of the
+    values. The shape, dtype, and order are that of the data. The shape does not include the dtype
+    shape.
     """
     if isfileobj(f):
         shape += dtype.shape
-        im = fromfile(f, dtype.base, count=prod(shape), sep=' ').reshape(shape, order=order)
-    else:
-        im = empty(shape, dtype, order)
-        im_r = im.ravel()
-        i = 0
-        total = im.size
-        s = sx = f.read(max((total-i)*2-1, 0)) # at least one digit and one space per element
-        while len(sx) > 0:
-            vals = s.split()
-            if s[-1].isspace(): s = ''
-            else: s = vals[-1]; del vals[-1]
-            im_r[i:i+len(vals)] = vals
-            i += len(vals)
-            sx = f.read(max((total-i)*2-1, 0))
-            s += sx
-        im_r[i:] = s.split()
-    return im
+        return fromfile(f, dtype.base, count=prod(shape), sep=' ').reshape(shape, order=order)
 
-def imskip_ascii_raw(f, shape, dtype):
+    # TODO: move this to cython for great speed ups
+    arr = empty(shape, dtype, order)
+    arr_r = arr.ravel()
+    i = 0
+    total = arr.size
+    s = sx = f.read(max(total*2-1, 0)) # at least one digit and one space per element
+    while len(sx) > 0:
+        vals = s.split()
+        if s[-1].isspace(): s = ''
+        else: s = vals[-1]; del vals[-1]
+        arr_r[i:i+len(vals)] = vals
+        i += len(vals)
+        sx = f.read(max((total-i)*2-1, 0))
+        s += sx
+    arr_r[i:] = s.split()
+    return arr
+
+def array_skip_ascii(f, shape, dtype):
     """
-    Skip the raw image data from a file or file-like object containing the textual respresention of
-    the values. The shape and dtype are that of the image. The shape does not include the dtype
-    shape.
+    Skip the array data from a file or file-like object containing the textual respresention of the
+    values. The shape and dtype are that of the array. The shape does not include the dtype shape.
     """
-    # Basically imread_ascii_raw with parts removed
+    # Basically array_read_ascii with parts removed
     # TODO: is this really faster?
     if isfileobj(f):
         shape += dtype.shape
@@ -208,7 +219,7 @@ def imskip_ascii_raw(f, shape, dtype):
     else:
         i = 0
         total = prod(shape+dtype.shape)
-        s = sx = f.read(max((total-i)*2-1, 0)) # at least one digit and one space per element
+        s = sx = f.read(max(total*2-1, 0)) # at least one digit and one space per element
         while len(sx) > 0:
             vals = s.split() # TODO: don't actually split the string - this is wasteful
             if s[-1].isspace(): s = ''
@@ -217,15 +228,24 @@ def imskip_ascii_raw(f, shape, dtype):
             sx = f.read(max((total-i)*2-1, 0))
             s += sx
 
-def imsave_ascii_raw(f, im):
-    """Save the raw image data to a file or file-like object using the the textual respresention of the values."""
-    frtrn = im.flags.f_contiguous and not im.flags.c_contiguous
+def array_save_ascii(f, arr, order=None):
+    """
+    Save the array data to a file or file-like object using the the textual respresention of the
+    values. Default is to try to figure out the order from the given array (defaulting to C if it is
+    not or dual contiguous at all). You can force the order by explicitly specifying it.
+    """
+    if   order == 'F': frtrn = True
+    elif order == 'C': frtrn = False
+    else: frtrn = arr.flags.f_contiguous and not arr.flags.c_contiguous
+    arr = asfortranarray(arr) if frtrn else ascontiguousarray(arr)
     if isfileobj(f):
-        tofile(im.T if frtrn else im, f, sep=' ')
-    else:
-        # TODO
-        for c in nditer(im,flags=['external_loop','buffered'],buffersize=max(16777216//im.itemsize,1),order='F' if frtrn else 'C'):
-            f.write(c.data)
+        tofile(arr.T if frtrn else arr, f, sep=' ')
+    else: raise RuntimeError() # TODO
+        #for c in nditer(arr,flags=('external_loop','buffered'),
+        #                op_flags=('readonly','no_broadcast','contig','aligned'),
+        #                buffersize=max(16777216//arr.itemsize,1),
+        #                order='F' if frtrn else 'C'):
+        #    f.write(c.data)
 
 def get_file_size(f):
     """Get the size of a file, either from the filename or the file-object."""
@@ -380,7 +400,7 @@ def file_remove_ranges(f, ranges, buf_size=16777216): # 16 MB
     get_file_size. By complete, the function must not stop short of the amount of data requested
     (unless end-of-file for readinto).
     """
-    from ...general.interval import Interval, IntervalSet
+    from .interval import Interval, IntervalSet
     intervals = IntervalSet(Interval(start,stop,upper_closed=False) for start,stop in ranges)
     if not intervals: return # nothing to remove
     keep_ints = IntervalSet([Interval(0, get_file_size(f), upper_closed=False)]) - intervals
