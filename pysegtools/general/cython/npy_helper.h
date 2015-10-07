@@ -164,6 +164,29 @@ template <typename T, template<class> class H> inline void hash_append_val(size_
 template <typename T, template<class> class H> CONSTEXPR inline size_t hash_together(T const& v0, T const& v) { return hash_concat_val<T,H>(hash_value<T,H>(v0), v); }
 
 
+//////////////////// Casting Function with Clipping ////////////////////
+// This function casts a double value to another numeric type (either
+// floating-point or integral) but out-of-range values clip instead of some
+// other behavior (like wrapping). Most of this function will be compiled away
+// once the type is known, especially if constexpr is supported. The function
+// takes a dummy value of the destination type because Cython needs an argument
+// to determine template types.
+template<typename T>
+inline T cast_with_clip(double x, T dummy)
+{
+	(dummy); // Cython needs to have an argument that is the type of the template, so we add a dummy one
+    if (std::numeric_limits<T>::is_integer)
+	{
+		// integral types need to be clipped between min and max, and finally rounded
+		if (x < std::numeric_limits<T>::min()) { return std::numeric_limits<T>::min(); }
+		if (x > std::numeric_limits<T>::max()) { return std::numeric_limits<T>::max(); }
+		if (std::numeric_limits<T>::is_signed) { return (T)(x + (x >= 0.0 ? 0.5 : -0.5)); }
+		else { return (T)(x+0.5); }
+	}
+    else { return (T)x; } // simply cast floating-points
+}
+
+
 //////////////////// Numpy Half-Sized Float Class ////////////////////
 #include <numpy/halffloat.h>
 // This encapsulates Numpy's half float into a class. This makes it so it is
@@ -171,7 +194,7 @@ template <typename T, template<class> class H> CONSTEXPR inline size_t hash_toge
 // expect to be able to able to use == and <.
 //
 // While most of the functions are reimplemented here, conversion to/from
-// float/double and the functions spacing and and nextafter are linked to the
+// float/double and the functions spacing and nextafter are linked to the
 // Numpy library.
 //
 // Numpy does not directly define mathematical operations on half-floats and

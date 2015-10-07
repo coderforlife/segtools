@@ -28,6 +28,11 @@ def get_ref_count(object o): return PyArray_REFCOUNT(o)
 
 
 ########## Utility Functions ##########
+cdef extern from "npy_helper.h" nogil:
+    cdef T cast_with_clip[T](double value, T dummy_val_for_type_resolution) nogil
+
+
+########## Array Utility Functions ##########
 cdef inline void __array_resize1D(ndarray a, intp size):
     """
     Shortens/resizes an array by modifying the internal data. The array must own its data and have

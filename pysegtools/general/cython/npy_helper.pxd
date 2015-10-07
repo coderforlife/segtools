@@ -29,8 +29,14 @@ cdef extern from "Python.h":
     cdef PyObject* PyObject_GetAttrString(PyObject*, const char *attr_name) # except NULL - we check ourselves # new reference
     object PyObject_RichCompare(object, object, PyCompOp)
 
-    ##### CObject #####
+    ##### CObjects / PyCapsules #####
     object PyCObject_FromVoidPtr(void* cobj, void (*destr)(void *))
+    object PyCObject_FromVoidPtrAndDesc(void* cobj, void* desc, void (*destr)(void *, void *))
+
+    ctypedef void (*PyCapsule_Destructor)(object)
+    object PyCapsule_New(void *pointer, const char *name, PyCapsule_Destructor destructor)
+    int PyCapsule_SetContext(object capsule, void *context) except -1
+    void* PyCapsule_GetContext(object capsule) except? NULL
 
     ##### Types #####
     #ctypedef PyObject*(*unaryfunc)(PyObject*)
@@ -140,6 +146,8 @@ cdef extern from "Python.h":
 
     ##### Exceptions #####
     cdef PyObject* PyExc_TypeError
+    cdef PyObject* PyExc_ValueError
+    cdef PyObject* PyExc_MemoryError
     cdef void PyErr_SetString(PyObject* type, const char* message)
     cdef void PyErr_Clear()
 
@@ -490,6 +498,8 @@ cdef extern from "numpy/arrayobject.h":
     int PyArray_FLAGS(ndarray) nogil
     bint PyArray_ISCARRAY(ndarray) nogil
     bint PyArray_ISFARRAY(ndarray) nogil
+    bint PyArray_ISCARRAY_RO(ndarray) nogil
+    bint PyArray_ISFARRAY_RO(ndarray) nogil
     int PyArray_NDIM(ndarray) nogil
     intp* PyArray_SHAPE(ndarray) nogil # == PyArray_DIMS
     intp PyArray_DIM(ndarray,int) nogil
