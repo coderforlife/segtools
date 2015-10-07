@@ -18,7 +18,7 @@ from collections import namedtuple
 
 from PIL import Image
 from PIL.ImageFile import ImageFile, StubImageFile
-from numpy import uint8
+from numpy import uint8, ascontiguousarray
 
 from .._stack import FileImageStack, FileImageSlice, FileImageStackHeader, FixedField
 from .._single import FileImageSource
@@ -103,7 +103,7 @@ class DummyImage(Image.Image):
         self.size = tuple(reversed(shape))
 
 def imsrc2pil(im):
-    im = im.data
+    im = ascontiguousarray(im.data)
     st, sh = im.strides[0], im.shape[1::-1]
     dt, nchan = get_im_dtype_and_nchan(im)
     if nchan > 1:
