@@ -165,7 +165,7 @@ def _as_savable_array(x):
     Every array is also passed through _squeeze2.
     """
     from numbers import Integral, Real, Complex
-    from collections import Mapping, Iterable
+    from collections import Mapping
     if isinstance(x, (bool, bool_, Integral, Real, Complex)): return array(x).reshape((1,1)) # scalar
     if isinstance(x, (bytes, Unicode)): return _squeeze2(array(x)) # string -> char array
     if _is_sparse(x) and x.dtype.kind in 'buifc': return x # sparse array pass through
@@ -926,8 +926,8 @@ class _MAT5Entry(_MAT45Entry):
         if raw_dt.kind in 'OV':
             if raw_dt.kind == 'O': # cell array
                 out = [None] * data.size
-                for i, data in enumerate(nditer(data, ('refs_ok',), ('readonly',), order='F')):
-                    out[i] = cls.__create(mat, b'', data[()])
+                for i, d in enumerate(nditer(data, ('refs_ok',), ('readonly',), order='F')):
+                    out[i] = cls.__create(mat, b'', d[()])
                 nbytes += sum(mi[0] for mi in out) + 8*len(out)
             else: # struct/object
                 fns = list(dt.names)
@@ -942,9 +942,9 @@ class _MAT5Entry(_MAT45Entry):
                 out = [None] * (len(pre_data) + len(fns) * data.size)
                 out[:len(pre_data)] = pre_data
                 i = len(pre_data)
-                for data in nditer(data, ('refs_ok',), ('readonly',), order='F'):
+                for d in nditer(data, ('refs_ok',), ('readonly',), order='F'):
                     for fn in fns:
-                        out[i] = cls.__create(mat, b'', data[fn][()])
+                        out[i] = cls.__create(mat, b'', d[fn][()])
                         i += 1
                 nbytes += sum(mi[0] for mi in islice(out, len(pre_data), None)) + 8*len(out)
 
