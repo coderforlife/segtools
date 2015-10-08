@@ -71,14 +71,14 @@ from __future__ import unicode_literals
 
 import re, codecs, io
 from collections import OrderedDict
-from itertools import izip, islice, repeat
+from itertools import izip, islice
 from struct import Struct, pack, unpack, error as StructError
 from weakref import proxy
 from abc import ABCMeta, abstractproperty, abstractmethod
 from warnings import warn
 
 from numpy import ndarray, array, empty, zeros, frombuffer, fromiter, asanyarray, ascontiguousarray, asfortranarray
-from numpy import dtype, concatenate, tile, delete, char, vectorize, iinfo
+from numpy import dtype, concatenate, tile, delete, char, vectorize, iinfo, nditer
 from numpy import (complex64, complex128, float32, float64, bool_, unicode_, string_, object_, void,
                    int8, int16, int32, int64, intc, uint8, uint16, uint32, uint64)
 
@@ -156,11 +156,11 @@ def _as_savable_array(x):
         ndarray of the any of the above        ->   unchanged
         sparse matrix                          ->   unchanged
         lists/tuples that can be converted directly into arrays -> the array equivilent
-        iterable/sequence of savables          ->   "cell" array (dtype=object, items are ndarrays)
+        lists/tuples of savables               ->   "cell" array (dtype=object, items are ndarrays)
             also takes ndarrays of objects
         dictionary of string->savables         ->   "struct" (structured array)
             keys must be valid MATLAB names
-            also takes structed arrays
+            also takes structured arrays
 
     Every array is also passed through _squeeze2.
     """
@@ -177,8 +177,7 @@ def _as_savable_array(x):
         return out
     if isinstance(x, (list, tuple)):
         if len(x) == 0: return array(x).reshape((0,0))
-        out = array(x)
-        if out.dtype.kind in 'buifcUS': return _squeeze2(out)
+        x = array(x)
     if isinstance(x, ndarray):
         if x.dtype.kind in 'buifcUS': return _squeeze2(x)
         if x.dtype.kind == 'O':
@@ -196,8 +195,6 @@ def _as_savable_array(x):
                 for fn in fns: out_flat[i][fn] = _as_savable_array(x_flat[i][fn])
             return _squeeze2(out)
         raise ValueError("Array format cannot be save to MATLAB file")
-    #if not isinstance(x, Iterable):
-    #    TODO
     raise ValueError("Value cannot be saved to MATLAB file")
 
 class _MATFile(object):
@@ -714,7 +711,7 @@ class _MAT5Entry(_MAT45Entry):
     }
     __dtype2class = {
         object_   : 1,
-        void      : 2,
+        void      : 2, # struct vs object arrays are detected from metadata on the dtype
         string_   : 4,
         unicode_  : 4,
         # sparse is special
@@ -858,7 +855,6 @@ class _MAT5Entry(_MAT45Entry):
                 
     @classmethod
     def create(cls, mat, f, name, data, is_compressed=False):
-        endian = mat._endian
         start = f.tell()
 
         if not is_compressed and mat._version == 7:
@@ -875,14 +871,40 @@ class _MAT5Entry(_MAT45Entry):
                 f.seek(end) != end): raise ValueError()
             return e
 
-        # Convert the data into a usable format while getting all the properties
+        if not isinstance(name, bytes): name = Unicode(name).encode('ascii','ignore')
         data = _as_savable_array(data)
+
+        matinfo, off, raw_shape, shape, raw_dt, dt, is_complex, is_sparse, sub_dt = \
+                 cls.__create(mat, name, data)
+        cls.__write_matrix(mat, f, matinfo)
+
+        return cls(mat, start, start+off, name, raw_shape, shape, raw_dt, dt,
+                   is_compressed, is_complex, is_sparse, sub_dt)
+
+    @classmethod
+    def __create(cls, mat, name, data):
+        """
+        Analyzes and converts the data and returns a matinfo (along with some other info possibly)
+        with the data ready to be written to disk. The matinfo can be given to __write_matrix. The
+        analysis and data conversion process is possibly recursive for cell arrays and structs, and
+        since we don't want to write anything until we are all ready, we do this in two steps.
+        """
+        endian = mat._endian
+
+        # Get the properties of the data
         raw_shape, raw_dt = data.shape, data.dtype
         shape, dt = raw_shape, _create_dtype(raw_dt, endian)
         dims, nzmax, sub_dt, force_dt = raw_shape, 0, None, None
         
+        def get_data_size(nbytes):
+            if nbytes <= 4: return 8
+            pad = (8-(nbytes%8))
+            if pad == 8: pad = 0
+            return 8 + nbytes + pad
+        nbytes = 16 + get_data_size(4*len(dims)) + get_data_size(len(name))
+        off = nbytes + 8
+
         clazz = cls.__dtype2class[raw_dt.type]
-        if not isinstance(name, bytes): name = Unicode(name).encode('ascii','ignore')
         is_logical = raw_dt.kind == 'b'
         is_global  = raw_dt.metadata is not None and bool(raw_dt.metadata.get('global', False))
         is_complex = raw_dt.kind == 'c'
@@ -901,11 +923,34 @@ class _MAT5Entry(_MAT45Entry):
             t = cls.__get_reduced_type(a)
             return a if t is None else a.astype(_create_dtype(t, endian))
 
-        if raw_dt.kind == 'O':
-            TODO # TODO: add support for cell
+        if raw_dt.kind in 'OV':
+            if raw_dt.kind == 'O': # cell array
+                out = [None] * data.size
+                for i, data in enumerate(nditer(data, ('refs_ok',), ('readonly',), order='F')):
+                    out[i] = cls.__create(mat, b'', data[()])
+                nbytes += sum(mi[0] for mi in out) + 8*len(out)
+            else: # struct/object
+                fns = list(dt.names)
+                fn_len = 64 if any(len(fn) >= 32 for fn in fns) else 32
+                nbytes += 8 + get_data_size(len(fns) * fn_len)
+                pre_data = [fns]
+                if dt.metadata is not None and not is_invalid_matlab_name(dt.metadata.get('class_name','')):
+                    class_name, clazz = dt.metadata.get['class_name'], 3
+                    nbytes += get_data_size(len(class_name))
+                    pre_data.insert(0, bytes(class_name))
+                off = nbytes + 8
+                out = [None] * (len(pre_data) + len(fns) * data.size)
+                out[:len(pre_data)] = pre_data
+                i = len(pre_data)
+                for data in nditer(data, ('refs_ok',), ('readonly',), order='F'):
+                    for fn in fns:
+                        out[i] = cls.__create(mat, b'', data[fn][()])
+                        i += 1
+                nbytes += sum(mi[0] for mi in islice(out, len(pre_data), None)) + 8*len(out)
 
-        if raw_dt.kind == 'V':
-            TODO # TODO: add support for struct and object
+            if nbytes > 2147483648: raise ValueError('MATLAB v6/7 files have a max of 2,147,483,648 bytes per variables')
+            matinfo = (nbytes, (flags|clazz,nzmax), dims, name, out, force_dt)
+            return matinfo if name=='' else (matinfo, off, raw_shape, shape, raw_dt, dt, is_complex, is_sparse, sub_dt)
         
         if is_sparse:
             if raw_dt in (bool, float64, complex128): clazz = 5
@@ -953,36 +998,50 @@ class _MAT5Entry(_MAT45Entry):
             real = reduce_size(correct_ordering(data))
             raw_dt = real.dtype
 
-
-        # Calculate the size of the matrix in the file
-        def get_data_size(nbytes):
-            if nbytes <= 4: return 8
-            pad = (8-(nbytes%8))
-            if pad == 8: pad = 0
-            return 8 + nbytes + pad
-        nbytes = 16 + get_data_size(4*len(dims)) + get_data_size(len(name))
-        off = start + nbytes
-        if is_sparse: nbytes += get_data_size(IR.nbytes) + get_data_size(JC.nbytes)
-        nbytes += get_data_size(real.nbytes)
-        if is_complex: nbytes += get_data_size(imag.nbytes)
+        # Create the "matinfo" tuple for use with __write_matrix
+        data = (IR, JC) if is_sparse else ()
+        data += (real, imag) if is_complex else (real,)
+        nbytes += sum(get_data_size(a.nbytes) for a in data)
         if nbytes > 2147483648: raise ValueError('MATLAB v6/7 files have a max of 2,147,483,648 bytes per variables')
+        matinfo = (nbytes, (flags|clazz,nzmax), dims, name, data, force_dt)
 
-        # Write the data
+        # Return info
+        return matinfo if name=='' else (matinfo, off, raw_shape, shape, raw_dt, dt, is_complex, is_sparse, sub_dt)
+
+    @classmethod
+    def __write_matrix(cls, mat, f, matinfo):
+        """Writes the matrix info to disk."""
+        nbytes, arr_flags, dims, name, data, force_dt = matinfo
+
+        # Write basic header
         if (f.write(mat._long.pack(14))     != 4 or # Matrix tag
             f.write(mat._long.pack(nbytes)) != 4): raise ValueError()
-        mat._write_subelem(f, array((flags|clazz,nzmax), uint32))
+        mat._write_subelem(f, array(arr_flags, uint32))
         mat._write_subelem(f, array(dims, int32))
         mat._write_subelem(f, frombuffer(name, int8))
-        if is_sparse:
-            mat._write_subelem_big(f, IR)
-            mat._write_subelem_big(f, JC)
-        mat._write_subelem_big(f, real, force_dt)
-        if is_complex: mat._write_subelem_big(f, imag, force_dt)
-
-        # Create entry
-        return cls(mat, start, off, name, raw_shape, shape, raw_dt, dt,
-                   is_compressed, is_complex, is_sparse, sub_dt)
-    
+        
+        if isinstance(data, tuple): # numeric or char array, may be sparse or complex as well
+            # len == 1: real, 2: complex, 3: sparse real, 4: sparse complex
+            is_sparse = len(data) >= 3
+            for i, a in enumerate(data):
+                mat._write_subelem_big(f, a, (force_dt if i == (3 if is_sparse else 0) else None))
+        else: # cell, struct, or object array
+            # If first item is:
+            #    list  - field names - struct array
+            #    bytes - class name, second element is list of field names - object array
+            # Rest are matinfo tuples for recursive calls
+            start = 0
+            if isinstance(data[0], list):
+                start, fns = 1, data[0]
+                if isinstance(fns, bytes):
+                    mat._write_subelem(f, frombuffer(fns, int8))
+                    start, fns = 2, data[1]
+                fn_len = 64 if any(len(fn) >= 32 for fn in fns) else 32
+                mat._write_subelem(f, array(fn_len, int32))
+                mat._write_subelem(f, array(fns, dtype((string_, fn_len))).view(int8))
+            for mi in islice(data, start, None):
+                cls.__write_matrix(mat, f, mi)
+            
     def __init__(self, mat, start, off, name, raw_shape, shape, raw_dt, dt,
                  is_compressed, is_complex, is_sparse, sub_dt):
         super(_MAT5Entry, self).__init__(mat, start, off, name, raw_shape, shape, raw_dt, dt)
@@ -1005,10 +1064,10 @@ class _MAT5Entry(_MAT45Entry):
     @classmethod
     def _calc_size(cls, mat, name, data):
         if mat._version == 7: return -1 # we cannot calculate the size of compressed entries
-        return cls._calc_size_internal(name, _as_savable_array(data))
+        return cls.__calc_size_internal(name, _as_savable_array(data))
         
     @classmethod
-    def _calc_size_internal(cls, name, data):
+    def __calc_size_internal(cls, name, data):
         if not isinstance(name, bytes): name = Unicode(name).encode('ascii','ignore')
 
         def get_reduced_size(a):
@@ -1032,15 +1091,15 @@ class _MAT5Entry(_MAT45Entry):
             nbytes += len(data.indices)*4
             nbytes += (len(data.indptr)+1)*4
         if data.dtype.kind == 'O': # cell array
-            nbytes += sum(cls._calc_size_internal(b'', data) for data in data.flat)
+            nbytes += sum(cls.__calc_size_internal(b'', data) for data in data.flat)
         elif data.dtype.kind == 'V': # struct and object arrays
             dt = data.dtype
             if dt.metadata is not None and not is_invalid_matlab_name(dt.metadata.get('class_name','')):
                 nbytes += len(dt.metadata.get['class_name'])
             fns = dt.names
-            fn_len = 32 if max(len(fn) for fn in fns) < 32 else 64
-            nbytes += get_data_size(4) + get_data_size(len(fns)*fn_len) # field names
-            nbytes += sum(sum(cls._calc_size_internal(b'', data[fn]) for fn in fns) for data in data.flat)
+            fn_len = 64 if any(len(fn) >= 32 for fn in fns) else 32
+            nbytes += 8 + get_data_size(len(fns)*fn_len) # field names
+            nbytes += sum(sum(cls.__calc_size_internal(b'', data[fn]) for fn in fns) for data in data.flat)
         elif data.dtype.kind in 'SU':
             nbytes += 2*data.size # in v6 always saved as uint16s
         elif is_complex:
@@ -1138,7 +1197,10 @@ class _MAT5Entry(_MAT45Entry):
         """Reads a cell array or struct/object"""
         val = ((lambda:cls.__read_matrix_embedded(mat, f)) if dt.names is None else               # cell array
                (lambda:tuple(cls.__read_matrix_embedded(mat, f) for _ in xrange(len(dt.names))))) # struct array
-        return fromiter((val() for _ in repeat(None)), dt, prod(shape)).reshape(shape, order='F')
+        out = empty(shape, dt, order='F')
+        out_flat = out.ravel('F')
+        for i in xrange(prod(shape)): out_flat[i] = val()
+        return out
 
     @classmethod
     def __read_matrix_embedded(cls, mat, f):
@@ -1689,7 +1751,7 @@ class _MAT73Entry(_MATEntry):
 
     @classmethod
     def __create_entry(cls, grp, name, data):
-        # Note: pylint thinks vectorize returns a tuple...
+        # Note: pylint thinks a call to a vectorized function returns a tuple...
         #pylint: disable=no-member
         shape, dt = data.shape, data.dtype.base
         is_sparse = _is_sparse(data)
@@ -1866,7 +1928,7 @@ class _MAT73Entry(_MATEntry):
 
     @classmethod
     def __get_entry_data(cls, entry, shape, dt, is_sparse):
-        # Note: pylint thinks vectorize returns a tuple...
+        # Note: pylint thinks a call to a vectorized function returns a tuple...
         #pylint: disable=no-member
         if is_sparse:
             if 'data' not in entry: return scipy.sparse.csc_matrix(shape, dtype=dt)
@@ -1977,10 +2039,12 @@ def mat_nice(mat, squeeze_me=True, chars_as_strings=True, inplace=True):
     out (if there is <=2 dimensions). If chars_as_strings is True, char arrays convert the last
     dimension into strings.
     """
-    # Note: pylint thinks vectorize returns a tuple...
+    # Note: pylint thinks a call to a vectorized function returns a tuple...
     #pylint: disable=no-member
 
-    if isinstance(mat, _MATEntry): mat = mat.data
+    if isinstance(mat, _MATEntry):
+        mat = mat.data
+        inplace = True
     
     if squeeze_me and mat.ndim <= 2 and 1 in mat.shape and 0 not in mat.shape:
         mat = mat[0,0] if mat.shape == (1,1) else mat.squeeze()
