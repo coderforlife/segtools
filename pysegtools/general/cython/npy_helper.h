@@ -174,7 +174,14 @@ template <typename T, template<class> class H> CONSTEXPR inline size_t hash_toge
 template<typename T>
 inline T cast_with_clip(double x, T dummy)
 {
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-value"
+#endif
 	(dummy); // Cython needs to have an argument that is the type of the template, so we add a dummy one
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif
     if (std::numeric_limits<T>::is_integer)
 	{
 		// integral types need to be clipped between min and max, and finally rounded
