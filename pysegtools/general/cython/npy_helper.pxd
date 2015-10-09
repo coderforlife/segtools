@@ -569,6 +569,7 @@ cdef extern from "numpy/arrayobject.h":
     object PyArray_ToScalar(void*, ndarray)
 
     ### Iterators ###
+    object PyArray_IterNew(object)
     object PyArray_IterAllButAxis(object, int*)
     void PyArray_ITER_NEXT(PyArrayIterObject* it) nogil
     int PyArray_ITER_NOTDONE(PyArrayIterObject* it) nogil
