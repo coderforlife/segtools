@@ -96,7 +96,7 @@ inline bool isnan(long double f) { return _isnan((double)f) != 0; }
 #if defined(_MSC_VER)
 #define ALIGNED(t, n) __declspec(align(n)) t
 #elif defined(__GNUC__)
-#define ALIGNED(t, n) t __attribute__((aligned(8))
+#define ALIGNED(t, n) t __attribute__((aligned(8)))
 #else
 #define ALIGNED(t, n) t
 #endif
