@@ -193,7 +193,14 @@ ctypedef Py_uintptr_t uintp
 cdef extern from "npy_helper.h":
     # Makes Numpy a bit nicer to use from Cython
     # The half and complex classes below come from this header
-    pass
+	
+	# These types add aligned (A) or restricted (R) attributes to the types for speed
+    ctypedef double* DOUBLE_PTR_AR
+    ctypedef const double* DOUBLE_PTR_CAR
+    ctypedef intp* INTP_PTR_AR
+    ctypedef const intp* INTP_PTR_CAR
+    ctypedef char* CHAR_PTR_A8R # 8-byte aligned
+    ctypedef const char* CHAR_PTR_CA8R
 
 
 ############### Numpy ###############
@@ -500,6 +507,8 @@ cdef extern from "numpy/arrayobject.h":
     bint PyArray_ISFARRAY(ndarray) nogil
     bint PyArray_ISCARRAY_RO(ndarray) nogil
     bint PyArray_ISFARRAY_RO(ndarray) nogil
+    bint PyArray_ISBEHAVED(ndarray) nogil
+    bint PyArray_ISBEHAVED_RO(ndarray) nogil
     int PyArray_NDIM(ndarray) nogil
     intp* PyArray_SHAPE(ndarray) nogil # == PyArray_DIMS
     intp PyArray_DIM(ndarray,int) nogil
@@ -560,6 +569,8 @@ cdef extern from "numpy/arrayobject.h":
     ndarray PyArray_SearchSorted(ndarray, object values, NPY_SEARCHSIDE, PyObject*)
     
     ### Calculations ###
+    ndarray PyArray_Min(ndarray, int axis, PyArrayObject* out)
+    ndarray PyArray_Max(ndarray, int axis, PyArrayObject* out)
     ndarray PyArray_Any(ndarray, int axis, ndarray out)
     ndarray PyArray_MatrixProduct(object, object)
     dict PyArray_GetNumericOps()

@@ -44,6 +44,7 @@
 #include <math.h>    // isnan
 #include <stddef.h>  // size_t, intptr_t on MSVC before 2010
 #if !defined(_MSC_VER) || _MSC_VER >= 1600
+#define __STDC_LIMIT_MACROS
 #include <stdint.h>  // intptr_t and other sized integer types
 #else
 // sized integer types on MSVC before 2010
@@ -79,6 +80,42 @@ inline bool isnan(long double f) { return _isnan((double)f) != 0; }
 #define CONSTEXPR_OR_CONST const
 #endif
 #define STATIC_CONSTEXPR   static CONSTEXPR_OR_CONST
+
+
+//////////////////// Restricted and Aligned Types ////////////////////
+#if defined(_MSC_VER)
+#define RESTRICT __restrict
+#elif defined(__GNUC__)
+#define RESTRICT __restrict__
+#elif (__STDC_VERSION__ >= 199901L)
+#define RESTRICT restrict
+#else
+#define RESTRICT
+#endif
+
+#if defined(_MSC_VER)
+#define ALIGNED(t, n) __declspec(align(n)) t
+#elif defined(__GNUC__)
+#define ALIGNED(t, n) t __attribute__((aligned(8))
+#else
+#define ALIGNED(t, n) t
+#endif
+
+typedef ALIGNED(double, 8) DOUBLE_A;
+typedef DOUBLE_A * RESTRICT DOUBLE_PTR_AR; // aligned, restricted
+typedef const DOUBLE_A * RESTRICT DOUBLE_PTR_CAR; // const, aligned, restricted
+
+#if UINTPTR_MAX == 0xffffffffffffffff
+typedef ALIGNED(intptr_t, 8) INTP_A;
+#else
+typedef ALIGNED(intptr_t, 4) INTP_A;
+#endif
+typedef INTP_A * RESTRICT INTP_PTR_AR;
+typedef const INTP_A * RESTRICT INTP_PTR_CAR;
+
+typedef ALIGNED(char, 8) CHAR_A8;
+typedef CHAR_A8 * RESTRICT CHAR_PTR_A8R;
+typedef const CHAR_A8 * RESTRICT CHAR_PTR_CA8R;
 
 
 //////////////////// Find the unordered_map class ////////////////////
