@@ -47,16 +47,20 @@ def im_complexify(R, I=None, force=True):
     return __im_complexify(dstack((R,I)), force)
 
 def fft(im, shift=True):
+    # TODO: support rfft2, padding image up to a certain size (regular-number sized), and using FFTW
     o_dt = im.dtype
     if o_dt.kind in 'ui':
         mn, mx = get_dtype_min_max(o_dt)
         im = im.astype(float64)
-        if o_dt.kind == 'i': im += mn
+        if o_dt.kind == 'i':
+            im += mn
+            mx -= mn
         im /= mx
     im = fft2(check_image_single_channel(im))
     return fftshift(im) if shift else im
     
 def ifft(im, shift=True):
+    # TODO: support irfft2, de-padding image up, and using FFTW
     check_image(im)
     if im.dtype.kind != 'c': raise ValueError('Unsupported image type')
     return real_if_close(ifft2(ifftshift(im) if shift else im)) # should always end up real
