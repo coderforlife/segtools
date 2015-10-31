@@ -503,12 +503,15 @@ cdef extern from "numpy/arrayobject.h":
     # Assume a valid array, no errors
     bint PyArray_Check(object)
     int PyArray_FLAGS(ndarray) nogil
+    void PyArray_ENABLEFLAGS(ndarray, int flags) nogil
+    void PyArray_CLEARFLAGS(ndarray, int flags) nogil
     bint PyArray_ISCARRAY(ndarray) nogil
     bint PyArray_ISFARRAY(ndarray) nogil
     bint PyArray_ISCARRAY_RO(ndarray) nogil
     bint PyArray_ISFARRAY_RO(ndarray) nogil
     bint PyArray_ISBEHAVED(ndarray) nogil
     bint PyArray_ISBEHAVED_RO(ndarray) nogil
+    bint PyArray_ISWRITEABLE(ndarray) nogil
     int PyArray_NDIM(ndarray) nogil
     intp* PyArray_SHAPE(ndarray) nogil # == PyArray_DIMS
     intp PyArray_DIM(ndarray,int) nogil
