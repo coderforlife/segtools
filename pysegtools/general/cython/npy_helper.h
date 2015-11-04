@@ -102,7 +102,9 @@ inline bool isnan(long double f) { return _isnan((double)f) != 0; }
 #endif
 
 typedef ALIGNED(double, 8) DOUBLE_A;
-typedef DOUBLE_A * RESTRICT DOUBLE_PTR_AR; // aligned, restricted
+typedef       double   * RESTRICT DOUBLE_PTR_R;   // restricted
+typedef const double   * RESTRICT DOUBLE_PTR_CR;  // const, restricted
+typedef       DOUBLE_A * RESTRICT DOUBLE_PTR_AR;  // aligned, restricted
 typedef const DOUBLE_A * RESTRICT DOUBLE_PTR_CAR; // const, aligned, restricted
 
 #if UINTPTR_MAX == 0xffffffffffffffff
@@ -110,11 +112,13 @@ typedef ALIGNED(intptr_t, 8) INTP_A;
 #else
 typedef ALIGNED(intptr_t, 4) INTP_A;
 #endif
-typedef INTP_A * RESTRICT INTP_PTR_AR;
-typedef const INTP_A * RESTRICT INTP_PTR_CAR;
+typedef       intptr_t * RESTRICT INTP_PTR_R;
+typedef const intptr_t * RESTRICT INTP_PTR_CR;
+typedef       INTP_A   * RESTRICT INTP_PTR_AR;
+typedef const INTP_A   * RESTRICT INTP_PTR_CAR;
 
 typedef ALIGNED(char, 8) CHAR_A8;
-typedef CHAR_A8 * RESTRICT CHAR_PTR_A8R;
+typedef       CHAR_A8 * RESTRICT CHAR_PTR_A8R;
 typedef const CHAR_A8 * RESTRICT CHAR_PTR_CA8R;
 
 

@@ -195,9 +195,13 @@ cdef extern from "npy_helper.h":
     # The half and complex classes below come from this header
 	
 	# These types add aligned (A) or restricted (R) attributes to the types for speed
-    ctypedef double* DOUBLE_PTR_AR
+    ctypedef       double* DOUBLE_PTR_R
+    ctypedef const double* DOUBLE_PTR_CR
+    ctypedef       double* DOUBLE_PTR_AR
     ctypedef const double* DOUBLE_PTR_CAR
-    ctypedef intp* INTP_PTR_AR
+    ctypedef       intp* INTP_PTR_R
+    ctypedef const intp* INTP_PTR_CR
+    ctypedef       intp* INTP_PTR_AR
     ctypedef const intp* INTP_PTR_CAR
     ctypedef char* CHAR_PTR_A8R # 8-byte aligned
     ctypedef const char* CHAR_PTR_CA8R
