@@ -400,12 +400,12 @@ pixels where the mask is True are counted.""")
         if self.__per_slice:
             H = empty((nbins, len(ims)), intp)
             for i,(im,mk) in enumerate(izip(ims,mask)):
-                H[:,i] = imhist(im, nbins, mk)
+                H[:,i] = imhist(im.data, nbins, mk)
         else:
             H = zeros(nbins, intp)
             for im,mk in zip(ims,mask):
-                H += imhist(im, nbins, mk)
-        savetxt(stdout if self.__file == '-' else self.__file, H, '%u', '\t')
+                H += imhist(im.data, nbins, mk)
+        savetxt(stdout if self.__file == '-' else self.__file, H, str('%u'), '\t')
 
 class HistEqCommand(Command):
     @classmethod
