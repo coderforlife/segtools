@@ -436,7 +436,7 @@ the data-type won't be changed.
     def _opts(cls): return (
         Opt('in', 'The range to scale from, one of "data-type", "data", "stack-data", or two comma-seperated values for lower and upper',
             ConvertScaleConvertCommand._cast_in_scale, None, 'data-type'),
-        Opt('out', 'The range to scale from, one of "data-type" or two comma-seperated values for lower and upper (if reversed data will be reversed)',
+        Opt('out', 'The range to scale to, one of "data-type" or two comma-seperated values for lower and upper (if reversed data will be reversed)',
             ConvertScaleConvertCommand._cast_out_scale, None, 'data-type'),
         Opt('dt', 'The new data-type (see --help data-types) or "same" to not convert',
             ConvertScaleConvertCommand._cast_dtype, None, 'same')
