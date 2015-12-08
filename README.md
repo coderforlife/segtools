@@ -35,24 +35,25 @@ Image stack file formats supported:
 Filters supported:
  * Stacks: split, combine, select slices
  * Channels: extract, combine
- * Blur: Gaussian, median, mean
+ * Blur: Gaussian, median, mean [2D-only at the moment]
  * Flip: x/y/z
  * Rotate: cw/ccw/full
  * Inversion (black to white, white to black)
  * Thresholding
- * Masks: calculate from solid regions near edges
- * Filling: solid, mean, mirror, reflect, nearest, wrap
+ * Masks: calculate from solid regions near edges [2D-only]
+ * Filling: solid, mean, mirror, reflect, nearest, wrap [2D-only]
  * Background Padding: cropping, adding (masks can be 'resolved' into rectangular regions in various ways)
- * Histogram: saving, equalization (standard and exact) (supports masks)
+ * Histogram: saving, equalization (standard and exact) (supports masks) [exact histogram equalization is 2D-only at the moment]
  * Labelling: labelling, re-labelling, re-numbering
- * Resize: binning (mean, median), bicubic interpolation
+ * Resize: binning (mean, median), bicubic interpolation [2D-only at the moment]
  * Pixel Type Conversions: scaling conversion, shrinking integers, byte order, raw
- * Complex: real, imaginary, complexify, FFT, IFFT
+ * Complex: real, imaginary, complexify, FFT, IFFT [2D-only at the moment]
 
 Features in the works:
  * Image stacks file formats: MHA/MHD, bioformats supported formats
  * 2D image file formats: bioformats supported formats
  * Filters: grayscale, color space conversions, paletting
+ * 3D Filters: blurring, exact histogram equalization, binning/resizing, ffts
 
 
 rawscripts
