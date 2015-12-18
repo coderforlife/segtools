@@ -13,6 +13,17 @@ from collections import Iterable
 sys_endian = '<' if sys.byteorder == 'little' else '>'
 sys_64bit = sys.maxsize > 2**32
 
+def pairwise(iterable):
+    """
+    Makes an iterator that gives the first and second items from iterable, then the second and
+    third items, until the end. Overall one less pair of items are generated than are in iterable.
+    """
+    import itertools
+    a, b = itertools.tee(iterable)
+    next(b, None)
+    return itertools.izip(a, b)
+
+
 ##### numpy-like functions for iterators #####
 def prod(itr): return functools.reduce(mul, itr, 1)
 def ravel(itr): return (x for i in itr for x in (ravel(i) if isinstance(i, Iterable) and not isinstance(i, String) else (i,)))
