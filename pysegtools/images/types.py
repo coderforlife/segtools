@@ -10,7 +10,7 @@ from ..imstack import Help
 
 __all__ = [
     'create_im_dtype','get_im_dtype','get_im_dtype_and_nchan','im_dtype_desc','get_dtype_endian',
-    'is_image','is_image_desc','check_image','is_single_channel_image','check_image_single_channel',
+    'is_image','is_image_desc','check_image','is_image_stack','check_image_stack','is_image_or_stack','check_image_or_stack','is_single_channel_image','check_image_single_channel',
     'im_rgb_view','im_raw_view','im_complexify','im_decomplexify','im_decomplexify_dtype','im_complexify_dtype',
     'get_im_min_max','get_dtype_min_max','get_dtype_min','get_dtype_max',
     ]
@@ -119,7 +119,7 @@ def im_dtype_desc(im_or_dtype):
     return ('%d*%s'%(nchan,base)) if nchan > 1 else base
 def get_dtype_endian(dt):
     """Get a '<' or '>' from a dtype's byteorder (which can be |, =, <, or >)."""
-    endian = dtype(dt).byteorder
+    endian = dtype(dt.base).base.byteorder
     if endian == '|': return '<' # | means N/A (single byte), report as little-endian
     elif endian == '=': return sys_endian # is native byte-order
     return endian
@@ -154,6 +154,35 @@ def check_image(im):
     if not (ndim == 2 and im.dtype.type in __basic_types+__cmplx_types or
             ndim == 3 and 2 <= im.shape[2] <= 5 and im.dtype.type in __basic_types):
         raise ValueError('Unknown image format')
+def is_image_stack(im):
+    """
+    Returns True if `im` is an image stack, basically it is a ndarray of 3 or 4 dimensions where
+    the 4th dimension length is 1-5 and the data type is a basic data type (integer or float, or
+    complex for 3d images). Does not check to see that the image has no zero-length dimensions.
+    """
+    ndim = 3 if im.ndim == 4 and im.shape[3] == 1 else im.ndim
+    return (ndim == 3 and im.dtype.type in __basic_types+__cmplx_types or
+            ndim == 4 and 2 <= im.shape[3] <= 5 and im.dtype.type in __basic_types)
+def check_image_stack(im):
+    """
+    Similar to is_image_stack except instead of returning True/False it throws an exception if it
+    isn't an image stack.
+    """
+    ndim = 3 if im.ndim == 4 and im.shape[3] == 1 else im.ndim
+    if not (ndim == 3 and im.dtype.type in __basic_types+__cmplx_types or
+            ndim == 4 and 2 <= im.shape[3] <= 5 and im.dtype.type in __basic_types):
+        raise ValueError('Unknown image stack format')
+def is_image_or_stack(im):
+    """
+    Returns True if `im` is an image slice or image stack.
+    """
+    return is_image(im) or is_image_stack(im)
+def check_image_or_stack(im):
+    """
+    Similar to is_image_or_stack except instead of returning True/False it throws an exception if
+    it isn't an image slice or image stack.
+    """
+    if not (is_image(im) or is_image_stack(im)): raise ValueError('Unknown image format')
 def is_single_channel_image(im):
     """
     Returns True if `im` is a single-channel image, basically it is a ndarray of 2 or 3 dimensions
