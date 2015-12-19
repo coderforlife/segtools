@@ -11,7 +11,7 @@ from ..imstack import Help
 __all__ = [
     'create_im_dtype','get_im_dtype','get_im_dtype_and_nchan','im_dtype_desc','get_dtype_endian',
     'is_image','is_image_desc','check_image','is_image_stack','check_image_stack','is_image_or_stack','check_image_or_stack','is_single_channel_image','check_image_single_channel',
-    'im_rgb_view','im_raw_view','im_complexify','im_decomplexify','im_decomplexify_dtype','im_complexify_dtype',
+    'im_rgb_view','im_raw_view','im_complexify','im_decomplexify','im_decomplexify_dtype','im_complexify_dtype','im2double',
     'get_im_min_max','get_dtype_min_max','get_dtype_min','get_dtype_max',
     ]
 
@@ -281,6 +281,23 @@ def im_decomplexify_dtype(dt):
     """Same as im_decomplexify but with just the dtype."""
     if dt.type not in __cmplx2float: return dt
     return dtype((__cmplx2float[dt.type],2)).newbyteorder(dt.byteorder)
+
+def im2double(im):
+    """
+    Converts an image to doubles from 0.0 to 1.0 if not already a floating-point type. Basically a
+    shortcut for convert.scale(im, None, (0.0, 1.0), float64)
+    """
+    from numpy import float64, iinfo
+    check_image_or_stack(im)
+    dt = im.dtype
+    k, t, im = dt.kind, dt.type, im.astype(float64, copy=False)
+    if k == 'u': im /= iinfo(t).max
+    elif k == 'i':
+        ii = iinfo(t)
+        im -= ii.min
+        im /= (ii.max - ii.min)
+    elif k not in 'fb': raise ValueError('unknown image format')
+    return im
 
 
 ##### Min/Max for data types #####
