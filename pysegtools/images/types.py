@@ -287,7 +287,7 @@ def im2double(im):
     Converts an image to doubles from 0.0 to 1.0 if not already a floating-point type. Basically a
     shortcut for convert.scale(im, None, (0.0, 1.0), float64)
     """
-    from numpy import float64, iinfo
+    from numpy import float64
     check_image_or_stack(im)
     dt = im.dtype
     k, t, im = dt.kind, dt.type, im.astype(float64, copy=False)
