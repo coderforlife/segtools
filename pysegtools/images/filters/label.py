@@ -144,6 +144,7 @@ class _LabeledImageStackWithStruct(_LabeledImageStack):
         else:
             from scipy.ndimage.morphology import generate_binary_structure
             structure = generate_binary_structure(ndim, 1)
+        self._per_slice = bool(per_slice)
         self._structure = structure
         self._labelled = None
         self._n_labels = None
@@ -166,6 +167,7 @@ class _LabeledImageStackWithStruct(_LabeledImageStack):
         return self._n_labels
     @property
     def stack(self):
+        if self._per_slice: return super(_LabeledImageStackWithStruct, self).stack
         if self._labelled is None: self._calc_labels_full()
         return self._labelled
 class _LabelImagePerSliceWithStruct(_LabeledImageSlice):
@@ -188,6 +190,7 @@ class RelabelImageStack(_LabeledImageStackWithStruct):
 class ConsecutivelyNumberImageStack(_LabeledImageStack):
     #pylint: disable=protected-access
     def __init__(self, ims, ordered=False, per_slice=True):
+        self._per_slice = bool(per_slice)
         if per_slice:
             self._number = _number2 if ordered else _renumber2
             super(ConsecutivelyNumberImageStack, self).__init__(ims, ConsecutivelyNumberImagePerSlice)
@@ -275,6 +278,7 @@ class ConsecutivelyNumberImageStack(_LabeledImageStack):
         return self._n_labels
     @property
     def stack(self):
+        if self._per_slice: return super(ConsecutivelyNumberImageStack, self).stack
         if self._renumbered is None: self._calc_renumbered()
         return self._renumbered
 class ConsecutivelyNumberImagePerSlice(_LabeledImageSlice):
