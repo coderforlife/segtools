@@ -11,7 +11,8 @@ from StringIO import StringIO
 from numpy import dtype, int64, intp, float64, finfo
 from numpy import array, empty, zeros, linspace, tile, repeat, vstack, savetxt, loadtxt
 from numpy import add, left_shift, floor, sqrt
-from numpy import lexsort, histogram, spacing, count_nonzero
+from numpy import lexsort, spacing, count_nonzero
+from scipy.ndimage import histogram
 
 from ._stack import UnchangingFilteredImageStack, UnchangingFilteredImageSlice
 from .._stack import ImageStack
@@ -34,7 +35,7 @@ def __restore_signed(im, dt):
 
 def __imhist(im, nbins):
     mn,mx = get_im_min_max(im)
-    return histogram(im, nbins, range=(mn,mx+1))[0]
+    return histogram(im, mn, mx, nbins)
 
 def imhist(im, nbins=256, mask=None):
     """Calculate the histogram of an image. By default it uses 256 bins (nbins)."""
@@ -110,7 +111,7 @@ def __histeq(im, h_dst, h_src):
     h_dst_cdf = h_dst.cumsum()
     nbins_dst = len(h_dst)
 
-    if h_src is None: h_src = histogram(im,256,range=(0,nlevels+1))[0]
+    if h_src is None: h_src = histogram(im, 0, nlevels, 256)
     h_src = h_src.ravel()/sum(h_src)
     h_src_cdf = h_src.cumsum()
     nbins_src = len(h_src)

@@ -9,7 +9,7 @@ from abc import abstractmethod
 from numpy import sqrt, hypot, arctan2, pad, pi, dtype, float64, array, ones
 from scipy.ndimage import convolve, binary_dilation, maximum_filter
 
-from .convert import otsus_multithresh
+from .threshold import otsus_multithresh
 from ..types import check_image, get_im_dtype_and_nchan, im2double
 from ...general import delayed
 from ._stack import FilteredImageStack, FilteredImageSlice

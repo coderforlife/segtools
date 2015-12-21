@@ -8,28 +8,16 @@ from fractions import gcd
 from itertools import izip
 from collections import Sequence
 
-from numpy import empty, zeros, subtract, add, dtype, promote_types
+from numpy import empty, zeros, dtype, promote_types, subtract, add
 
-from ..types import check_image, create_im_dtype, im_dtype_desc
-from ..types import get_dtype_endian, get_im_dtype_and_nchan, get_im_min_max, get_dtype_min_max
+from ..types import check_image_or_stack, create_im_dtype, im_dtype_desc
+from ..types import get_dtype_endian, get_im_min_max, get_dtype_min_max
 from ._stack import FilteredImageStack, FilteredImageSlice
 from .._stack import Homogeneous
 from ...imstack import CommandEasy, Opt
 from ...general import sys_endian
 
-__all__ = ['threshold', 'raw_convert', 'convert_byte_order', 'scale']
-
-# convert: any single channel types excluding complex
-# to:      single channel bool
-def threshold(im, thresh=1):
-    """
-    Convert image to black and white. The threshold is used to determine what is made black and white.
-    Every value at or above the threshold will be white and below it will be black.
-    """
-    check_image(im)
-    dt, nchan = get_im_dtype_and_nchan(im)
-    if dt.kind == 'c' or nchan != 1: raise ValueError('unsupported image type')
-    return im>=thresh
+__all__ = ['raw_convert', 'convert_byte_order', 'scale']
 
 # convert: any type
 # to:      a type that has the same itemsize
@@ -38,10 +26,10 @@ def raw_convert(im, dt):
     Convert image data type to a data type with the same byte-size directly (for example, from
     signed to unsigned integers of the same size).
     """
-    check_image(im)
+    check_image_or_stack(im)
     if im.dtype.itemsize != dt.itemsize: raise ValueError('must convert to type with same byte size')
     return im.view(dt)
-        
+
 
 __byte_orders = {
     '<': '<', 'l': '<', 'little': '<',
@@ -60,7 +48,7 @@ def convert_byte_order(im, new_byte_order):
       '=', '@', 'n', 'native',
       '~', 's', 'swap'
     """
-    check_image(im)
+    check_image_or_stack(im)
     if new_byte_order in ('~', 'swap'):
         new_byte_order = '>' if get_dtype_endian(im.dtype) == '<' else '<'
     else:
@@ -81,7 +69,7 @@ def scale(im, in_scale=None, out_scale=None, dt=None):
     """
     
     # Process arguments
-    check_image(im)
+    check_image_or_stack(im)
     if in_scale is None and out_scale is None and dt is None: return im
     cur = im.dtype
     dt = cur if dt is None else dtype(dt)
@@ -175,24 +163,6 @@ def scale(im, in_scale=None, out_scale=None, dt=None):
 
 
 ########## Image Stacks ##########
-class ThresholdImageStack(FilteredImageStack):
-    def __init__(self, ims, thresh=1):
-        if isinstance(thresh, Sequence):
-            if len(thresh) < len(ims):
-                thresh = list(thresh) + [thresh[-1]]*(len(ims)-len(thresh))
-        else:
-            self._dtype, self._homogeneous = bool, Homogeneous.DType
-            thresh = [thresh] * len(ims)
-        super(ThresholdImageStack, self).__init__(ims,
-            [ThresholdImageSlice(im, self, z, t) for z,(im,t) in enumerate(izip(ims, thresh))])
-class ThresholdImageSlice(FilteredImageSlice):
-    def __init__(self, im, stack, z, thresh):
-        super(ThresholdImageSlice, self).__init__(im, stack, z)
-        self.__threshold = thresh
-        self._set_props(dtype(bool), None)
-    def _get_props(self): self._set_props(None, self._input.shape)
-    def _get_data(self): return threshold(self._input.data, self.__threshold)
-
 class RawConvertImageStack(FilteredImageStack):
     def __init__(self, ims, dt):
         if isinstance(dt, Sequence):
@@ -271,35 +241,6 @@ class ScaleImageSlice(FilteredImageSlice):
 
 
 ########## Commands ##########
-class ThresholdCommand(CommandEasy):
-    _threshold = None
-    @classmethod
-    def name(cls): return 'threshold'
-    @classmethod
-    def _desc(cls): return """
-Threshold a gray-scale image converting it to just black and white. All pixels less than the
-threshold will be made black/0 and all pixels greater than or equal to it will be made white/1. By
-using a comma-seperated list of thresholds, each slice can have a different threshold applied.
-"""
-    @classmethod
-    def flags(cls): return ('bw', 'threshold', 'thresh', 't')
-    @classmethod
-    def _opts(cls): return (
-        Opt('threshold', 'The threshold value, either an integer, float, or a comma-seperated list of values', Opt.cast_tuple_of(Opt.cast_number())),
-        )
-    @classmethod
-    def _consumes(cls): return ('Grayscale image stack to be thresholded',)
-    @classmethod
-    def _produces(cls): return ('Thresholded image - a logical/bool image',)
-    @classmethod
-    def _see_also(cls): return ('invert','scale')
-    def __str__(self):
-        if len(self._threshold) == 1:
-            return ('threshold at %s' % self._threshold)
-        else:
-            return 'threshold at [%s]' % (",".join(str(t) for t in self._threshold))
-    def execute(self, stack): stack.push(ThresholdImageStack(stack.pop(), self._threshold))
-
 class RawConvertCommand(CommandEasy):
     _dtype = None
     @classmethod
