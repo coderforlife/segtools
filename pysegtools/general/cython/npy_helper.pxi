@@ -53,7 +53,7 @@ cdef inline void __array_resize2D(ndarray a, intp nrows):
     dims.ptr = d; dims.len = 2
     PyArray_Resize(a, &dims, True, NPY_CORDER)
 
-cdef inline ndarray __view_slice(ndarray a, intp ndim, intp* dims, intp* strides, void* data, int flags):
+cdef inline ndarray __view_slice(ndarray a, int ndim, intp* dims, intp* strides, void* data, int flags):
     """
     Creates a new view of an array (a) with the given dimensions (ndim/dims), strides, underlying
     data, and flags.
@@ -84,14 +84,15 @@ cdef inline ndarray __view_trim1D(ndarray a, intp start, intp end):
     cdef intp size = PyArray_DIM(a,0)-start-end
     return __view_slice(a, 1, &size, PyArray_STRIDES(a), PyArray_BYTES(a)+(PyArray_STRIDE(a,0)*start), NPY_ARRAY_CARRAY)
 
-cdef inline ndarray __view_trim2D(ndarray a, intp start, intp end):
+cdef inline ndarray __view_trim2D(ndarray a, intp start_row, intp end_row, intp start_col=0, intp end_col=0):
     """
     View the rows from the array after removing start rows from the beginning and end rows from the
-    end, equivalent to a[start:-end,:] (except end can be 0).
+    end, equivalent to a[start_row:-end_row,start_col:-end_col] (except end_row and end_col can be 0).
     """
     cdef intp dims[2]
-    dims[0] = PyArray_DIM(a,0)-start-end; dims[1] = PyArray_DIM(a,1)
-    return __view_slice(a, 2, dims, PyArray_STRIDES(a), PyArray_BYTES(a)+(PyArray_STRIDE(a,0)*start), NPY_ARRAY_CARRAY)
+    dims[0] = PyArray_DIM(a,0)-start_row-end_row; dims[1] = PyArray_DIM(a,1)-start_col-end_col
+    cdef intp off = PyArray_STRIDE(a,0)*start_row+PyArray_STRIDE(a,1)*start_col
+    return __view_slice(a, 2, dims, PyArray_STRIDES(a), PyArray_BYTES(a)+off, NPY_ARRAY_CARRAY)
 
 #cdef inline ndarray __view_flipud2D(ndarray a):
 #    cdef intp strides[2]
