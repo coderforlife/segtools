@@ -1,0 +1,41 @@
+Things that must installed at a system level:
+ * gcc and gfortran (or another C and Fortran compiler)
+ * Python 2.7
+ * Python headers
+ * virtualenv (could easily be installed manually though)
+
+Recommended:
+ * linear-algebra package including devel (in order of preference: MKL, ATLAS+LAPACK, OpenBLAS+LAPACK, any BLAS library)
+ * devel packages for image formats you wish to read:
+	* PNG: zlib (note: uncompressed always available)
+	* TIFF: libtiff (note: uncompressed always available)
+	* JPEG: libjpeg or libjpeg-turbo
+	* JPEG2000: openjpeg
+	* WebP: libwebp
+	* tkinter bitmap/photos: tcl/tk
+ * hdf5 devel package for reading and writing modern MATLAB files
+ * fftw devel package for faster FFT calculations
+
+So on CentOS-7 all of these can be installed with the following yum.
+The following command installs all of them (including recommended, but not including some image formats):
+	yum install gcc gcc-gfortran python python-devel python-virtualenv \
+				atlas atlas-devel lapack lapack-devel lapack64 lapack64-devel \
+				zlib zlib-devel libtiff libtiff-devel libjpeg-turbo libjpeg-turbo-devel \
+				hdf5 hdf5-devel fftw fftw-devel
+
+				
+Now run these commands:
+
+cd ~               # or wherever
+mkdir imstack-env
+cd imstack-env
+virtualenv .
+source bin/activate
+pip install numpy
+pip install cython # make sure this is installed before scipy and after numpy!
+pip install scipy
+pip install pillow, psutil, subprocess32
+pip install h5py, pyfftw # only if the corresponding devel packages are installed
+git clone git@github.com:slash-segmentation/segtools.git
+ln -s segtools/pysegtools/imstack bin/imstack
+imstack --check
