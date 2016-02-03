@@ -25,7 +25,7 @@ setup(  name='pysegtools',
         packages=['pysegtools'], # TODO: do all 'packages' need to be listed?
         use_2to3=True, # the code *should* support Python 3 once run through 2to3 but this isn't tested
         zip_safe=False, # I don't think this code would work when running from inside a zip file due to the dynamic-load and dynamic-cython systems
-        package_data = { '': ['*.pyx', '*.pyxdep', '*.pxi', '*.pxd', '*.h', '*.txt'], } # Make sure all Cython files are wrapped up with the code
+        package_data = { '': ['*.pyx', '*.pyxdep', '*.pxi', '*.pxd', '*.h', '*.txt'], }, # Make sure all Cython files are wrapped up with the code
         install_requires=['numpy>=1.7','scipy>=0.12'] + (['subprocess32>=3.2.6'] if need_sp32 else []),
         extras_require={
               'OPT': ['cython>=0.19','fftw>=0.9.2'],
