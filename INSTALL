@@ -39,3 +39,18 @@ pip install h5py, pyfftw # only if the corresponding devel packages are installe
 git clone git@github.com:slash-segmentation/segtools.git
 ln -s segtools/pysegtools/imstack bin/imstack
 imstack --check
+
+
+
+Note that you can also use pip for many of these steps:
+
+pip install[OPT,PIL,MATLAB,tasks]
+
+Where OPT forces cython and fftw to be installed (for optimum performance), PIL forces PIL to be
+installed, MATLAB forces h5py to be intsalled, and tasks forces psutil to be installed. Note that
+these cannot force the installation of system devel packages, but may fail if those packages are
+not installed. One MAJOR exception is that PIP will install just fine without support for PNGs,
+TIFFs, JPEGs, etc if those devel libraries are not intsalled first!
+
+Additionally, pip will not handle the last 2 steps - you must add these if desired.
+
