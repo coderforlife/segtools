@@ -20,7 +20,7 @@ A single image stack does not need to be "homogeneous" (the same dimensions / pi
 slice, however some filters and file formats do require homogeneous stacks.
 
 Image stack file formats supported:
- * PIL-supported stacks including TIFF, GIF, IM, and SPIDER [readonly] 
+ * PIL-supported stacks including TIFF, GIF, IM, and SPIDER [all readonly] 
    see http://pillow.readthedocs.org/en/latest/handbook/image-file-formats.html
  * MRC [homogeneous only]
  * MAT
@@ -37,23 +37,25 @@ Filters supported:
  * Channels: extract, combine
  * Blur: Gaussian, median, mean
  * Flip: x/y/z
- * Rotate: cw/ccw/full
+ * Rotate: cw/ccw/full [2D-only at the moment]
  * Inversion (black to white, white to black)
- * Thresholding
+ * Thresholding: auto (Otsu's method), hysteresis, *multi
+ * Edge Detection: Prewitt, Scharr, Sobel, Canny [2D-only]
  * Masks: calculate from solid regions near edges [2D-only]
  * Filling: solid, mean, mirror, reflect, nearest, wrap [2D-only]
  * Background Padding: cropping, adding (masks can be 'resolved' into rectangular regions in various ways)
  * Histogram: saving, equalization (standard and exact) (supports masks) [exact histogram equalization is 2D-only at the moment]
  * Labelling: labelling, re-labelling, re-numbering
- * Resize: binning (mean, median), bicubic interpolation [2D-only at the moment]
+ * Resize: binning (mean, median), bicubic interpolation
  * Pixel Type Conversions: scaling conversion, shrinking integers, byte order, raw
  * Complex: real, imaginary, complexify, FFT, IFFT [2D-only at the moment]
 
 Features in the works:
- * Image stacks file formats: MHA/MHD, bioformats supported formats
+ * Image stacks file formats: MHA/MHD, multi-TIFF, bioformats supported formats
  * 2D image file formats: bioformats supported formats
- * Filters: grayscale, color space conversions, paletting
- * 3D Filters: exact histogram equalization, binning/resizing, ffts
+ * Filters: ansiotropic diffusion, CLAHE, grayscale, color space conversions, paletting,
+   morphological filters (opening, closing, dilation, erosion, propogation, fill holes, hit-or-miss, tophat)
+ * 3D Filters: rotation, exact histogram equalization, FFTs
 
 
 rawscripts

@@ -9,7 +9,7 @@ from collections import Sequence
 from math import ceil, floor
 from numbers import Real
 
-from numpy import zeros, array, arange, dtype, intp, tile, linspace
+from numpy import zeros, array, arange, dtype, uint8, intp, tile, linspace
 from numpy import where, triu_indices, nan_to_num, seterr
 from scipy.ndimage import histogram, generate_binary_structure, binary_dilation
 
@@ -176,9 +176,9 @@ def hysteresis_threshold(im, thresh=None, footprint=None):
     Convert image to black and white using hysteresis thresholding. Two threshold values are used
     to determine what is made black and white, with everything at or above the higher threshold
     will be white, everything below the lower threshold is black, and everything inbetween is
-    calculated using hysteresis - everything that has a majority of white neighbors is made white,
-    otherwise it is made black. Neighbors are determined using the footprint given or a footprint
-    with connectivity 1 (no diagonals) if not provided. If the thresholds are not provided they are
+    calculated using hysteresis - everything that has a white neighbor is made white, otherwise it
+    is made black. Neighbors are determined using the footprint given or a footprint with
+    connectivity 1 (no diagonals) if not provided. If the thresholds are not provided they are
     calculated using Otsu's method.
     """
     check_image(im)
@@ -280,13 +280,34 @@ class MultithresholdImageStack(FilteredImageStack):
     _thresh = None
     def __init__(self, ims, thresh=4):
         if isinstance(thresh, Sequence):
-            pass
-        elif thresh <= -2:
-            pass
-        elif thresh >=  2:
-            pass
-        else:
-            pass
+            thresh =  list(thresh)
+            if len(thresh) > 255: raise ValueError('Only up to 255 levels supported')
+        elif abs(thresh) > 255 or abs(thresh) < 2: raise ValueError('Only up to 255 levels supported')
+        elif thresh < 0:
+            self._thresh = -thresh
+            thresh = delayed(self._stack_threshold, tuple)
+        super(MultithresholdImageStack, self).__init__(ims, MultithresholdImageSlice, thresh)
+    def _stack_threshold(self):
+        if not isinstance(self._thresh, Sequence):
+            #pylint: disable=protected-access
+            mn,mx = get_dtype_min_max(self._ims.dtype)
+            h = zeros(256, intp)
+            for slc in self._slices: h += histogram(slc._input.data, mn, mx, 256)
+            self._thresh = otsus_multithresh((h, linspace(mn, mx, 256)), self._thresh)
+        return self._thresh
+#def __init_uint_maxes():
+#    from numpy import iinfo, sctypes
+#    return [1,bool] + sorted((iinfo(dt).max,dt) for dt in sctypes['uint'])
+#_uint_maxes = delayed(__init_uint_maxes, list)
+class MultithresholdImageSlice(FilteredImageSlice):
+    def __init__(self, im, stack, z, thresh):
+        super(MultithresholdImageSlice, self).__init__(im, stack, z)
+        self.__threshold = thresh
+        #n = len(thresh) if isinstance(thresh, Sequence) else thresh
+        #self._set_props(dtype(next(dt for um,dt in _uint_maxes if n <= um)), None)
+        self._set_props(dtype(uint8), None)
+    def _get_props(self): self._set_props(None, self._input.shape)
+    def _get_data(self): return multithreshold(self._input.data, self.__threshold)
 
 
 ########## Commands ##########
