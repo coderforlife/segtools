@@ -221,6 +221,8 @@ class _MATFile(object):
         if self._f is not None:
             self._f.close()
             self._f = None
+    def __enter__(self): return self
+    def __exit__(self, exc_type, exc_val, exc_tb): self.close()
     def __str__(self):  return "<MATLAB v%g file '%s'>" % (self._version, self._filename)
     def __repr__(self): return "<MATLAB v%g file '%s'>" % (self._version, self._filename)
     @property
