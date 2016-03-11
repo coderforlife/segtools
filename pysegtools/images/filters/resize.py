@@ -32,7 +32,7 @@ def __im_bin(f, size, im, out, n):
     out_shp = [i - (1 if e else 0) for i,e in izip(out.shape, edges)] # the main part of out, not including the partial edges
     for use_edges in product((False, True), repeat=n):
         # In use_edges, a True is to use edge for that dimension instead of size
-        bs = [(e if ue else size) for ue,e in izip(use_edges, edges)]
+        bs = tuple((e if ue else size) for ue,e in izip(use_edges, edges))
         if any(b==0 for b in bs): continue # edge is nothing, skip it
         ii = tuple((slice(-e,None) if ue else slice(None)) for ue,e in izip(use_edges, edges))
         oi = tuple((slice(-1,None) if ue else slice(o))    for ue,o in izip(use_edges, out_shp))
