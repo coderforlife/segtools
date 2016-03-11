@@ -24,8 +24,8 @@ def __block_view(im, bs):
     # Gets the image as a set of blocks. Any blocks that don't fit in are simply dropped (on bottom
     # and right edges). The blocks are made into a single axis (axis=2). To change this and keep the
     # blocks as rectangles (in axis=2 and 3) remove the final reshape.
-    shape   = tuple(i/b for i,b in zip(im.shape, bs))
-    strides = tuple(i*b for i,b in zip(im.strides, bs)) + im.strides
+    shape   = tuple(i//b for i,b in zip(im.shape, bs))
+    strides = tuple(i*b  for i,b in zip(im.strides, bs)) + im.strides
     return as_strided(im, shape=shape+bs, strides=strides).reshape(shape+(-1,))
 def __im_bin(f, size, im, out, n):
     edges = [i%size for i in im.shape[:n]]
