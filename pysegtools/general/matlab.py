@@ -737,12 +737,12 @@ class _MAT5Entry(_MAT45Entry):
     def open(cls, mat, f, is_compressed=False):
         name = None
         start = f.tell()
-        try:
 
+        try:
             # Read the basic header
-            dt, nbytes, skip = mat._read_tag(f, first=not is_compressed)
+            mdt, nbytes, skip = mat._read_tag_raw(f, first=not is_compressed)
             end = f.tell() + skip
-            if dt == 'compressed':
+            if mdt == 15:
                 # Restart using a compressed stream
                 if is_compressed: raise ValueError()
                 with GzipFile(f, mode='rb', method='zlib') as gzf:
@@ -750,7 +750,7 @@ class _MAT5Entry(_MAT45Entry):
                 e.__start_comp, e._start = e._start, start #pylint: disable=attribute-defined-outside-init
                 if f.seek(end) != end: raise ValueError()
                 return e
-            elif dt != 'matrix': raise ValueError() # at the top level we only accept matrix or compressed
+            elif mdt != 14: raise ValueError() # at the top level we only accept matrix or compressed
                 
             # Parse matrix headers
             flags_class, nzmax = mat._read_subelem(f, uint32, 2)
@@ -1374,22 +1374,19 @@ class _MAT5File(_MAT45File):
             self.__subsys_data_off = ssdo
         if self._f.seek(116) != 116 or self._f.write(pack(str(self._endian+'Q'), ssdo)) != 8: raise IOError()
 
-    def _read_tag(self, f, expected_type=None, expected_nvals=None, first=False, sub_dt=None):
+    def _read_tag_raw(self, f, first=False):
         """
-        Reads a tag header.
+        Reads a tag header and returns the raw data.
 
-        Return the type of the data (None, a special string, or a numeric type), the number of bytes
-        of data, and the number bytes including padding (enough to skip to the next tag). The
-        file itself is positiioned immediately after the tag so data is ready to be read or skipped.
+        Return the MATLAB data type identifier (a number), the number of bytes of data, and the
+        number bytes including padding (enough to skip to the next tag). The file itself is
+        positioned immediately after the tag so data is ready to be read or skipped. No checking
+        of the data type is done. In nearly all cases, _read_tag should be used instead of this
+        function as it converts the data type into something useful and adds checks for it.
 
         f is usually self._f, however it may also be a GzipFile-wrapped version of self._f as well.
 
-        If expected_type or expected_nvals is not None this also checks the type and/or number of
-        values. For special types (like compressed and matrix), do not provide expected_nvals.
-
         If first is True, EOFError instead of ValueError is raised if the first read reads no data.
-
-        If sub_dt is not None, it is used instead of whatever the actual dtype is found to be.
         """
         mdt = f.read(4)
         if first and len(mdt) == 0: raise EOFError()
@@ -1409,6 +1406,24 @@ class _MAT5File(_MAT45File):
             if should_be_v7: self._version = 7
             elif mdt == 14:  self._version = 6
         elif should_be_v7 and self._version != 7: raise ValueError('File version mismatch')
+        return mdt, nbytes, skip
+    
+    def _read_tag(self, f, expected_type=None, expected_nvals=None, sub_dt=None):
+        """
+        Reads a tag header.
+
+        Return the type of the data (None, a special string, or a numeric type), the number of bytes
+        of data, and the number bytes including padding (enough to skip to the next tag). The
+        file itself is positioned immediately after the tag so data is ready to be read or skipped.
+
+        f is usually self._f, however it may also be a GzipFile-wrapped version of self._f as well.
+
+        If expected_type or expected_nvals is not None this also checks the type and/or number of
+        values. For special types (like compressed and matrix), do not provide expected_nvals.
+
+        If sub_dt is not None, it is used instead of whatever the actual dtype is found to be.
+        """
+        mdt, nbytes, skip = self._read_tag_raw(f)
         if sub_dt is not None:
             dt = sub_dt
         else:
@@ -1417,7 +1432,7 @@ class _MAT5File(_MAT45File):
         if ((expected_type is not None and expected_type != dt) or
             (expected_nvals is not None and expected_nvals != nbytes//dtype(_MAT5File._utf2type.get(dt,dt)).itemsize)):
             raise ValueError()
-        return dt, nbytes, skip        
+        return dt, nbytes, skip
     
     def _read_subelem(self, f, expected_type=None, expected_nvals=None):
         """
