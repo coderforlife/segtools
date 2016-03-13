@@ -556,6 +556,7 @@ cdef extern from "numpy/arrayobject.h":
     int PyArray_SetBaseObject(ndarray, object) except -1 # steals reference
     ndarray PyArray_CheckFromAny(object, PyArray_Descr*, int min_depth, int max_depth, int flags, PyObject*) # steals dtype reference
     ndarray PyArray_ContiguousFromAny(object, NPY_TYPES, int min_depth, int max_depth)
+    ndarray PyArray_FROMANY(object, NPY_TYPES, int min_depth, int max_depth, int requirements)
     ndarray PyArray_EMPTY(int ndims, intp* dims, NPY_TYPES, bint fortran)
     ndarray PyArray_ZEROS(int ndims, intp* dims, NPY_TYPES, bint fortran)
     ndarray PyArray_Arange(double start, double stop, double step, NPY_TYPES)
