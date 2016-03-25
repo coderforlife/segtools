@@ -100,7 +100,9 @@ Examples:""")
             else:
                 inds.append((i+last_ind) if i < 0 else i)
                 #all_neg = False
-        stack.push(ImageStackCollection(ims[inds]))
+        out = ImageStackCollection(ims[inds])
+        out._ims = ims # make sure we save a reference to the image stack so it doesn't get cleaned up
+        stack.push(out)
 
 class SplitCommand(Command):
     @classmethod
