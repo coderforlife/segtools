@@ -2,8 +2,6 @@
 
 # TODO: PY_VERSION_HEX?
 
-from libc.string cimport  memcmp, memcpy, memmove
-
 ############### Python ###############
 cdef extern from "Python.h":
     ctypedef int Py_intptr_t

@@ -10,6 +10,8 @@ from __future__ import division
 include "npy_helper.pxi"
 include "fused.pxi"
 
+from libc.string cimport memcmp, memcpy, memmove
+
 __all__ = ['unique_fast', 'unique_rows_fast',
            'unique_merge', 'unique_rows_merge',
            'replace', 'replace_rows',

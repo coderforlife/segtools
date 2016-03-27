@@ -1,37 +1,9 @@
 # Helpful Python, Cython, and Numpy functions and general initialization code
-
-cimport cython
 from cython cimport sizeof
-import sys
-import numpy
-
-from cpython.version cimport PY_MAJOR_VERSION
-
 from npy_helper cimport *
 
 ### Required to use the Numpy C-API ###
 import_array()
-
-
-########## Debug Functions ##########
-cdef unicode _ustring(s):
-    if type(s) is unicode: return <unicode>s
-    elif PY_MAJOR_VERSION < 3 and isinstance(s, bytes): return (<bytes>s).decode('ascii')
-    elif isinstance(s, unicode): return unicode(s)
-    else: raise TypeError(u"must be a string or unicode object")
-cdef _print_info(object o):
-    print(u"object at %08x [%d refs]" % (<uintp>(to_c(o)), PyArray_REFCOUNT(o)))
-    sys.stdout.flush()
-cdef _print_info_arr(ndarray a):
-    cdef unicode shape = u'x'.join(unicode(x) for x in a.shape)
-    cdef unicode strides = u', '.join(unicode(x) for x in a.strides)
-    print(u"array at %08x [%d refs]: %08x [%s] (%s) %04x; base: %08x" % (
-            <uintp>(to_c(a)), PyArray_REFCOUNT(a), <uintp>PyArray_DATA(a), shape, strides, PyArray_FLAGS(a), <uintp>PyArray_BASE(a)))
-    sys.stdout.flush()
-cdef _print_info_dtype(dtype dt):
-    print(u"dtype at %08x [%d refs]" % (<uintp>(to_c(dt)), PyArray_REFCOUNT(dt)))
-    sys.stdout.flush()
-def get_ref_count(object o): return PyArray_REFCOUNT(o)
 
 
 ########## Utility Functions ##########

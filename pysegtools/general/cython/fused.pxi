@@ -3,7 +3,6 @@
 
 DEF ADD_FUSED_TYPE_TO_FUNCTION=False
 
-import sys
 from npy_helper cimport *
 
 ############### Fused Function Helpers ###############
@@ -32,7 +31,6 @@ cdef PyObject* __get_fused(__pyx_FusedFunctionObject* self, PyObject* idx):
     Py_DECREF(unbound)
     return f
 __pyx_FusedFunctionType.tp_as_mapping.mp_subscript = <binaryfunc>__get_fused
-__py2 = sys.version_info[0] == 2
 cdef dict __fused_types = {}
 cdef inline void register_fused_type(str fused_type_name, dict types):
     """
@@ -41,10 +39,12 @@ cdef inline void register_fused_type(str fused_type_name, dict types):
     with. For example, an integer (for Numpy which gives a number to each type), a type object or a
     string.
     """
+	import sys
+	cdef bint py2 = sys.version_info[0] == 2
     IF ADD_FUSED_TYPE_TO_FUNCTION:
-        __fused_types[frozenset(types.itervalues() if __py2 else types.values())] = (fused_type_name,types)
+        __fused_types[frozenset(types.itervalues() if py2 else types.values())] = (fused_type_name,types)
     ELSE:
-        __fused_types[frozenset(types.itervalues() if __py2 else types.values())] = types
+        __fused_types[frozenset(types.itervalues() if py2 else types.values())] = types
 def fused(f=None, fallback=None): 
     """
     Operates on a fused function to make it more accessible. If the fused type was not registered
@@ -57,29 +57,31 @@ def fused(f=None, fallback=None):
     if f is None:
         from functools import partial
         return partial(fused, fallback=fallback)
+	import sys
+	cdef bint py2 = sys.version_info[0] == 2
     cdef dict sigs = f.__signatures__
     cdef str s
     IF ADD_FUSED_TYPE_TO_FUNCTION:
-        for k,v in sigs.iteritems() if __py2 else sigs.items(): v.__fused_type = k
+        for k,v in sigs.iteritems() if py2 else sigs.items(): v.__fused_type = k
         if '|' in next(iter(sigs)):
             from itertools import izip, product
             fts = [__fused_types[fs] for fs in (frozenset(s) for s in izip(*[s.split('|') for s in sigs]))]
             f.__fused_type = '|'.join(ft[0] for ft in fts)
-            fts = list(product(*[(ft[1].iteritems() if __py2 else ft[1].items()) for ft in fts]))
+            fts = list(product(*[(ft[1].iteritems() if py2 else ft[1].items()) for ft in fts]))
             itr = izip((tuple(k for k,_ in ft) for ft in fts), ('|'.join(v for _,v in ft) for ft in fts))
         else:
             f.__fused_type, ids = __fused_types[frozenset(sigs)]
-            itr = ids.iteritems() if __py2 else ids.items()
+            itr = ids.iteritems() if py2 else ids.items()
     ELSE:
         if '|' in next(iter(sigs)):
             from itertools import izip, product
             fts = list(product(*[
-                    __fused_types[fs].iteritems() if __py2 else __fused_types[fs].items() for fs in
+                    __fused_types[fs].iteritems() if py2 else __fused_types[fs].items() for fs in
                     (frozenset(s) for s in izip(*[s.split('|') for s in sigs]))
                 ]))
             itr = izip((tuple(k for k,_ in ft) for ft in fts), ('|'.join(v for _,v in ft) for ft in fts))
         else:
-            itr = __fused_types[frozenset(sigs)].iteritems() if __py2 else __fused_types[frozenset(sigs)].items()
+            itr = __fused_types[frozenset(sigs)].iteritems() if py2 else __fused_types[frozenset(sigs)].items()
     sigs.update({k:sigs[v] for k,v in itr})
     f.__fallback = fallback
     return f
