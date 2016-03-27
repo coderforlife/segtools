@@ -51,7 +51,7 @@ compiler_opts = {
         'mingw32' : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7','-fopenmp'],
         'cygwin'  : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7','-fopenmp'],
     }.get(default_compiler, [])
-linker_opts = {
+link_opts = {
         'msvc'    : [],
         'unix'    : ['-fopenmp'], # gcc/clang (whatever is system default)
         'mingw32' : ['-fopenmp'],
@@ -118,7 +118,7 @@ def __get_distutils_extension_wrap(modname, pyxfilename, *args):
     if extension_mod.language is None:
         extension_mod.language = "c++"
     extension_mod.extra_compile_args = compiler_opts + extension_mod.extra_compile_args
-    extension_mod.extra_linker_args = linker_opts + extension_mod.extra_linker_args
+    extension_mod.extra_link_args = link_opts + extension_mod.extra_link_args
     return extension_mod,setup_args
 
 def _load_mod(mod, path, build_dir):
