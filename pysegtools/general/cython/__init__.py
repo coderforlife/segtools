@@ -45,10 +45,10 @@ fb_suffix = '.py'
 
 includes = (os.path.dirname(__file__), numpy.get_include()) if _have_numpy else (os.path.dirname(__file__),)
 compiler_opts = {
-        'msvc'    : ['/D_SCL_SECURE_NO_WARNINGS','/EHsc','/O2','/DNPY_NO_DEPRECATED_API=7','/bigobj'],
-        'unix'    : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'], # gcc/clang (whatever is system default)
-        'mingw32' : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'],
-        'cygwin'  : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7'],
+        'msvc'    : ['/D_SCL_SECURE_NO_WARNINGS','/EHsc','/O2','/DNPY_NO_DEPRECATED_API=7','/bigobj','/openmp'],
+        'unix'    : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7','-fopenmp'], # gcc/clang (whatever is system default)
+        'mingw32' : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7','-fopenmp'],
+        'cygwin'  : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7','-fopenmp'],
     }.get(get_default_compiler(), []) # TODO: this isn't the compiler that will necessarily be used, but is a good guess...
 
 warnings.filterwarnings('ignore', # stupid warning because Cython is confused...
