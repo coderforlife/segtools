@@ -39,8 +39,8 @@ cdef inline void register_fused_type(str fused_type_name, dict types):
     with. For example, an integer (for Numpy which gives a number to each type), a type object or a
     string.
     """
-	import sys
-	cdef bint py2 = sys.version_info[0] == 2
+    import sys
+    cdef bint py2 = sys.version_info[0] == 2
     IF ADD_FUSED_TYPE_TO_FUNCTION:
         __fused_types[frozenset(types.itervalues() if py2 else types.values())] = (fused_type_name,types)
     ELSE:
@@ -57,8 +57,8 @@ def fused(f=None, fallback=None):
     if f is None:
         from functools import partial
         return partial(fused, fallback=fallback)
-	import sys
-	cdef bint py2 = sys.version_info[0] == 2
+    import sys
+    cdef bint py2 = sys.version_info[0] == 2
     cdef dict sigs = f.__signatures__
     cdef str s
     IF ADD_FUSED_TYPE_TO_FUNCTION:
