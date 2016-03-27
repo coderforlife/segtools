@@ -43,13 +43,20 @@ so_suffix = next((s for s,_,t in imp.get_suffixes() if t == imp.C_EXTENSION), '.
 cy_suffix = '.pyx'
 fb_suffix = '.py'
 
+default_compiler = get_default_compiler()  # TODO: this isn't the compiler that will necessarily be used, but is a good guess...
 includes = (os.path.dirname(__file__), numpy.get_include()) if _have_numpy else (os.path.dirname(__file__),)
 compiler_opts = {
         'msvc'    : ['/D_SCL_SECURE_NO_WARNINGS','/EHsc','/O2','/DNPY_NO_DEPRECATED_API=7','/bigobj','/openmp'],
         'unix'    : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7','-fopenmp'], # gcc/clang (whatever is system default)
         'mingw32' : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7','-fopenmp'],
         'cygwin'  : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7','-fopenmp'],
-    }.get(get_default_compiler(), []) # TODO: this isn't the compiler that will necessarily be used, but is a good guess...
+    }.get(default_compiler, [])
+linker_opts = {
+        'msvc'    : [],
+        'unix'    : ['-fopenmp'], # gcc/clang (whatever is system default)
+        'mingw32' : ['-fopenmp'],
+        'cygwin'  : ['-fopenmp'],
+    }.get(default_compiler, [])
 
 warnings.filterwarnings('ignore', # stupid warning because Cython is confused...
                         'numpy[.]ndarray size changed, may indicate binary incompatibility',
@@ -105,13 +112,13 @@ def load_module(fullname, path, build_dir):
     raise ImportError("Unable to load module %s from %s, %s, or %s" % (fullname, so_file, cy_file, fb_file))
 
 def __get_distutils_extension_wrap(modname, pyxfilename, *args):
-    #pylint: disable=protected-access
     extension_mod,setup_args = pyximport.get_distutils_extension(modname, pyxfilename, *args)
     extension_mod.include_dirs.extend(includes)
     extension_mod.include_dirs.append(os.path.dirname(pyxfilename))
     if extension_mod.language is None:
         extension_mod.language = "c++"
     extension_mod.extra_compile_args = compiler_opts + extension_mod.extra_compile_args
+    extension_mod.extra_linker_args = linker_opts + extension_mod.extra_linker_args
     return extension_mod,setup_args
 
 def _load_mod(mod, path, build_dir):
