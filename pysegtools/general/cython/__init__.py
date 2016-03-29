@@ -24,7 +24,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import sys, imp, types, shutil, os.path, warnings
+import sys, imp, types, shutil, re, os.path, warnings
 from distutils.ccompiler import get_default_compiler
 
 try:
@@ -43,8 +43,18 @@ so_suffix = next((s for s,_,t in imp.get_suffixes() if t == imp.C_EXTENSION), '.
 cy_suffix = '.pyx'
 fb_suffix = '.py'
 
+re_sources = re.compile(r'\s*#\s*distutils:\s+sources=([^#]+)')
+re_include = re.compile(r'\s*include\s+([\'"])([^\'"]+)(?:\1)')
+re_extern  = re.compile(r'cdef\s+extern\s+from\s+([\'"])([^*\'"]+)(?:\1)(?:|\s+nogil)\s*:')
+re_cimport = re.compile(r'(from\s+npy_helper\s+cimport\s+|cimport\s+npy_helper($|\s|#))')
+
+thisdir = os.path.dirname(__file__)
+npy_helper_pxd_dep = [os.path.join(thisdir, fn) for fn in ('npy_helper.h', 'npy_helper.pxd')]
+npy_helper_pxi_dep = npy_helper_pxd_dep + [os.path.join(thisdir, 'npy_helper.pxi')]
+fused_pxi_dep      = npy_helper_pxd_dep + [os.path.join(thisdir, 'fused.pxi')]
+
 default_compiler = get_default_compiler()  # TODO: this isn't the compiler that will necessarily be used, but is a good guess...
-includes = (os.path.dirname(__file__), numpy.get_include()) if _have_numpy else (os.path.dirname(__file__),)
+includes = (thisdir, numpy.get_include()) if _have_numpy else (thisdir,)
 compiler_opts = {
         'msvc'    : ['/D_SCL_SECURE_NO_WARNINGS','/EHsc','/O2','/DNPY_NO_DEPRECATED_API=7','/bigobj','/openmp'],
         'unix'    : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7','-fopenmp'], # gcc/clang (whatever is system default)
@@ -82,11 +92,14 @@ def load_module(fullname, path, build_dir):
     fb_file = path + fb_suffix
     
     if os.path.isfile(so_file):
-        try: newer = os.path.getmtime(so_file) >= os.path.getmtime(cy_file)
-        except OSError: newer = False
-        if newer:
-            try: return imp.load_dynamic(fullname, so_file)
-            except ImportError: pass
+        try:
+            deps = __get_dependencies(cy_file)
+            if all(os.path.getmtime(so_file) >= os.path.getmtime(f) for f in deps):
+                try: return imp.load_dynamic(fullname, so_file)
+                except ImportError: pass
+            else:
+                os.remove(so_file)
+        except OSError: pass
     
     if os.path.isfile(cy_file) and _have_pyximport:
         try:
@@ -103,13 +116,53 @@ def load_module(fullname, path, build_dir):
         except Exception as ex: #pylint: disable=broad-except
             print(ex)
     
-    warnings.warn("Cannot load Cython-optimized functions for module '%s', using fallback functions which might be slow." % fullname, RuntimeWarning)
-
     if os.path.isfile(fb_file):
+        warnings.warn("Cannot load Cython-optimized functions for module '%s', using fallback functions which might be slow." % fullname, RuntimeWarning)
         try: return imp.load_source(fullname, fb_file)
         except ImportError: pass
     
     raise ImportError("Unable to load module %s from %s, %s, or %s" % (fullname, so_file, cy_file, fb_file))
+
+def __get_dependencies(filename):
+    """
+    Finds the dependencies of a pyx file by reading the file and looking for '#distutil: sources=',
+    'include "*.pxi"', 'cdef extern from "*.h"', and cimport npy_helper lines. The PXI files are
+    recursively searched. Also the contents of the pyxdep file are added. Does not recursively go
+    through .h, .c, .cpp or other files.
+    """
+    dirname = os.path.dirname(filename)
+    def fullpath(filename): return os.path.normpath(os.path.join(dirname, filename))
+    files = [fullpath(filename)]
+    if os.path.isfile(filename):
+        with open(filename, 'r') as f:
+            for line in f:
+                m = re_sources.match(line)
+                if m is not None: files += [fullpath(fn) for fn in m.group(1).split()]; continue
+
+                m = re_cimport.match(line)
+                if m is not None: files += npy_helper_pxd_dep; continue
+
+                m = re_include.match(line)
+                if m is not None:
+                    fn = m.group(2)
+                    if fn == 'npy_helper.pxi': files += npy_helper_pxi_dep
+                    elif fn == 'fused.pxi':    files += fused_pxi_dep
+                    else:                      files += __get_dependencies(fullpath(fn))
+                    continue
+
+                m = re_extern.match(line)
+                if m is not None: files.append(fullpath(m.group(2))); continue
+
+    if os.path.isfile(filename+'dep'):
+        with open(filename+'dep', 'r') as f:
+            for line in f:
+                if   line == 'npy_helper.pxd': files += npy_helper_pxd_dep
+                elif line == 'npy_helper.pxi': files += npy_helper_pxi_dep
+                elif line == 'fused.pxi':      files += fused_pxi_dep
+                elif line.endswith('.pxi') or line.endswith('.pxd'): files += __get_dependencies(fullpath(line))
+                else: files.append(fullpath(line))
+
+    return [fn for fn in set(files) if os.path.isfile(fn)] # make the files unique and makes sure they exist
 
 def __get_distutils_extension_wrap(modname, pyxfilename, *args):
     extension_mod,setup_args = pyximport.get_distutils_extension(modname, pyxfilename, *args)
@@ -122,15 +175,38 @@ def __get_distutils_extension_wrap(modname, pyxfilename, *args):
     return extension_mod,setup_args
 
 def _load_mod(mod, path, build_dir):
+    import os, time, errno
     fullname = mod.__name__
-    del mod.__class__.__repr__
-    del mod.__class__.__dir__
-    del mod.__class__.__getattr__
-    #del mod.__class__.__setattr__
-    del mod.__class__.__delattr__
-    del sys.modules[fullname]
-    new = load_module(fullname, path, build_dir)
-    mod.__dict__.update(new.__dict__)
+
+    # Obtain a lock for the path
+    lockpath = path + '.lock'
+    while True:
+        try:
+            lock = os.open(lockpath, os.O_CREAT|os.O_EXCL|os.O_RDWR)
+            break
+        except OSError as e:
+            if e.errno != errno.EEXIST: raise
+        time.sleep(0.01) # re-check every 10 ms
+
+    # Check that the module wasn't already loaded while waiting to obtain the lock
+    if sys.modules[fullname] is not mod:
+        return sys.modules[fullname]
+
+    # Perform the actual load
+    try:
+        del mod.__class__.__repr__
+        del mod.__class__.__dir__
+        del mod.__class__.__getattr__
+        #del mod.__class__.__setattr__
+        del mod.__class__.__delattr__
+        del sys.modules[fullname]
+        new = load_module(fullname, path, build_dir)
+        mod.__dict__.update(new.__dict__)
+    finally:
+        # Unlock the path
+        os.close(lock)
+        os.unlink(lockpath)
+    
     return new
 
 class CythonFallbackLoader(object):

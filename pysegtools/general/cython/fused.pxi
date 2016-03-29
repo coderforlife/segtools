@@ -87,7 +87,7 @@ def fused(f=None, fallback=None):
     return f
 
 ### Register all of the Numpy fused types defined in npy_helper.pxd ###
-cdef void init_fused_types():
+cdef void __init_fused_types():
     def __merge_dict(*args):
         cdef dict out = {}
         for d in args: out.update(d)
@@ -116,4 +116,4 @@ cdef void init_fused_types():
     register_fused_type('npy_number',__num)
     register_fused_type('npy_flexible',__flx)
     register_fused_type('npy_generic',__merge_dict({0:'npy_bool',17:'npy_object'},__num,__flx,__tmpr))
-init_fused_types()
+__init_fused_types()
