@@ -2,6 +2,9 @@
 
 # TODO: PY_VERSION_HEX?
 
+# A normal C builtin function, so make sure it is always available
+from cython cimport sizeof
+
 ############### Python ###############
 cdef extern from "Python.h":
     ctypedef int Py_intptr_t
@@ -191,8 +194,8 @@ ctypedef Py_uintptr_t uintp
 cdef extern from "npy_helper.h":
     # Makes Numpy a bit nicer to use from Cython
     # The half and complex classes below come from this header
-	
-	# These types add aligned (A) or restricted (R) attributes to the types for speed
+    
+    # These types add aligned (A) or restricted (R) attributes to the types for speed
     ctypedef       double* DOUBLE_PTR_R
     ctypedef const double* DOUBLE_PTR_CR
     ctypedef       double* DOUBLE_PTR_AR
@@ -203,6 +206,10 @@ cdef extern from "npy_helper.h":
     ctypedef const intp* INTP_PTR_CAR
     ctypedef char* CHAR_PTR_A8R # 8-byte aligned
     ctypedef const char* CHAR_PTR_CA8R
+    
+    # Cast a value while clipping
+    # The second argument is dummy just to make the template resolve
+    cdef T cast_with_clip[T](double value, T dummy_val_for_type_resolution) nogil
 
 
 ############### Numpy ###############

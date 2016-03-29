@@ -36,28 +36,28 @@ cdef extern from "_label.h" nogil:
 cdef ndarray __unique_sorted(ndarray a):
     cdef ndarray flag = PyArray_EMPTY(1, PyArray_SHAPE(a), NPY_BOOL, False)
     (<npy_bool*>PyArray_DATA(flag))[0] = True
-    PyArray_CopyInto(__view_trim1D(flag, 1, 0), PyObject_RichCompare(__view_trim1D(a, 1, 0), __view_trim1D(a, 0, 1), Py_NE))
+    PyArray_CopyInto(npy_view_trim1D(flag, 1, 0), PyObject_RichCompare(npy_view_trim1D(a, 1, 0), npy_view_trim1D(a, 0, 1), Py_NE))
     return PyArray_Compress(a, flag, 0, NULL)
     ## Lower-memory version but just slightly slower
-    #cdef ndarray a1 = __view_trim1D(a, 1, 0)
-    #cdef ndarray flag = PyArray_Nonzero(PyObject_RichCompare(a1, __view_trim1D(a, 0, 1), Py_NE))[0]
+    #cdef ndarray a1 = npy_view_trim1D(a, 1, 0)
+    #cdef ndarray flag = PyArray_Nonzero(PyObject_RichCompare(a1, npy_view_trim1D(a, 0, 1), Py_NE))[0]
     #cdef intp size = PyArray_DIM(flag,0)+1
     #cdef ndarray out = PyArray_EMPTY(1, &size, PyArray_TYPE(a), False)
     #PyArray_DESCR(a).f.copyswap(PyArray_DATA(out), PyArray_DATA(a), False, to_c(a))
-    #PyArray_TakeFrom(a1, flag, 0, __view_trim1D(out, 1, 0), NPY_RAISE)
+    #PyArray_TakeFrom(a1, flag, 0, npy_view_trim1D(out, 1, 0), NPY_RAISE)
     #return out
     
 cdef ndarray __unique_sorted_rows(ndarray a):
     cdef ndarray flag = PyArray_EMPTY(1, PyArray_SHAPE(a), NPY_BOOL, False)
     (<npy_bool*>PyArray_DATA(flag))[0] = True
-    PyArray_Any(PyObject_RichCompare(__view_trim2D(a, 1, 0), __view_trim2D(a, 0, 1), Py_NE), 1, __view_trim1D(flag, 1, 0))
+    PyArray_Any(PyObject_RichCompare(npy_view_trim2D(a, 1, 0), npy_view_trim2D(a, 0, 1), Py_NE), 1, npy_view_trim1D(flag, 1, 0))
     return PyArray_Compress(a, flag, 0, NULL)
 
 
 ############### Unique Fast ###############
 cdef extern from * nogil:
-    cdef intp merge_sort_unique[T](T*,T*) except +
-    cdef intp merge_sort_unique_rows[T](T*,T*,intp) except +
+    cdef Py_ssize_t merge_sort_unique[T](T*,T*) except +
+    cdef Py_ssize_t merge_sort_unique_rows[T](T*,T*,intp) except +
 
 def __unique_fast_fallback(ndarray a not None):
     PyArray_Sort(a, 0, NPY_QUICKSORT)
@@ -70,7 +70,7 @@ def __unique_fast(ndarray[npy_number] a not None):
     return size
 
 def __unique_fast_rows_fallback(ndarray a not None):
-    return __unique_sorted_rows(__lexsort2D(a))
+    return __unique_sorted_rows(npy_lexsort2D(a))
 
 @fused(fallback=__unique_fast_rows_fallback)
 def __unique_fast_rows(ndarray[npy_number, ndim=2] a not None):
@@ -88,12 +88,12 @@ def unique_fast(arr not None):
     Compared to the built-in unique this does not support the optional arguments return_index,
     return_inverse, or return_counts.
     """
-    cdef ndarray a = PyArray_CheckFromAny(arr, NULL, 1, 0, __chk_flags|NPY_ARRAY_ENSURECOPY, NULL)
-    if PyArray_NDIM(a) != 1: __array_resize1D(a, PyArray_SIZE(a))
+    cdef ndarray a = PyArray_CheckFromAny(arr, NULL, 1, 0, npy_chk_flags|NPY_ARRAY_ENSURECOPY, NULL)
+    if PyArray_NDIM(a) != 1: npy_array_resize1D(a, PyArray_SIZE(a))
     if PyArray_DIM(a,0) != 0:
         x = __unique_fast[PyArray_TYPE(a)](a)
         if isinstance(x, ndarray): return x
-        __array_resize1D(a, x)
+        npy_array_resize1D(a, x)
     return a
 
 def unique_rows_fast(arr not None):
@@ -102,13 +102,13 @@ def unique_rows_fast(arr not None):
 
     For non-basic data types this falls back to using lexsort and compress.
     """
-    cdef ndarray a = PyArray_CheckFromAny(arr, NULL, 2, 0, __chk_flags|NPY_ARRAY_ENSURECOPY, NULL)
-    if PyArray_NDIM(a) != 2: __array_resize2D(a, PyArray_MultiplyList(PyArray_SHAPE(a), PyArray_NDIM(a)-1))
+    cdef ndarray a = PyArray_CheckFromAny(arr, NULL, 2, 0, npy_chk_flags|NPY_ARRAY_ENSURECOPY, NULL)
+    if PyArray_NDIM(a) != 2: npy_array_resize2D(a, PyArray_MultiplyList(PyArray_SHAPE(a), PyArray_NDIM(a)-1))
     cdef intp* shape = PyArray_SHAPE(a)
     if shape[0] != 0 and shape[1] != 0:
         x = __unique_fast_rows[PyArray_TYPE(a)](a)
         if isinstance(x, ndarray): return x
-        __array_resize2D(a, x)
+        npy_array_resize2D(a, x)
     return a
 
 
@@ -130,12 +130,12 @@ def __unique_merge(ndarray[npy_number] a, ndarray[npy_number] b):
         size = set_union(<npy_number*>PyArray_DATA(a), <npy_number*>PyArray_DATA(a)+PyArray_DIM(a,0),
                          <npy_number*>PyArray_DATA(b), <npy_number*>PyArray_DATA(b)+PyArray_DIM(b,0),
                          <npy_number*>PyArray_DATA(out))
-    __array_resize1D(out, size)
+    npy_array_resize1D(out, size)
     return out
 
 def __unique_rows_merge_fallback(ndarray a not None, ndarray b not None):
     a = PyArray_Concatenate((a,b), 0)
-    return __unique_sorted_rows(__lexsort2D(a))
+    return __unique_sorted_rows(npy_lexsort2D(a))
 
 @fused(fallback=__unique_rows_merge_fallback)
 def __unique_rows_merge(ndarray[npy_number, ndim=2] a not None, ndarray[npy_number, ndim=2] b not None):
@@ -147,7 +147,7 @@ def __unique_rows_merge(ndarray[npy_number, ndim=2] a not None, ndarray[npy_numb
         nrows = row_set_union(<npy_number*>PyArray_DATA(a), <npy_number*>PyArray_DATA(a)+PyArray_DIM(a,0)*ncols,
                               <npy_number*>PyArray_DATA(b), <npy_number*>PyArray_DATA(b)+PyArray_DIM(b,0)*ncols,
                               <npy_number*>PyArray_DATA(out), ncols)
-    __array_resize2D(out, nrows)
+    npy_array_resize2D(out, nrows)
     return out
 
 def unique_merge(arr not None, brr not None):
@@ -159,8 +159,8 @@ def unique_merge(arr not None, brr not None):
 
     For non-basic data types this falls back to using concatenate, mergesort, and compress.
     """
-    cdef ndarray a = __check1D(arr)
-    cdef ndarray b = __check1D(brr)
+    cdef ndarray a = npy_check1D(arr)
+    cdef ndarray b = npy_check1D(brr)
     if not PyArray_EquivArrTypes(a,b): raise ValueError('Input arrays must have the same dtype')
     if   PyArray_DIM(a,0) == 0: return b
     elif PyArray_DIM(b,0) == 0: return a
@@ -176,8 +176,8 @@ def unique_rows_merge(arr not None, brr not None):
 
     For non-basic data types this falls back to using concatenate, lexsort, and compress.
     """
-    cdef ndarray a = __check2D(arr)
-    cdef ndarray b = __check2D(brr)
+    cdef ndarray a = npy_check2D(arr)
+    cdef ndarray b = npy_check2D(brr)
     if not PyArray_EquivArrTypes(a,b): raise ValueError('Input arrays must have the same dtype')
     if PyArray_DIM(a,1) != PyArray_DIM(b,1): raise ValueError('Input arrays must have the same number of columns')
     if   PyArray_DIM(a,0) == 0 or PyArray_DIM(a,1) == 0: return b
@@ -218,9 +218,9 @@ def replace(keys not None, vals not None, arr not None):
     element.
     """
     # TODO: support any values (should be relatively easy actually)
-    cdef ndarray a = __check(arr, 1)
-    cdef ndarray k = __check1D(keys)
-    cdef ndarray v = __check1D(vals)
+    cdef ndarray a = npy_check(arr, 1)
+    cdef ndarray k = npy_check1D(keys)
+    cdef ndarray v = npy_check1D(vals)
     if not PyArray_EquivArrTypes(k,a): raise ValueError('Input and key arrays must have the same dtype')
     if PyArray_DIM(k,0) != PyArray_DIM(v,0): raise ValueError('Key and val arrays must be the same size')
     cdef ndarray out = PyArray_EMPTY(PyArray_NDIM(a), PyArray_SHAPE(a), PyArray_TYPE(v), False)
@@ -237,15 +237,15 @@ def replace_rows(keys not None, vals not None, arr not None):
     row.
     """
     # TODO: support any values (should be relatively easy actually)
-    cdef ndarray a = __check(arr, 2)
-    cdef ndarray k = __check2D(keys)
-    cdef ndarray v = __check1D(vals)
+    cdef ndarray a = npy_check(arr, 2)
+    cdef ndarray k = npy_check2D(keys)
+    cdef ndarray v = npy_check1D(vals)
     if not PyArray_EquivArrTypes(k,a): raise ValueError('Input and key arrays must have the same dtype')
     if PyArray_DIM(k,1) != PyArray_DIM(a,PyArray_NDIM(a)-1): raise ValueError('Input and key arrays must have the same number of columns')
     if PyArray_DIM(k,0) != PyArray_DIM(v,0): raise ValueError('Key and val arrays must be the same size')
     cdef ndarray out = PyArray_EMPTY(PyArray_NDIM(a)-1, PyArray_SHAPE(a), PyArray_TYPE(v), False)
     if PyArray_SIZE(a) != 0:
-        __replace_rows[PyArray_TYPE(k),PyArray_TYPE(v)](k, v, __ravel_rows(a), PyArray_Ravel(out, NPY_CORDER))
+        __replace_rows[PyArray_TYPE(k),PyArray_TYPE(v)](k, v, npy_ravel_rows(a), PyArray_Ravel(out, NPY_CORDER))
     return out
 
 
@@ -291,16 +291,16 @@ def searchsorted_rows(sorted not None, arr not None, side='left'):
     For non-basic data types this falls back to using the same method on the raw binary data of each
     row.
     """
-    cdef ndarray a = __check(arr, 2)
-    cdef ndarray s = __check2D(sorted)
+    cdef ndarray a = npy_check(arr, 2)
+    cdef ndarray s = npy_check2D(sorted)
     cdef NPY_SEARCHSIDE sside
     PyArray_SearchsideConverter(side, &sside)
     if not PyArray_EquivArrTypes(s,a): raise ValueError('Input and sorted arrays must have the same dtype')
     if PyArray_DIM(s,1) != PyArray_DIM(a,PyArray_NDIM(a)-1): raise ValueError('Input and sorted arrays must have the same number of columns')
     cdef ndarray out = PyArray_EMPTY(PyArray_NDIM(a)-1, PyArray_SHAPE(a), NPY_UINTP, False)
     if PyArray_SIZE(a) == 0: pass
-    elif sside == NPY_SEARCHLEFT:  __searchsorted_rows_left[PyArray_TYPE(a)](__ravel_rows(a), s, out)
-    elif sside == NPY_SEARCHRIGHT: __searchsorted_rows_right[PyArray_TYPE(a)](__ravel_rows(a), s, out)
+    elif sside == NPY_SEARCHLEFT:  __searchsorted_rows_left[PyArray_TYPE(a)](npy_ravel_rows(a), s, out)
+    elif sside == NPY_SEARCHRIGHT: __searchsorted_rows_right[PyArray_TYPE(a)](npy_ravel_rows(a), s, out)
     return out
 
 
@@ -328,7 +328,7 @@ def number(arr not None):
     """
     # See scipy-lectures.github.io/advanced/image_processing/#measuring-objects-properties-ndimage-measurements for the unqiue/searchsorted method
     # First get the sorted, unique values
-    cdef ndarray a = PyArray_CheckFromAny(arr, NULL, 1, 0, __chk_flags, NULL)
+    cdef ndarray a = PyArray_CheckFromAny(arr, NULL, 1, 0, npy_chk_flags, NULL)
     cdef ndarray vals = unique_fast(a)
     # Correct the 0 entry
     cdef ndarray zero = PyArray_ZEROS(0, NULL, PyArray_TYPE(vals), False)
@@ -344,7 +344,7 @@ def number_rows(arr not None):
     """
     # See scipy-lectures.github.io/advanced/image_processing/#measuring-objects-properties-ndimage-measurements for the unqiue/searchsorted method
     # First get the sorted, unique values
-    cdef ndarray a = PyArray_CheckFromAny(arr, NULL, 1, 0, __chk_flags, NULL)
+    cdef ndarray a = PyArray_CheckFromAny(arr, NULL, 1, 0, npy_chk_flags, NULL)
     cdef ndarray vals = unique_rows_fast(a)
     # Correct the 0 entry
     cdef intp d[2]
@@ -389,7 +389,7 @@ def renumber(arr not None):
     For non-basic data types this falls back to using the same method on the raw binary data of each
     element and considers an all-0 element as 0.
     """
-    cdef ndarray a = __check(arr, 1)
+    cdef ndarray a = npy_check(arr, 1)
     cdef ndarray out = PyArray_EMPTY(PyArray_NDIM(a), PyArray_SHAPE(a), NPY_UINTP, False)
     cdef intp N = 0
     if PyArray_SIZE(a) != 0:
@@ -407,11 +407,11 @@ def renumber_rows(arr not None):
     For non-basic data types this falls back to using the same method on the raw binary data of each
     row and considers an all-0 row as 0.
     """
-    cdef ndarray a = __check(arr, 2)
+    cdef ndarray a = npy_check(arr, 2)
     cdef ndarray out = PyArray_EMPTY(PyArray_NDIM(a)-1, PyArray_SHAPE(a), NPY_UINTP, False)
     cdef intp N = 0
     if PyArray_SIZE(a) != 0:
-        N = __renumber_rows[PyArray_TYPE(a)](__ravel_rows(a), PyArray_Ravel(out, NPY_CORDER))
+        N = __renumber_rows[PyArray_TYPE(a)](npy_ravel_rows(a), PyArray_Ravel(out, NPY_CORDER))
     return out, N
 
 
@@ -735,7 +735,7 @@ def relabel2(im, structure=None):
      * The input must be 2D and safely convertible to uintp (see relabel3 for 3D inputs). If the
        input is 3D or not integral then renumber is called on the image.
     """
-    if PyArray_NDIM(im) == 3: im = __squeeze_last(im)
+    if PyArray_NDIM(im) == 3: im = npy_squeeze_last(im)
     if PyArray_NDIM(im) == 3: im,_ = renumber_rows(im)
     elif not PyArray_CanCastSafely(PyArray_TYPE(im), NPY_UINTP): im,_ = renumber(im)
     cdef ndarray IM = PyArray_ContiguousFromAny(im, NPY_UINTP, 2, 2), S
@@ -763,7 +763,7 @@ def relabel3(im, structure=None):
      * The input must be 3D and safely convertible to uintp (see relabel2 for 2D inputs). If the
        input is 4D or not integral then renumber is called on the image.
     """
-    if PyArray_NDIM(im) == 4: im = __squeeze_last(im)
+    if PyArray_NDIM(im) == 4: im = npy_squeeze_last(im)
     if PyArray_NDIM(im) == 4: im,_ = renumber_rows(im)
     elif not PyArray_CanCastSafely(PyArray_TYPE(im), NPY_UINTP): im,_ = renumber(im)
     cdef ndarray IM = PyArray_ContiguousFromAny(im, NPY_UINTP, 3, 3), S
