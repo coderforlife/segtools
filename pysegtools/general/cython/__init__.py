@@ -106,6 +106,7 @@ def load_module(fullname, path, build_dir):
         try:
             # Wrap the 'get_distutils_extension' to apply our defaults
             #pylint: disable=no-member
+            if deps is None: deps = __get_dependencies(cy_file)
             pyximport.build_module.__globals__['get_distutils_extension'] = __get_distutils_extension_wrap(deps)
             new_so_file = pyximport.build_module(fullname, cy_file, build_dir)
             pyximport.build_module.__globals__['get_distutils_extension'] = pyximport.get_distutils_extension
@@ -166,7 +167,6 @@ def __get_dependencies(filename):
     return [fn for fn in set(files) if os.path.isfile(fn)] # make the files unique and makes sure they exist
 
 def __get_distutils_extension_wrap(depends):
-    if depends is None: depends = __get_dependencies(pyxfilename)
     def get_distutils_extension(modname, pyxfilename, *args):
         extension_mod,setup_args = pyximport.get_distutils_extension(modname, pyxfilename, *args)
         extension_mod.include_dirs.extend(includes)
