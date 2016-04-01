@@ -33,8 +33,8 @@ class ImageSource(object):
     @staticmethod
     def as_image_source(im):
         """
-        Takes an image and returns an ImageSource. Nothing is done to ImageSources ndarray are
-        wrapped in an ArrayImageSource. Other things cause a TypeError to be raised.
+        Takes an image and returns an ImageSource. Nothing is done to ImageSources while ndarrays
+        are wrapped in an ArrayImageSource. Other things cause a TypeError to be raised.
         """
         if isinstance(im, ImageSource): return im
         if isinstance(im, ndarray): return ArrayImageSource(im)
