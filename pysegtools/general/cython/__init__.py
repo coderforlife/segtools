@@ -24,7 +24,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import sys, imp, types, shutil, re, os.path, warnings
+import sys, imp, types, shutil, re, os, warnings
 from distutils.ccompiler import get_default_compiler
 
 try:
@@ -49,7 +49,7 @@ re_extern  = re.compile(r'cdef\s+extern\s+from\s+([\'"])([^*\'"]+)(?:\1)(?:|\s+n
 re_cimport = re.compile(r'(from\s+npy_helper\s+cimport\s+|cimport\s+npy_helper($|\s|#))')
 
 thisdir = os.path.dirname(__file__)
-npy_helper_pxd_dep = [os.path.join(thisdir, fn) for fn in ('npy_helper.h', 'npy_helper.pxd')]
+npy_helper_pxd_dep = [os.path.join(thisdir, __fn) for __fn in ('npy_helper.h', 'npy_helper.pxd')]
 npy_helper_pxi_dep = npy_helper_pxd_dep + [os.path.join(thisdir, 'npy_helper.pxi')]
 fused_pxi_dep      = npy_helper_pxd_dep + [os.path.join(thisdir, 'fused.pxi')]
 
@@ -180,7 +180,7 @@ def __get_distutils_extension_wrap(depends):
     return get_distutils_extension
 
 def _load_mod(mod, path, build_dir):
-    import os, time, errno
+    import time, errno
     fullname = mod.__name__
 
     # Obtain a lock for the path

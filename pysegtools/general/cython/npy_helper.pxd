@@ -373,7 +373,7 @@ cdef extern from "numpy/arrayobject.h":
     #    #npy_temporal
 
     ##### Enums #####
-    ctypedef enum NPY_ORDER: NPY_ANYORDER=-1, NPY_CORDER=0, NPY_FORTRANORDER=1
+    ctypedef enum NPY_ORDER: NPY_ANYORDER=-1, NPY_CORDER=0, NPY_FORTRANORDER=1, NPY_KEEPORDER=2
     ctypedef enum NPY_CLIPMODE: NPY_CLIP=0, NPY_WRAP, NPY_RAISE
     ctypedef enum NPY_SORTKIND: NPY_QUICKSORT=0, NPY_HEAPSORT, NPY_MERGESORT, NPY_NSORTS
     ctypedef enum NPY_SELECTKIND: NPY_INTROSELECT=0
@@ -591,6 +591,7 @@ cdef extern from "numpy/arrayobject.h":
 
     ### Scalars ###
     object PyArray_ToScalar(void*, ndarray)
+    int PyArray_FillWithScalar(ndarray arr, object obj) except -1
 
     ### Iterators ###
     object PyArray_IterNew(object)
