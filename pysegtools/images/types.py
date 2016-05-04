@@ -10,7 +10,9 @@ from ..imstack import Help
 
 __all__ = [
     'create_im_dtype','get_im_dtype','get_im_dtype_and_nchan','im_dtype_desc','get_dtype_endian',
-    'is_image','is_image_desc','check_image','is_image_stack','check_image_stack','is_image_or_stack','check_image_or_stack','is_single_channel_image','check_image_single_channel',
+    'is_image',      'check_image',      'is_single_channel_image','check_image_single_channel',
+    'is_image_stack','check_image_stack','is_single_channel_stack','check_stack_single_channel',
+    'is_image_desc','is_image_or_stack','check_image_or_stack',
     'im_rgb_view','im_raw_view','im_complexify','im_decomplexify','im_decomplexify_dtype','im_complexify_dtype','im2double',
     'get_im_min_max','get_dtype_min_max','get_dtype_min','get_dtype_max',
     ]
@@ -186,7 +188,7 @@ def check_image_or_stack(im):
 def is_single_channel_image(im):
     """
     Returns True if `im` is a single-channel image, basically it is a ndarray of 2 or 3 dimensions
-    where the 3rd dimension length is can only be 1 and the data type is a basic data type (integer
+    where the 3rd dimension length can only be 1 and the data type is a basic data type (integer
     or float but not complex). Does not check to see that the image has no zero-length dimensions.
     """
     if im.ndim == 3 and im.shape[2] == 1: im = im.squeeze(2)
@@ -194,11 +196,28 @@ def is_single_channel_image(im):
 def check_image_single_channel(im):
     """
     Similar to is_single_channel_image except instead of returning True/False it throws an exception
-    if it isn't an image. Also, it returns a 2D image (wityh the 3rd dimension, if 1, removed).
+    if it isn't an image. Also, it returns a 2D image (with the 3rd dimension, if 1, removed).
     """
     if im.ndim == 3 and im.shape[2] == 1: im = im.squeeze(2)
     if im.ndim != 2 and im.dtype.type not in __basic_types:
         raise ValueError('Not single-channel image format')
+    return im
+def is_single_channel_stack(im):
+    """
+    Returns True if `im` is a single-channel stack, basically it is a ndarray of 3 or 4 dimensions
+    where the 4th dimension length can only be 1 and the data type is a basic data type (integer
+    or float but not complex). Does not check to see that the image has no zero-length dimensions.
+    """
+    if im.ndim == 4 and im.shape[3] == 1: im = im.squeeze(3)
+    return im.ndim == 3 and im.dtype.type in __basic_types
+def check_stack_single_channel(im):
+    """
+    Similar to is_single_channel_stack except instead of returning True/False it throws an exception
+    if it isn't a stack. Also, it returns a 3D stack (with the 4th dimension, if 1, removed).
+    """
+    if im.ndim == 4 and im.shape[3] == 1: im = im.squeeze(3)
+    if im.ndim != 3 and im.dtype.type not in __basic_types:
+        raise ValueError('Not single-channel image stack format')
     return im
 
 
