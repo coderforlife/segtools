@@ -4,8 +4,8 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import numbers, re
-from numpy import dtype, iinfo, sctypes, promote_types, bool_, ndarray, ascontiguousarray
-from ..general import String, sys_endian
+from numpy import dtype, sctypes, promote_types, bool_, ndarray, ascontiguousarray
+from ..general import String, sys_endian, delayed
 from ..imstack import Help
 
 __all__ = [
@@ -34,7 +34,7 @@ if not issubclass(__int_types[0], numbers.Integral):
 
 
 ##### dtype functions #####
-__re_im_dtype = re.compile(r'^(([0-9]+\*)?([UIFC])|RGBA?)([0-9]+)(-BE)?$', re.IGNORECASE)
+__re_im_dtype = delayed(lambda:re.compile(r'^(([0-9]+\*)?([UIFC])|RGBA?)([0-9]+)(-BE)?$', re.IGNORECASE))
 def create_im_dtype(base, big_endian=None, channels=1):
     """
     Creates an image data type given a base type, endian-ness, and number of channels. When creating
@@ -248,10 +248,14 @@ def im_raw_view(im):
     if not __is_rgb_view(im): return im
     return ascontiguousarray(im).view(dtype=dtype((im.dtype[0],len(im.dtype))))
 
-__cmplx2float = {__c:dtype('f'+str(dtype(__c).itemsize//2)) for __c in __cmplx_types}
-__cmplx2float = {__c:__f.type for __c,__f in __cmplx2float.iteritems() if __f.kind == 'f'}
-__float2cmplx = {__f:dtype('c'+str(dtype(__f).itemsize* 2)) for __f in __float_types}
-__float2cmplx = {__f:__c.type for __f,__c in __float2cmplx.iteritems() if __c.kind == 'c'}
+def __conv_cf(types, conv_type, conv_size):
+    for t in types:
+        try:
+            dt = dtype(conv_type + str(conv_size(dtype(t).itemsize)))
+            if dt.kind == conv_type: yield t, dt.type
+        except TypeError: pass
+__cmplx2float = delayed(lambda:dict(__conv_cf(__cmplx_types, 'f', lambda s:s//2)), dict)
+__float2cmplx = delayed(lambda:dict(__conv_cf(__float_types, 'c', lambda s:s*2 )), dict)
 def im_complexify(im, force=False):
     """
     View an image as complex numbers. The image must be a 2-channel image of one of the supported
@@ -310,19 +314,23 @@ def im2double(im):
     check_image_or_stack(im)
     dt = im.dtype
     k, t, im = dt.kind, dt.type, im.astype(float64, copy=False)
-    if k == 'u': im /= iinfo(t).max
+    if k == 'u': im /= __min_max_values[t][1]
     elif k == 'i':
-        ii = iinfo(t)
-        im -= ii.min
-        im /= (ii.max - ii.min)
+        ii = __min_max_values[t]
+        im -= ii[0]
+        im /= (ii[1] - ii[0])
     elif k not in 'fb': raise ValueError('unknown image format')
     return im
 
 
 ##### Min/Max for data types #####
-__min_max_values = { __t:(iinfo(__t).min,iinfo(__t).max) for __t in __int_types+__uint_types }
-for __t in __bit_types:   __min_max_values[__t] = (__t(False),__t(True))
-for __t in __float_types: __min_max_values[__t] = (__t('0.0'),__t('1.0'))
+def __get_min_max_values():
+    from numpy import iinfo
+    d = { t:(iinfo(t).min,iinfo(t).max) for t in __int_types+__uint_types }
+    for t in __bit_types:   d[t] = (t(False),t(True))
+    for t in __float_types: d[t] = (t('0.0'),t('1.0'))
+    return d
+__min_max_values = delayed(__get_min_max_values, dict)
 def get_dtype_min_max(dt): return __min_max_values[dtype(dt).type]
 def get_dtype_min(dt): return __min_max_values[dtype(dt).type][0]
 def get_dtype_max(dt): return __min_max_values[dtype(dt).type][1]
