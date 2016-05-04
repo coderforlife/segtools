@@ -1446,8 +1446,8 @@ class _MAT5File(_MAT45File):
         dt, nbytes, skip = self._read_tag(f, expected_type, expected_nvals)
         data = f.read(skip)
         if len(data) != skip: raise ValueError()
-        if skip != nbytes: data = memoryview(data)[:nbytes]
         if dt in _MAT5File._utf2type:
+            if skip != nbytes: data = memoryview(data)[:nbytes]
             if   dt == 'utf8':  data = codecs.decode(data, 'utf_8')
             elif dt == 'utf16': data = codecs.decode(data, 'utf_16' + ('le' if self._endian == '<' else 'be'))
             elif dt == 'utf32': data = codecs.decode(data, 'utf_32' + ('le' if self._endian == '<' else 'be'))
