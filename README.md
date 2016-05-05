@@ -40,6 +40,7 @@ Filters supported:
  * Rotate: cw/ccw/full [2D-only at the moment]
  * Inversion (black to white, white to black)
  * Thresholding: auto (Otsu's method), hysteresis, *multi
+ * Vesselness: Frangi
  * Edge Detection: Prewitt, Scharr, Sobel, Canny [2D-only]
  * Masks: calculate from solid regions near edges [2D-only]
  * Filling: solid, mean, mirror, reflect, nearest, wrap [2D-only]
