@@ -74,7 +74,7 @@ def __check():
     from distutils.version import StrictVersion as Vers
     checkbox = '\u2713' if sys.stdout.encoding in ('UTF-8','UTF-16') else '+'
     print("Module       Required  Installed")
-    print("Python       v2.7      {0:<9}  {1}".format(__get_python_version(), 'x' if sys.version_info[0:2] != (2,7) else checkbox))
+    print("Python       v2.7      v{0:<8}  {1}".format(__get_python_version(), 'x' if sys.version_info[0:2] != (2,7) else checkbox))
     for name, target, vers in __req_modules:
         if vers is False: vers, mark = '-'*8, 'x'
         else: vers, mark = 'v'+vers, ('x' if Vers(target) > Vers(vers) else checkbox)
