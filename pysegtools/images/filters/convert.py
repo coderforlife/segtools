@@ -86,7 +86,7 @@ def scale(im, in_scale=None, out_scale=None, dt=None):
     else:
         in_scale = cur.type(in_scale[0]), cur.type(in_scale[1])
         if in_scale[0] >= in_scale[1]: raise ValueError('invalid in_scale')
-        if in_min > in_scale[0] or in_max < in_scale[1]: raise ValueError('image values outside of in_scale')
+        #f in_min > in_scale[0] or in_max < in_scale[1]: raise ValueError('image values outside of in_scale')
 
     out_min, out_max = get_dtype_min_max(dt)
     if out_scale is None: out_scale = out_min, out_max
