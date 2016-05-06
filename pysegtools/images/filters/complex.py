@@ -10,9 +10,9 @@ from itertools import repeat
 from numpy import float64, complex128, real_if_close, dstack, zeros_like
 from numpy.fft import fft2, ifft2, fftshift, ifftshift
 
-from ..types import check_image, check_image_single_channel
+from ..types import check_image, check_image_single_channel, check_stack_single_channel, im2double
 from ..types import im_complexify as __im_complexify, im_decomplexify, im_decomplexify_dtype, im_complexify_dtype
-from ..types import get_dtype_min_max, get_im_dtype_and_nchan, create_im_dtype
+from ..types import get_im_dtype_and_nchan, create_im_dtype
 from ._stack import FilteredImageStack, FilteredImageSlice
 from .._stack import ImageStack
 from ...imstack import Command, CommandEasy, Opt, Help
@@ -48,22 +48,14 @@ def im_complexify(R, I=None, force=True):
 
 def fft(im, shift=True):
     # TODO: support rfft2, padding image up to a certain size (regular-number sized), and using FFTW
-    o_dt = im.dtype
-    if o_dt.kind in 'ui':
-        mn, mx = get_dtype_min_max(o_dt)
-        im = im.astype(float64)
-        if o_dt.kind == 'i':
-            im += mn
-            mx -= mn
-        im /= mx
-    im = fft2(check_image_single_channel(im))
+    im = fft2(check_image_single_channel(im2double(im))).astype(complex128, copy=False)
     return fftshift(im) if shift else im
     
 def ifft(im, shift=True):
     # TODO: support irfft2, de-padding image up, and using FFTW
     check_image(im)
     if im.dtype.kind != 'c': raise ValueError('Unsupported image type')
-    return real_if_close(ifft2(ifftshift(im) if shift else im)) # should always end up real
+    return real_if_close(ifft2(ifftshift(im) if shift else im)).astype(float64, copy=False) # should always end up real
 
 
 ##### Image Stacks #####
@@ -125,9 +117,23 @@ class ComplexifyImageSlice(FilteredImageSlice):
 
 
 class FFTImageStack(FilteredImageStack):
-    def __init__(self, ims, shift=True):
-        super(FFTImageStack, self).__init__(ims, FFTImageSlice)
+    _stack = None
+    def __init__(self, ims, shift=True, per_slice=True):
         self._shift = shift
+        self._per_slice = per_slice
+        if per_slice: super(FFTImageStack, self).__init__(ims, FFTImageSlice)
+        elif not ims.is_homogeneous or ims.dtype.kind == 'c' or len(ims.dtype.shape): raise ValueError('Cannot FFT the entire stack if it is complex, multi-channel, or not homogeneous')
+        else: super(FFTImageStack, self).__init__(ims, FFTStackImageSlice)
+    @property
+    def stack(self):
+        if self._per_slice: return super(FFTImageStack, self).stack
+        if self._stack is None:
+            from numpy.fft import fftn
+            ims = im2double(check_stack_single_channel(self._ims.stack))
+            self._stack = fftn(ims).astype(complex128, copy=False)
+            if self._shift: self._stack = fftshift(self._stack)
+            self._stack.flags.writeable = False
+        return self._stack
 class FFTImageSlice(__SameShapeImageSlice):
     #pylint: disable=protected-access
     def __init__(self, stack, z, im):
@@ -135,11 +141,29 @@ class FFTImageSlice(__SameShapeImageSlice):
         if im.dtype.kind == 'c' or len(im.dtype.shape): raise ValueError('Not a single-channel image')
         self._set_props(complex128, None)
     def _get_data(self): return fft(self._input.data, self._stack._shift)
+class FFTStackImageSlice(__SameShapeImageSlice):
+    def __init__(self, stack, z, im):
+        super(FFTStackImageSlice, self).__init__(stack, z, im)
+        self._set_props(complex128, None)
+    def _get_data(self): return self._stack.stack[self._z]
 
 class IFFTImageStack(FilteredImageStack):
-    def __init__(self, ims, shift=True):
-        super(IFFTImageStack, self).__init__(ims, IFFTImageSlice)
+    _stack = None
+    def __init__(self, ims, shift=True, per_slice=True):
         self._shift = shift
+        self._per_slice = per_slice
+        if per_slice: super(IFFTImageStack, self).__init__(ims, IFFTImageSlice)
+        elif not ims.is_homogeneous or ims.dtype.kind != 'c': raise ValueError('Cannot IFFT the entire stack if it is not a complex homogeneous image')
+        else: super(IFFTImageStack, self).__init__(ims, IFFTStackImageSlice)
+    @property
+    def stack(self):
+        if self._per_slice: return super(IFFTImageStack, self).stack
+        if self._stack is None:
+            from numpy.fft import ifftn
+            ims = self._ims.stack
+            self._stack = real_if_close(ifftn(ifftshift(ims) if self._shift else ims)).astype(float64, copy=False)
+            self._stack.flags.writeable = False
+        return self._stack
 class IFFTImageSlice(__SameShapeImageSlice):
     #pylint: disable=protected-access
     def __init__(self, stack, z, im):
@@ -147,6 +171,11 @@ class IFFTImageSlice(__SameShapeImageSlice):
         if im.dtype.kind != 'c': raise ValueError('Not a complex image')
         self._set_props(float64, None)
     def _get_data(self): return ifft(self._input.data, self._stack._shift)
+class IFFTStackImageSlice(__SameShapeImageSlice):
+    def __init__(self, stack, z, im):
+        super(IFFTStackImageSlice, self).__init__(stack, z, im)
+        self._set_props(float64, None)
+    def _get_data(self): return self._stack.stack[self._z]
 
 
 ##### Commands #####
@@ -245,6 +274,7 @@ is filled in with 0).
 
 class FFTCommand(CommandEasy):
     _shift = None
+    _per_slice = None
     @classmethod
     def name(cls): return 'Fast Fourier Transform'
     @classmethod
@@ -252,6 +282,7 @@ class FFTCommand(CommandEasy):
     @classmethod
     def _opts(cls): return (
         Opt('shift', 'Shift the Fourier-space image so that the 0 frequency component is in the center of the image', Opt.cast_bool, False),
+        Opt('per_slice', 'If false, operates on the data in 3D (input must be homogeneous)', Opt.cast_bool, True),
         )
     @classmethod
     def flags(cls): return ('fft',)
@@ -261,17 +292,19 @@ class FFTCommand(CommandEasy):
     def _produces(cls): return ('Complex image representing Fourier space',)
     @classmethod
     def _see_also(cls): return ('ifft',)
-    def __str__(self): return 'fft'+(' (with shift)' if self._shift else '')
-    def execute(self, stack): stack.push(FFTImageStack(stack.pop(), self._shift))
+    def __str__(self): return 'fft'+(' (with shift)' if self._shift else '')+(' (3D)' if self._per_slice else '')
+    def execute(self, stack): stack.push(FFTImageStack(stack.pop(), self._shift, self._per_slice))
 class IFFTCommand(CommandEasy):
     _shift = None
+    _per_slice = None
     @classmethod
     def name(cls): return 'Inverse Fast Fourier Transform'
     @classmethod
     def _desc(cls): return 'Takes the inverse fast Fourier Transform of a complex image.'
     @classmethod
     def _opts(cls): return (
-        Opt('shift', 'Un-shift the Fourier-space image so that the 0 frequency component is in the top-left corner', Opt.cast_bool, False),
+        Opt('shift',     'Un-shift the Fourier-space image so that the 0 frequency component is in the top-left corner', Opt.cast_bool, False),
+        Opt('per_slice', 'If false, operates on the data in 3D (input must be homogeneous)', Opt.cast_bool, True),
         )
     @classmethod
     def flags(cls): return ('ifft',)
@@ -281,5 +314,5 @@ class IFFTCommand(CommandEasy):
     def _produces(cls): return ('Grayscale image',)
     @classmethod
     def _see_also(cls): return ('fft',)
-    def __str__(self): return 'ifft'+(' (with shift)' if self._shift else '')
-    def execute(self, stack): stack.push(IFFTImageStack(stack.pop(), self._shift))
+    def __str__(self): return 'ifft'+(' (with shift)' if self._shift else '')+(' (3D)' if self._per_slice else '')
+    def execute(self, stack): stack.push(IFFTImageStack(stack.pop(), self._shift, self._per_slice))
