@@ -13,7 +13,8 @@ __all__ = [
     'is_image',      'check_image',      'is_single_channel_image','check_image_single_channel',
     'is_image_stack','check_image_stack','is_single_channel_stack','check_stack_single_channel',
     'is_image_desc','is_image_or_stack','check_image_or_stack',
-    'im_rgb_view','im_raw_view','im_complexify','im_decomplexify','im_decomplexify_dtype','im_complexify_dtype','im2double',
+    'im_rgb_view','im_raw_view','im_complexify','im_decomplexify','im_decomplexify_dtype','im_complexify_dtype',
+    'im2double','double2im',
     'get_im_min_max','get_dtype_min_max','get_dtype_min','get_dtype_max',
     ]
 
@@ -308,7 +309,7 @@ def im_decomplexify_dtype(dt):
 def im2double(im):
     """
     Converts an image to doubles from 0.0 to 1.0 if not already a floating-point type. Basically a
-    shortcut for convert.scale(im, None, (0.0, 1.0), float64)
+    shortcut for filters.convert.scale(im, None, (0.0, 1.0), float64).
     """
     from numpy import float64
     check_image_or_stack(im)
@@ -316,11 +317,27 @@ def im2double(im):
     k, t, im = dt.kind, dt.type, im.astype(float64, copy=False)
     if k == 'u': im /= __min_max_values[t][1]
     elif k == 'i':
-        ii = __min_max_values[t]
-        im -= ii[0]
-        im /= (ii[1] - ii[0])
+        mn, mx = __min_max_values[t]
+        im -= mn
+        im /= mx - mn
     elif k not in 'fb': raise ValueError('unknown image format')
     return im
+def double2im(im, dt):
+    """
+    Converts a floating point image from 0.0 to 1.0 to another type. Basically a shortcut for
+    filters.convert.scale(im, (0.0, 1.0), None, dt).
+    """
+    from numpy import float64
+    check_image_or_stack(im)
+    k = dt.kind
+    if k == 'b': return im > 0.5
+    elif k == 'u': im *= __min_max_values[dt][1]
+    elif k == 'i':
+        mn, mx = __min_max_values[dt]
+        im *= mx - mn
+        im += mn
+    elif k not in 'f': raise ValueError('unknown image format')
+    return im.astype(dt, copy=False)
 
 
 ##### Min/Max for data types #####

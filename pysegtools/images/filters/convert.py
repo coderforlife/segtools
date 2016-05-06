@@ -112,10 +112,8 @@ def scale(im, in_scale=None, out_scale=None, dt=None):
 
     # any -> b
     if dt.kind == 'b':
-        out = zeros(im.shape, dtype=dt)
         half = (in_scale[1]-in_scale[0])/2 if cur.kind == 'f' else (in_scale[1]-in_scale[0])//2
-        out[out<=half if rev else out>half] = True
-        return out
+        return (im<=half if rev else im>half).astype(dt, copy=False)
 
     # im - in_scale[0]
     if cur.kind == 'i': im = im.view(dtype(cur.byteorder+'u'+str(cur.itemsize)))
