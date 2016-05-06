@@ -12,8 +12,8 @@ from .._stack import Homogeneous
 from ..types import check_image, im2double, double2im
 from ...imstack import CommandEasy, Opt
 
-__all__ = ['gaussian_blur','mean_blur','median_blur','anisotropic_diffusion',
-           'GaussianBlur','MeanBlur','MedianBlur','AnisotropicDiffusion']
+__all__ = ['gaussian_blur','mean_blur','median_blur','max_blur','min_blur','anisotropic_diffusion',
+           'GaussianBlur','MeanBlur','MedianBlur','MaxBlur','MinBlur','AnisotropicDiffusion']
 
 def _filter(im, flt):
     check_image(im)
@@ -51,6 +51,16 @@ def median_blur(im, size=3):
     """Blur an image using a median filter. Works on color types by blurring each channel seperately."""
     from scipy.ndimage.filters import median_filter
     return _filter(im, partial(median_filter, size=size))
+
+def max_blur(im, size=3):
+    """Blur an image using a max filter. Works on color types by blurring each channel seperately."""
+    from scipy.ndimage.filters import maximum_filter
+    return _filter(im, partial(maximum_filter, size=size))
+
+def min_blur(im, size=3):
+    """Blur an image using a min filter. Works on color types by blurring each channel seperately."""
+    from scipy.ndimage.filters import minimum_filter
+    return _filter(im, partial(minimum_filter, size=size))
 
 def _exp(di):
     """Computes exp(-im_grad**2) for anisotropic diffusion"""
@@ -108,10 +118,10 @@ def anisotropic_diffusion(im, niters=15, dt=0.15, scale=10, diff_coeff=_inv):
 
 ##### 3D #####
 class BlurFilterImageStack(UnchangingFilteredImageStack):
+    _stack = None
     def __init__(self, ims, flt, per_slice):
         self._filter = flt
         self._per_slice = per_slice
-        self._stack = None
         if per_slice: super(BlurFilterImageStack, self).__init__(ims, BlurFilterImageSlice)
         elif not ims.is_homogeneous: raise ValueError('Cannot blur the entire stack if it is not homogeneous')
         else:
@@ -121,6 +131,7 @@ class BlurFilterImageStack(UnchangingFilteredImageStack):
             self._homogeneous = Homogeneous.All
     @property
     def stack(self):
+        if self._per_slice: return super(BlurFilterImageStack, self).stack
         if self._stack is None:
             self._stack = _filter3D(self._ims.stack, self._filter)
             self._stack.flags.writeable = False
@@ -150,6 +161,18 @@ class MedianBlur(BlurFilterImageStack):
         from scipy.ndimage.filters import median_filter
         self._size = size
         super(MedianBlur, self).__init__(ims, partial(median_filter, size=size), per_slice)
+
+class MaxBlur(BlurFilterImageStack):
+    def __init__(self, ims, size=3, per_slice=True):
+        from scipy.ndimage.filters import maximum_filter
+        self._size = size
+        super(MaxBlur, self).__init__(ims, partial(maximum_filter, size=size), per_slice)
+
+class MinBlur(BlurFilterImageStack):
+    def __init__(self, ims, size=3, per_slice=True):
+        from scipy.ndimage.filters import minimum_filter
+        self._size = size
+        super(MinBlur, self).__init__(ims, partial(minimum_filter, size=size), per_slice)
 
 def _anisotropic_diffusion_3(niters=5, dt=0.075, scale=35, diff_coeff=_inv, zscale=1):
     # zscale = z-spacing / x-spacing
@@ -233,6 +256,8 @@ class GaussianBlurCommand(BlurCommand):
         Opt('sigma', 'The amount of blurring as a positive floating-point number', Opt.cast_float(lambda x:x>0), 1.0),
         Opt('per_slice', 'If false, blurs data in 3D (input must be homogeneous)', Opt.cast_bool(), True),
         )
+    @classmethod
+    def _see_also(cls): return ('anisotropic diffusion','mean','median','max','min','convolve')
     def __str__(self): return 'Gaussian blur with sigma=%f%s'%(self._sigma, '' if self._per_slice else ' (3D)')
     def execute(self, stack): stack.push(GaussianBlur(stack.pop(), self._sigma, self._per_slice))
     
@@ -245,6 +270,8 @@ class MeanBlurCommand(BlurCommand):
     def _desc(cls): return 'Blurs the image by setting the value of a pixel equal to the average/mean of the pixels square around the pixel of the given size.'
     @classmethod
     def flags(cls): return ('mean-blur',)
+    @classmethod
+    def _see_also(cls): return ('Gaussian blur','anisotropic diffusion','median','max','min','convolve')
     def __str__(self): return 'mean blur with size=%d%s'%(self._size, '' if self._per_slice else ' (3D)')
     def execute(self, stack): stack.push(MeanBlur(stack.pop(), self._size, self._per_slice))
 
@@ -257,8 +284,38 @@ class MedianBlurCommand(BlurCommand):
     def _desc(cls): return 'Blurs the image by setting the value of a pixel equal to the median of the pixels in a square around the pixel of the given size.'
     @classmethod
     def flags(cls): return ('median-blur',)
+    @classmethod
+    def _see_also(cls): return ('Gaussian blur','anisotropic diffusion','mean','max','min','convolve')
     def __str__(self): return 'median blur with size=%d%s'%(self._size, '' if self._per_slice else ' (3D)')
     def execute(self, stack): stack.push(MedianBlur(stack.pop(), self._size, self._per_slice))
+
+class MaxBlurCommand(BlurCommand):
+    _size = None
+    _per_slice = None
+    @classmethod
+    def name(cls): return 'max blur'
+    @classmethod
+    def _desc(cls): return 'Blurs the image by setting the value of a pixel equal to the minimum of the pixels in a square around the pixel of the given size.'
+    @classmethod
+    def flags(cls): return ('max',)
+    @classmethod
+    def _see_also(cls): return ('Gaussian blur','anisotropic diffusion','mean','median','min','convolve')
+    def __str__(self): return 'max blur with size=%d%s'%(self._size, '' if self._per_slice else ' (3D)')
+    def execute(self, stack): stack.push(MaxBlur(stack.pop(), self._size, self._per_slice))
+
+class MinBlurCommand(BlurCommand):
+    _size = None
+    _per_slice = None
+    @classmethod
+    def name(cls): return 'min blur'
+    @classmethod
+    def _desc(cls): return 'Blurs the image by setting the value of a pixel equal to the maximum of the pixels in a square around the pixel of the given size.'
+    @classmethod
+    def flags(cls): return ('min',)
+    @classmethod
+    def _see_also(cls): return ('Gaussian blur','anisotropic diffusion','mean','median','max','convolve')
+    def __str__(self): return 'min blur with size=%d%s'%(self._size, '' if self._per_slice else ' (3D)')
+    def execute(self, stack): stack.push(MinBlur(stack.pop(), self._size, self._per_slice))
 
 class AnisotropicDiffusionCommand(BlurCommand):
     _niters = None
@@ -292,6 +349,8 @@ The diffusion coefficient can be calculated in two different ways:
         Opt('zscale',     'Only used if per_slice is false, determines the relative spacing of the xy planes with the z dimension', Opt.cast_float(lambda x:x>0), 1),
         Opt('per_slice',  'If false, blurs data in 3D (input must be homogeneous), if this is false it is likely that dt, niters, and scale should not be their defaults', Opt.cast_bool(), True),
         )
+    @classmethod
+    def _see_also(cls): return ('Gaussian blur','mean','median','max','min')
     def __str__(self):
         return 'anisotropic diffusion with niters=%d, dt=%.2f, scale=%.2f, diff_coeff=%s%s'%(
             self._niters, self._dt, self._scale, self._diff_coeff,
