@@ -306,10 +306,11 @@ def im_decomplexify_dtype(dt):
     if dt.type not in __cmplx2float: return dt
     return dtype((__cmplx2float[dt.type],2)).newbyteorder(dt.byteorder)
 
-def im2double(im):
+def im2double(im, return_dtype=False):
     """
     Converts an image to doubles from 0.0 to 1.0 if not already a floating-point type. Basically a
-    shortcut for filters.convert.scale(im, None, (0.0, 1.0), float64).
+    shortcut for filters.convert.scale(im, None, (0.0, 1.0), float64). If return_dtype is True then
+    it will return the original dtype as well
     """
     from numpy import float64
     check_image_or_stack(im)
@@ -321,21 +322,24 @@ def im2double(im):
         im -= mn
         im /= mx - mn
     elif k not in 'fb': raise ValueError('unknown image format')
-    return im
+    return (im,dt) if return_dtype else im
 def double2im(im, dt):
     """
     Converts a floating point image from 0.0 to 1.0 to another type. Basically a shortcut for
     filters.convert.scale(im, (0.0, 1.0), None, dt).
     """
-    from numpy import float64
     check_image_or_stack(im)
-    k = dt.kind
-    if k == 'b': return im > 0.5
-    elif k == 'u': im *= __min_max_values[dt][1]
+    dt = dtype(dt)
+    k, t = dt.kind, dt.type
+    if k == 'u':
+        im *= __min_max_values[t][1]
+        im.round(out=im)
     elif k == 'i':
-        mn, mx = __min_max_values[dt]
+        mn, mx = __min_max_values[t]
         im *= mx - mn
         im += mn
+        im.round(out=im)
+    elif k == 'b': return im > 0.5
     elif k not in 'f': raise ValueError('unknown image format')
     return im.astype(dt, copy=False)
 

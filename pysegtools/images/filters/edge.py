@@ -10,7 +10,7 @@ from numpy import sqrt, hypot, arctan2, pad, pi, dtype, float64, array, ones
 from scipy.ndimage import convolve, binary_dilation, maximum_filter
 
 from .threshold import otsus_multithresh
-from ..types import check_image, get_im_dtype_and_nchan, im2double
+from ..types import check_image_single_channel, im2double, double2im
 from ...general import delayed
 from ._stack import FilteredImageStack, FilteredImageSlice
 from .._stack import Homogeneous
@@ -19,24 +19,22 @@ from ...imstack import CommandEasy, Opt
 __all__ = ['prewitt','sobel','scharr','canny']
 
 def __simple_edge_detect(im, return_angle, scale, k):
-    check_image(im)
-    dt, nchan = get_im_dtype_and_nchan(im)
-    if dt.kind == 'c' or nchan != 1: raise ValueError('unsupported image type')
-    im = im2double(im)
+    im,dt = im2double(check_image_single_channel(im), return_dtype=True)
     Gx = convolve(im, k)
     Gy = convolve(im, k.T)
     G_mag = hypot(Gx, Gy)
     G_mag *= scale
-    return (G_mag, arctan2(Gy, Gx)) if return_angle else G_mag
+    G_mag = double2im(G_mag, dt)
+    return G_mag, arctan2(Gy, Gx) if return_angle else G_mag
 
 __prewitt_kernel = delayed(lambda:(1/sqrt(10), array([[-1,0,1],[-1,0,1],[-1,0,1]])), tuple)
 def prewitt(im, return_angle=False):
     """
     Perform Prewitt edge detection on the image.
 
-    Returns the magnitude of the gradient as floats (sqrt(gx^2+gy^2)) scaled to be from 0.0 to 1.0.
-    If return_angle is True then the angle of the gradient is returned as well (from -pi to pi with
-    0 to the right and clockwise).
+    Returns the magnitude of the gradient (sqrt(gx^2+gy^2)) scaled to the max range of the input
+    image data type. If return_angle is True then the angle of the gradient is returned as well
+    (from -pi to pi with 0 to the right and clockwise).
     """
     return __simple_edge_detect(im, return_angle, *__prewitt_kernel)
 
@@ -45,9 +43,9 @@ def scharr(im, return_angle=False):
     """
     Perform Scharr edge detection on the image.
 
-    Returns the magnitude of the gradient as floats (sqrt(gx^2+gy^2)) scaled to be from 0.0 to 1.0.
-    If return_angle is True then the angle of the gradient is returned as well (from -pi to pi with
-    0 to the right and clockwise).
+    Returns the magnitude of the gradient (sqrt(gx^2+gy^2)) scaled to the max range of the input
+    image data type. If return_angle is True then the angle of the gradient is returned as well
+    (from -pi to pi with 0 to the right and clockwise).
     """
     return __simple_edge_detect(im, return_angle, *__scharr_kernel)
 
@@ -59,9 +57,9 @@ def sobel(im, size=3, return_angle=False):
     """
     Perform Sobel edge detection on the image. The size of the Sobel kernel can be either 3 or 5.
 
-    Returns the magnitude of the gradient as floats (sqrt(gx^2+gy^2)) scaled to be from 0.0 to 1.0.
-    If return_angle is True then the angle of the gradient is returned as well (from -pi to pi with
-    0 to the right and clockwise).
+    Returns the magnitude of the gradient (sqrt(gx^2+gy^2)) scaled to the max range of the input
+    image data type. If return_angle is True then the angle of the gradient is returned as well
+    (from -pi to pi with 0 to the right and clockwise).
     """
     if size not in __sobel_kernels: raise ValueError('unsupported filter size')
     return __simple_edge_detect(im, return_angle, *__sobel_kernels[size])
@@ -94,10 +92,7 @@ def canny(im, thresh=None, size=3, quick=False):
     if thresh is not None and (len(thresh) != 2 or thresh[0] >= thresh[1]):
         raise ValueError('unsupported thresholds')
     
-    check_image(im)
-    dt, nchan = get_im_dtype_and_nchan(im)
-    if dt.kind == 'c' or nchan != 1: raise ValueError('unsupported image type')
-    im = im2double(im)
+    im = im2double(check_image_single_channel(im))
 
     # Sobel Filter
     Gx = convolve(im, k)
@@ -194,7 +189,7 @@ class __SimpleEdgeDetectionCommand(CommandEasy):
     @classmethod
     def _consumes(cls): return ('Grayscale image stack to be edge detected',)
     @classmethod
-    def _produces(cls): return ('Gradient magnitudes - a float image',)
+    def _produces(cls): return ('Gradient magnitudes, scaled to the input image data type',)
     @classmethod
     def _see_also(cls): return tuple(x for x in ('prewitt','scharr','sobel','canny') if x != cls.name())
     def __str__(self): return self.__class__.name()

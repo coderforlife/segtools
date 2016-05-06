@@ -8,7 +8,7 @@ from fractions import gcd
 from itertools import izip
 from collections import Sequence
 
-from numpy import empty, zeros, dtype, promote_types, subtract, add
+from numpy import empty, dtype, promote_types, subtract, add
 
 from ..types import check_image_or_stack, create_im_dtype, im_dtype_desc
 from ..types import get_dtype_endian, get_im_min_max, get_dtype_min_max
@@ -80,7 +80,7 @@ def scale(im, in_scale=None, out_scale=None, dt=None):
     # in_min/max is the actual min and max of the image data
     # in_scale is the range of values we want to map to out
     cur_min, cur_max = get_im_min_max(im)
-    in_min, in_max = im.min(), im.max()
+    #in_min, in_max = im.min(), im.max()
     if in_scale is None: in_scale = cur_min, cur_max
     elif len(in_scale) != 2: raise ValueError('invalid in_scale')
     else:

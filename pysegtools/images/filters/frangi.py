@@ -13,7 +13,7 @@ from __future__ import unicode_literals
 
 from numpy import zeros, dtype, float64
 
-from ..types import check_image_single_channel, check_stack_single_channel, im2double
+from ..types import check_image_single_channel, check_stack_single_channel, im2double, double2im
 from ._stack import FilteredImageStack, FilteredImageSlice
 from .._stack import Homogeneous
 from ...imstack import CommandEasy, Opt
@@ -52,7 +52,7 @@ def frangi2(im, out=None, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), beta=0.5, c=None, bl
     by Frangi (1998). This adds an insignificant amount of additional computation.
     
     Outputs:
-        out         the filtered image, always float64
+        out         the filtered image
         sigs        the sigmas for which the maximum intensity of every pixel is found
         dirs        the directions of the minor eigenvectors
     
@@ -76,13 +76,13 @@ def frangi2(im, out=None, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), beta=0.5, c=None, bl
         * Not all intermediate filtered images are stored but instead the max is calculated as it
         goes along (saving on memory)
     """
-    im = im2double(check_image_single_channel(im))
+    im,dt = im2double(check_image_single_channel(im), return_dtype=True)
     if out is None: out = zeros(im.shape)
     sigmas = tuple(float(s) for s in sigmas)
     if beta <= 0 or any(s <= 0 for s in sigmas): raise ValueError('negative constant')
     if c is None: c = 0.0
     elif c <= 0: raise ValueError('negative constant')
-    return _frangi.frangi2(im, out, sigmas, beta, c, black, return_full)
+    return double2im(_frangi.frangi2(im, out, sigmas, beta, c, black, return_full), dt)
 
 def frangi3(im, out=None, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), alpha=0.5, beta=0.5, c=None, black=True, return_full=False):
     """
@@ -108,7 +108,7 @@ def frangi3(im, out=None, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), alpha=0.5, beta=0.5,
     by Frangi (1998). This adds an insignificant amount of additional computation.
     
     Outputs:
-        out         the filtered image, always float64
+        out         the filtered image
         sigs        the sigmas for which the maximum intensity of every pixel is found
         vx,vy,vz    the directions of the minor eigenvectors
 
@@ -133,13 +133,13 @@ def frangi3(im, out=None, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), alpha=0.5, beta=0.5,
         * Not all intermediate filtered images are stored but instead the max is calculated as it
         goes along (saving on memory)
     """
-    im = im2double(check_stack_single_channel(im))
+    im,dt = im2double(check_stack_single_channel(im), return_dtype=True)
     if out is None: out = zeros(im.shape)
     sigmas = tuple(float(s) for s in sigmas)
     if alpha <= 0 or beta <= 0 or any(s <= 0 for s in sigmas): raise ValueError('negative constant')
     if c is None: c = 0.0
     elif c <= 0: raise ValueError('negative constant')
-    return _frangi.frangi3(im, out, sigmas, alpha, beta, c, black, return_full)
+    return double2im(_frangi.frangi3(im, out, sigmas, alpha, beta, c, black, return_full), dt)
 
 
 ########## Image Stacks ##########
@@ -214,7 +214,7 @@ Medical Image Computing and Computer-Assisted Intervention - MICCAI.
     @classmethod
     def _consumes(cls): return ('Gray-scale image stack to be filtered',)
     @classmethod
-    def _produces(cls): return ('Filtered image stack, always float64',)
+    def _produces(cls): return ('Filtered image stack',)
     def __str__(self):
         ps, c = self._per_slice, self._c
         return 'Frangi filter %s ridges in %s with sigmas=%s %sbeta=%.2f c=%s'%(
