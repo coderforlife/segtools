@@ -28,6 +28,8 @@ __all__ = ['number','label','relabel','shrink_integer',
 # created can be moved between different "identical" systems. If the directory containing _label.pyx
 # is writable, it will be placed into that directory. If the directory is not writable, it will be
 # placed somewhere in ~/.pyxbld. It is aways checked for in those places before re-compiling.
+# Since pylint is not able to properly detect Cython-compiled code members, so we disable it here
+#pylint: disable=no-member
 from ...general import cython; cython.install()
 from . import _label
 def __squeeze_last(a): return a.squeeze(-1) if a.shape[-1] == 1 else a

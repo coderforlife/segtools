@@ -76,6 +76,8 @@ def frangi2(im, out=None, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), beta=0.5, c=None, bl
         * Not all intermediate filtered images are stored but instead the max is calculated as it
         goes along (saving on memory)
     """
+    # Since pylint is not able to properly detect Cython-compiled code members, so we disable it here
+    #pylint: disable=no-member
     im,dt = im2double(check_image_single_channel(im), return_dtype=True)
     if out is None: out = zeros(im.shape)
     sigmas = tuple(float(s) for s in sigmas)
@@ -133,6 +135,8 @@ def frangi3(im, out=None, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), alpha=0.5, beta=0.5,
         * Not all intermediate filtered images are stored but instead the max is calculated as it
         goes along (saving on memory)
     """
+    # Since pylint is not able to properly detect Cython-compiled code members, so we disable it here
+    #pylint: disable=no-member
     im,dt = im2double(check_stack_single_channel(im), return_dtype=True)
     if out is None: out = zeros(im.shape)
     sigmas = tuple(float(s) for s in sigmas)
