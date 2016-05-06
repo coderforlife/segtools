@@ -29,7 +29,7 @@ __all__ = ['frangi2', 'frangi3', 'FrangiImageStack']
 # ~/.pyxbld. It is aways checked for in those places before re-compiling.
 from ...general import cython; cython.install()
 from . import _frangi
-def frangi2(im, out=None, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), beta=0.5, c=None, black=True, return_full=False):
+def frangi2(im, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), beta=0.5, c=None, black=True, return_full=False):
     """
     Computes the 2D Frangi filter using the eigenvectors of the Hessian to compute the likeliness of
     an image region to contain vessels or other image ridges, according to the method described by
@@ -40,7 +40,6 @@ def frangi2(im, out=None, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), beta=0.5, c=None, bl
     
     Inputs:
         im          the input image, must be a 2D grayscale image
-        out         the output results, default is to allocate it
         sigmas      the sigmas used, default is (1, 3, 5, 7, 9)
         beta        constant for the threshold for blob-like structure, default is 0.5
         c           constant for the threshold for second order structureness, default is dynamic
@@ -79,14 +78,14 @@ def frangi2(im, out=None, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), beta=0.5, c=None, bl
     # Since pylint is not able to properly detect Cython-compiled code members, so we disable it here
     #pylint: disable=no-member
     im,dt = im2double(check_image_single_channel(im), return_dtype=True)
-    if out is None: out = zeros(im.shape)
+    out = zeros(im.shape)
     sigmas = tuple(float(s) for s in sigmas)
     if beta <= 0 or any(s <= 0 for s in sigmas): raise ValueError('negative constant')
     if c is None: c = 0.0
     elif c <= 0: raise ValueError('negative constant')
     return double2im(_frangi.frangi2(im, out, sigmas, beta, c, black, return_full), dt)
 
-def frangi3(im, out=None, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), alpha=0.5, beta=0.5, c=None, black=True, return_full=False):
+def frangi3(im, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), alpha=0.5, beta=0.5, c=None, black=True, return_full=False):
     """
     Computes the 3D Frangi filter using the eigenvectors of the Hessian to compute the likeliness of
     an image region to contain vessels or other image ridges, according to the method described by
@@ -97,7 +96,6 @@ def frangi3(im, out=None, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), alpha=0.5, beta=0.5,
     
     Inputs:
         im          the input image stack, must be a 3D grayscale image
-        out         the output results, default is to allocate it
         sigmas      the sigmas used, default is (1, 3, 5, 7, 9)
         alpha       constant for the threshold for plate-like structure, default is 0.5
         beta        constant for the threshold for blob-like structure, default is 0.5
@@ -138,7 +136,7 @@ def frangi3(im, out=None, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), alpha=0.5, beta=0.5,
     # Since pylint is not able to properly detect Cython-compiled code members, so we disable it here
     #pylint: disable=no-member
     im,dt = im2double(check_stack_single_channel(im), return_dtype=True)
-    if out is None: out = zeros(im.shape)
+    out = zeros(im.shape)
     sigmas = tuple(float(s) for s in sigmas)
     if alpha <= 0 or beta <= 0 or any(s <= 0 for s in sigmas): raise ValueError('negative constant')
     if c is None: c = 0.0
