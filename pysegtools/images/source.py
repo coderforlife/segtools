@@ -29,6 +29,7 @@ class ImageSource(object):
     def shape(self): pass
     @abstractproperty
     def data(self): pass
+    def size(self): sh = self.shape; return sh[0]*sh[1]
     
     @staticmethod
     def as_image_source(im):
@@ -63,6 +64,8 @@ class ArrayImageSource(ImageSource):
     def shape(self): return self._im.shape[:2]
     @property
     def data(self): return self._im
+    @property
+    def size(self): return self._im.size
 
 class DeferredPropertiesImageSource(ImageSource):
     """An image source where the shape and dtype properties are deferred but cached."""

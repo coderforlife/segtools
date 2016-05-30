@@ -147,6 +147,8 @@ class ImageStack(object):
         if Homogeneous.Shape not in h[0]: raise AttributeError('property unavailable on heterogeneous image stacks')
         return h[1]
     @property
+    def size(self): sh = self.shape; return sh[0]*sh[1]
+    @property
     def dtype(self):
         if self._has_homogeneous_prop(Homogeneous.DType, '_dtype'): return self._dtype #pylint: disable=no-member
         h = self._get_homogeneous_info()
@@ -159,6 +161,17 @@ class ImageStack(object):
         stack = empty((self._d,) + self.shape, dtype=self.dtype)
         for i, slc in enumerate(self): stack[i,:,:,...] = slc.data
         return stack
+    @property
+    def full_size(self):
+        if self._has_homogeneous_prop(Homogeneous.Shape, '_shape'):
+            sh = self._shape #pylint: disable=no-member
+            return self._d * sh[0] * sh[1]
+        h = self._get_homogeneous_info()
+        if Homogeneous.Shape not in h[0]:
+            sz = 0
+            for slc in self._slices: sz += slc.size
+            return sz
+        return self._d * h[1][0] * h[1][1]
 
     ## Caching of slices ##
     # Note that much of the caching is in ImageSlice or subclasses
