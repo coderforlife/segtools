@@ -56,7 +56,7 @@ npy_helper_pxi_dep = npy_helper_pxd_dep + [os.path.join(thisdir, 'npy_helper.pxi
 fused_pxi_dep      = npy_helper_pxd_dep + [os.path.join(thisdir, 'fused.pxi')]
 
 default_compiler = get_default_compiler()  # TODO: this isn't the compiler that will necessarily be used, but is a good guess...
-includes = (thisdir, numpy.get_include()) if _have_numpy else (thisdir,)
+includes = ('.', thisdir, numpy.get_include()) if _have_numpy else ('.', thisdir,)
 compiler_opts = {
         'msvc'    : ['/D_SCL_SECURE_NO_WARNINGS','/EHsc','/O2','/DNPY_NO_DEPRECATED_API=7','/bigobj','/openmp'],
         'unix'    : ['-std=c++11','-O3','-march=native','-DNPY_NO_DEPRECATED_API=7','-fopenmp'], # gcc/clang (whatever is system default)
@@ -252,4 +252,4 @@ def install(build_dir=None, build_in_temp=True, setup_args=None):
         # Only install if we aren't already installed
         sys.meta_path.append(CythonFallbackImporter(build_dir))
 
-def get_include(): return os.path.dirname(__file__)
+def get_include(): return thisdir

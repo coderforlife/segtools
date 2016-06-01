@@ -3,12 +3,12 @@
 #distutils: language=c++
 #
 # Cython helper module for label filters.
-# These are not required but are much faster then the pure-Python ones.
+# These are not required but are much faster than the pure-Python ones.
 
 from __future__ import division
 
-include "npy_helper.pxi"
-include "fused.pxi"
+include "pysegtools/general/cython/npy_helper.pxi"
+include "pysegtools/general/cython/fused.pxi"
 
 from libc.string cimport memcmp, memcpy, memmove
 

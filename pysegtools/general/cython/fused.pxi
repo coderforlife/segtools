@@ -3,7 +3,7 @@
 
 DEF ADD_FUSED_TYPE_TO_FUNCTION=False
 
-from npy_helper cimport *
+from pysegtools.general.cython.npy_helper cimport *
 
 ############### Fused Function Helpers ###############
 # This replaces the default getitem function (one used for []) for Cython fused functions with one
