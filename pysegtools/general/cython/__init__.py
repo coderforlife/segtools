@@ -24,6 +24,8 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+__all__ = ['install', 'get_include']
+
 import sys, imp, types, shutil, re, os, warnings
 from distutils.ccompiler import get_default_compiler
 
@@ -249,3 +251,5 @@ def install(build_dir=None, build_in_temp=True, setup_args=None):
     if not any(isinstance(i, CythonFallbackImporter) for i in sys.meta_path):
         # Only install if we aren't already installed
         sys.meta_path.append(CythonFallbackImporter(build_dir))
+
+def get_include(): return os.path.dirname(__file__)
