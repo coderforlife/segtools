@@ -585,6 +585,7 @@ cdef extern from "numpy/arrayobject.h":
     ndarray PyArray_Min(ndarray, int axis, PyArrayObject* out)
     ndarray PyArray_Max(ndarray, int axis, PyArrayObject* out)
     ndarray PyArray_Any(ndarray, int axis, ndarray out)
+    ndarray PyArray_Sum(ndarray, int axis, NPY_TYPES, ndarray out)
     ndarray PyArray_MatrixProduct(object, object)
     dict PyArray_GetNumericOps()
     intp PyArray_CountNonzero(ndarray) except -1
