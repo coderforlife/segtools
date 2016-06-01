@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
 import os, sys
-from distutils.core import setup, DistutilsSetupError
+try: from setuptools import setup
+except ImportError: from distutils.core import setup
 
 # We require Python v2.7 or newer
-if sys.version_info[:2] < (2,7):
-    raise DistutilsSetupError("This requires Python v2.7 or newer")
+if sys.version_info[:2] < (2,7): raise RuntimeError("This requires Python v2.7 or newer")
 
 # If this is True we need to have subprocess32 installed
 # Only needed on POSIX systems using Python < 3.2 due to a bug in the built-in subprocess module
