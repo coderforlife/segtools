@@ -19,7 +19,7 @@ import_array()
 
 
 ########## Array Utility Functions ##########
-cdef inline void npy_array_resize1D(ndarray a, intp size):
+cdef inline int npy_array_resize1D(ndarray a, intp size) except -1:
     """
     Shortens/resizes an array by modifying the internal data. The array must own its data and have
     a minimal number of references.
@@ -27,8 +27,9 @@ cdef inline void npy_array_resize1D(ndarray a, intp size):
     cdef PyArray_Dims dims
     dims.ptr = &size; dims.len = 1
     PyArray_Resize(a, &dims, True, NPY_CORDER)
+    return 0
 
-cdef inline void npy_array_resize2D(ndarray a, intp nrows):
+cdef inline int npy_array_resize2D(ndarray a, intp nrows) except -1:
     """
     Shortens/resizes an array by modifying the internal data. The array must own its data and have
     a minimal number of references.
@@ -38,6 +39,7 @@ cdef inline void npy_array_resize2D(ndarray a, intp nrows):
     cdef PyArray_Dims dims
     dims.ptr = d; dims.len = 2
     PyArray_Resize(a, &dims, True, NPY_CORDER)
+    return 0
 
 cdef inline ndarray npy_view_slice(ndarray a, int ndim, intp* dims, intp* strides, void* data, int flags):
     """
