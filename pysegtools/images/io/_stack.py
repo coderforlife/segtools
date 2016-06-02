@@ -158,7 +158,7 @@ class FileImageStack(ImageStack, HandlerManager):
         """
         from ._commands import SaveCommand
         saver = SaveCommand.get_saver(args)[1]
-        if ims is not None: return saver(ims, writeonly)
+        if ims is not None: return saver(ImageStack.as_image_stack(ims), writeonly)
 
     def __init__(self, header, slices, readonly=False):
         super(FileImageStack, self).__init__(slices)
