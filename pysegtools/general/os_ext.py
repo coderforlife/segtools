@@ -24,7 +24,7 @@ if os_name != 'nt':
 else:
     from collections import namedtuple
     from ctypes import windll, WinError, POINTER, byref, Structure, sizeof
-    from ctypes import c_ulonglong as ULONGLONG, c_size_t as SIZE_T
+    from ctypes import c_uint64 as ULONGLONG, c_size_t as SIZE_T
     from ctypes.wintypes import BOOL, DWORD, HANDLE, FILETIME
 
     def cb_winerrcheck(success, func, args):
