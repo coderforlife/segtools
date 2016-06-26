@@ -91,7 +91,7 @@ def frangi2(ndarray im, ndarray out, tuple sigmas, dbl beta, dbl c, bint black, 
                         if return_full:
                             pSigs[i] = sigma
                             pDirs[i] = atan2(vy[i], vx[i])
-                    elif first: pOut[i] = 0
+                elif first: pOut[i] = 0
                     
             first = False
 
@@ -294,7 +294,7 @@ def frangi3(ndarray im, ndarray out, tuple sigmas, dbl alpha, dbl beta, dbl c, b
                         if return_full:
                             pSigs[i] = sigma
                             pVecX[i] = vx[i]; pVecY[i] = vy[i]; pVecZ[i] = vz[i]
-                    elif first: pOut[i] = 0
+                elif first: pOut[i] = 0
             
             first = False
 
