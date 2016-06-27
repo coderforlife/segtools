@@ -575,6 +575,7 @@ cdef extern from "numpy/arrayobject.h":
     object PyArray_Resize(ndarray, PyArray_Dims*, bint refcheck, NPY_ORDER) # returns None on success
     tuple PyArray_Nonzero(ndarray)
     int PyArray_CopyInto(ndarray, ndarray) except -1
+    int PyArray_CopyAnyInto(ndarray, ndarray) except -1
 
     ### Sorting an array ###
     int PyArray_Sort(ndarray, int axis, NPY_SORTKIND) except -1 # in-place
