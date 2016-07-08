@@ -24,7 +24,7 @@ if __name__ == "__main__":
     for i,v in enumerate(argv):
         if v == '-m':
             argv[i+1] == 'pysegtools.imstack_main'
-            os.execv(sys.executable, sys.executable, argv)
+            os.execv(sys.executable, argv)
     
 import sys
 from abc import ABCMeta, abstractmethod
