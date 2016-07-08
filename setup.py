@@ -28,7 +28,7 @@ setup(  name='pysegtools',
         package_data = { '': ['*.pyx', '*.pyxdep', '*.pxi', '*.pxd', '*.h', '*.txt'], }, # Make sure all Cython files are wrapped up with the code
         install_requires=['numpy>=1.7','scipy>=0.12'] + (['subprocess32>=3.2.6'] if need_sp32 else []),
         extras_require={
-              'OPT': ['cython>=0.19','fftw>=0.9.2'],
+              'OPT': ['cython>=0.19','pyfftw>=0.9.2'],
               'PIL': ['pillow>=2.0'],
               'MATLAB': ['h5py>=2.0'],
               'tasks': ['psutil>=2.0'],
