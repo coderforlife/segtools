@@ -23,7 +23,8 @@ if __name__ == "__main__":
     argv = [argv[i] for i in xrange(argc.value)]
     for i,v in enumerate(argv):
         if v == '-m':
-            argv[i+1] == 'pysegtools.imstack_main'
+            # Correct the module name (note: Python always modifies this to -c so it always needs to be updated)
+            argv[i+1] = 'pysegtools.imstack_main'
             os.execv(sys.executable, argv)
     
 import sys
