@@ -14,6 +14,18 @@ from __future__ import unicode_literals
 
 __all__ = ["main", "Help", "Opt", "Command", "CommandEasy"]
 
+# If this was called as the main program, restart by calling imstack_main
+# This is quite hackish, but should be fine
+if __name__ == "__main__":
+    import os, sys, ctypes
+    argv, argc = ctypes.POINTER(ctypes.c_char_p)(), ctypes.c_int()
+    ctypes.pythonapi.Py_GetArgcArgv(ctypes.byref(argc), ctypes.byref(argv))
+    argv = [argv[i] for i in xrange(argc.value)]
+    for i,v in enumerate(argv):
+        if v == '-m':
+            argv[i+1] == 'pysegtools.imstack_main'
+            os.execv(sys.executable, sys.executable, argv)
+    
 import sys
 from abc import ABCMeta, abstractmethod
 String = str if sys.version_info[0] == 3 else basestring
