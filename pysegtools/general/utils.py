@@ -160,7 +160,7 @@ def __get_terminal_width_nix():
         def ioctl_GWINSZ(fd):
             try:
                 return struct.unpack(str('hh'), fcntl.ioctl(fd, termios.TIOCGWINSZ, '1234'))[1]
-            except (AttributeError, OSError, struct.error): return None
+            except (AttributeError, OSError, IOError, struct.error): return None
         w = ioctl_GWINSZ(1) or ioctl_GWINSZ(2) or ioctl_GWINSZ(0) # stdout, stderr, stdin
         if not w:
             try:
