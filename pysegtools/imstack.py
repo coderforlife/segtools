@@ -696,7 +696,7 @@ class Help(object):
         f12 = TextWrapper(width=out_width, subsequent_indent=' '*11).fill
         f18 = TextWrapper(width=out_width, subsequent_indent=' '*18).fill
         print(fill("===== Image Stack Reader and Converter Tool " + ("="*max(0, out_width-44))))
-        print(f18("%s [basic args] [--cmd1 args...] [--cmd2 args...] ..." % basename(sys.argv[0])))
+        print(f18("%s [basic args] [--cmd1 args...] [--cmd2 args...] ..." % __loader__.fullname))
         print(fill("Basic arguments:"))
         print(f18("  -h  --help [x]  display help about a command, filter, or format (all other arguments will be ignored)"))
         print(f18("  -v  --verbose   display all information about processing of commands"))
