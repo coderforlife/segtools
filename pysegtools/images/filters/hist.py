@@ -77,8 +77,9 @@ def histeq_trans(h_src, h_dst, dt):
     tol = tile(xx.min(0)/2.0,(nbins_dst,1))
     err = tile(h_dst_cdf,(nbins_src,1)).T - tile(h_src_cdf,(nbins_dst,1)) + tol
     err[err < -__eps] = 1.0
-
-    return (err.argmin(0)*get_dtype_max(dt)/(nbins_dst-1)).round(out=empty(nbins_src, dtype=dt))
+    T = err.argmin(0)*(get_dtype_max(dt)/(nbins_dst-1.0))
+    T = T.round(out=T).astype(dt, copy=False)
+    return T
 
 def __histeq_apply(im, T):
     im,o_dt = __as_unsigned(im)
@@ -123,7 +124,8 @@ def __histeq(im, h_dst, h_src):
     tol = tile(xx.min(0)/2.0,(nbins_dst,1))
     err = tile(h_dst_cdf,(nbins_src,1)).T - tile(h_src_cdf,(nbins_dst,1)) + tol
     err[err < -__eps] = 1.0
-    T = (err.argmin(0)*(nlevels/(nbins_dst-1.0))).round(out=empty(nbins_src, dtype=im.dtype))
+    T = err.argmin(0)*(nlevels/(nbins_dst-1.0))
+    T = T.round(out=T).astype(im.dtype, copy=False)
 
     if o_dt.kind != 'f' and nlevels == len(T)-1: idx = im # perfect fit, we don't need to scale the indices
     else: idx = (im*(float(len(T)-1)/nlevels)).round(out=empty(im.shape, dtype=intp)) # scale the indices
