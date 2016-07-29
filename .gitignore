@@ -2,3 +2,15 @@
 *.pyxbldc
 *.pyd
 *.so
+*.egg-info
+*.egg
+.eggs/
+*.pyo
+*.swp
+.idea/workspace.xml
+.coverage
+.tox/
+dist/
+htmlcov/
+build/
+vagrant/.vagrant/
