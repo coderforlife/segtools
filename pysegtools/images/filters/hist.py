@@ -167,12 +167,12 @@ def __n_argmax(a, n):
 
 def histeq_exact(im, h_dst=256, mask=None, order=6):
     """
-    List histeq except the histogram of the output image is exactly as given in h_dst. This is
+    Like histeq except the histogram of the output image is exactly as given in h_dst. This is
     acomplished by ordering all pixels based on their gray level and the gray level of the
     neighboring pixels. The higher the order, the further away pixels are used to help distinguish
     pixels from each other. An order of 1 would be using only the pixel itself and no neighbors.
 
-    There is currently no way to specfy the source histogram or to calculate the transform to apply
+    There is currently no way to specify the source histogram or to calculate the transform to apply
     to different images.
     
     This method takes more time and memory than the approximate ("standard") version. This has been
@@ -204,7 +204,7 @@ def histeq_exact(im, h_dst=256, mask=None, order=6):
         idx[mask] = idx[mask].argsort().argsort()
         del mask
 
-    ##### Create the tranform that is the size of the image but with sorted histogram values #####
+    ##### Create the transform that is the size of the image but with sorted histogram values #####
     h_dst = tile(n/h_dst, h_dst) if isinstance(h_dst, Integral) else h_dst.ravel()*(n/h_dst.sum()) #pylint: disable=no-member
     if len(h_dst) < 2: raise ValueError('Invalid histogram')
     # Since there could be fractional amounts, make sure they are added up and put somewhere
@@ -222,8 +222,8 @@ def histeq_exact(im, h_dst=256, mask=None, order=6):
 
 def __pixel_order(im, order=6):
     """
-    Assign strict ordering to image pixels. Outputs an array that has the same dimensions as the
-    input. Its element entries correspond to the order of the grey level pixel in that position.
+    Assign strict ordering to image pixels. Outputs an array that has the same size as the input.
+    Its element entries correspond to the order of the gray level pixel in that position.
 
     REFERENCES:
       1. Coltuc D. and Bolon P., 1999, "Strict ordering on discrete images and applications"
@@ -232,30 +232,28 @@ def __pixel_order(im, order=6):
     """
     from scipy.ndimage.filters import correlate
 
-    im,_ = __as_unsigned(im)
     if order < 2 or order > 6: raise ValueError('Invalid order')
-##    if order == 1: return im.ravel().argsort().argsort()
-
+    im,_ = __as_unsigned(im)
+    
     if im.dtype.kind == 'u' and im.dtype.itemsize <= 2:
+        Fs = __create_uint_filter(order, im.dtype.itemsize)
         if im.dtype.itemsize == 1 or order <= 3:
             ##### Single convolution and no lexsort #####
-            F, = __create_uint_filter(order, im.dtype.itemsize) #pylint: disable=unbalanced-tuple-unpacking
             im = im.astype(int64)
-            im = add(correlate(im, F), left_shift(im, 63 - im.dtype.itemsize*8, im), im)
-##            from numpy import unique
-##            print(len(unique(im)) / im.size) # OA
-            return im.ravel().argsort().argsort()
-        Fs = __create_uint_filter(order, im.dtype.itemsize)
+            FR = correlate(im, Fs[0])
+            left_shift(im, 55, im)
+            return add(FR, im, im).ravel().argsort().argsort()
     else: # if im.dtype.kind == 'f' or im.dtype.itemsize > 2:
         Fs = __filters_float[-order+1:]
 
     ##### Convolve filters with the image and lexsort #####
     FR = empty(im.shape+(len(Fs)+1,), float64)
-    FR[...,-1] = im = im.astype(FR.dtype)
+    FR[...,-1] = im = im.astype(float64)
     for i,F in enumerate(Fs): correlate(im, F, FR[...,i])
-    FR = FR.reshape((im.size, -1))
+    del im
+    FR = FR.reshape((-1, FR.shape[-1]))
     idx = lexsort(FR.T, 0)
-##    FR=FR[idx]; print(((FR[1:]!=FR[:-1]).any(1).sum()+1) / im.size) # OA
+    del FR
     return idx.argsort()
 
 __filter3 = array([[3,2,3],[2,1,2],[3,2,3]])
@@ -270,11 +268,11 @@ def __create_uint_filter(order, nbytes):
     idx = (order, nbytes)
     if idx in __filters_uint: return __filters_uint[idx]
     
-    avail_bits = finfo(float64).nmant
     extra_bits = [0, 0, 2, 2, 2, 3, 2]
     out = ()
     nbits = nbytes*8
     while order >= 2:
+        avail_bits = finfo(float64).nmant
         base = __filters[order]
         fltr = zeros(base.shape, float64)
         out += (fltr,)
