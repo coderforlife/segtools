@@ -22,7 +22,12 @@ setup(  name='pysegtools',
         author='Jeffrey Bush',
         author_email='j1bush@ncmir.ucsd.edu',
         url='https://cellsegmentation.org/',
-        packages=['pysegtools'], # TODO: do all 'packages' need to be listed?
+        packages=['pysegtools', 'pysegtools.general',
+                  'pysegtools.general.cython',
+                  'pysegtools.images',
+                  'pysegtools.images.filters',
+                  'pysegtools.images.io',
+                  'pysegtools.images.io.handlers'],
         use_2to3=True, # the code *should* support Python 3 once run through 2to3 but this isn't tested
         zip_safe=False, # I don't think this code would work when running from inside a zip file due to the dynamic-load and dynamic-cython systems
         package_data = { '': ['*.pyx', '*.pyxdep', '*.pxi', '*.pxd', '*.h', '*.txt'], }, # Make sure all Cython files are wrapped up with the code
