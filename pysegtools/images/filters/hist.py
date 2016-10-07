@@ -414,22 +414,20 @@ def __is_unique(x, overwrite=False):
 
 ##### Image Stack #####
 class HistEqImageStack(UnchangingFilteredImageStack):
-    def __init__(self, ims, h_dst=None, h_src=None, mask=None, exact=False):
+    def __init__(self, ims, h_dst=None, h_src=None, mask=None, exact=False, **kwargs):
         """
         If h_src is set, exact must be False and the image stack must have a homogeneous dtype.
         Besides h_src taking the values that histeq can take, it can also take "True" which will
         cause it to be calculated from the entire image stack using 256 bins.
         h_dst defaults to 256 if exact is True and 64 if it is not.
-        Besides True/False, exact can also be the integer for "order" (2 to 6).
+        If exact is True then kwargs can have extra options that will be sent to histeq_exact.
         """
         if exact:
             if h_dst is None: h_dst = 256
             if h_src is not None: raise ValueError()
-            order = 6
-            if not isinstance(exact, bool):
-                order = int(exact)
-                if order < 2 or order > 6: raise ValueError()
-            self._histeq = lambda im,mk: histeq_exact(im, h_dst, mk, 'LM', order=order)
+            # TODO: check the kwargs
+            self._histeq = lambda im,mk: histeq_exact(im, h_dst, mk, **kwargs)
+        elif len(kwargs) != 0: raise ValueError('Invalid extra arguments')
         else:
             if h_dst is None: h_dst = 64
             if h_src is not None:
@@ -533,6 +531,33 @@ pixels where the mask is True are counted.""")
         savetxt(stdout if self.__file == '-' else self.__file, H, str('%u'), '\t')
 
 class HistEqCommand(Command):
+    @staticmethod
+    def __cast_exact(x):
+        if isinstance(x, dict): return x
+        x = x.lower()
+        if x == 'false': return {'exact':False}
+        if x == 'true': return {'exact':True}
+        if x.startswith('lm'):
+            if x == 'lm': return {'exact':True, 'method':'LM'}
+            if x[2] != ':': raise ValueError()
+            n = int(x[3:])
+            if n < 2 or n > 6: raise ValueError()
+            return {'exact':True, 'method':'LM', 'order':n}
+        if x.startswith('va'):
+            if x == 'va': return {'exact':True, 'method':'VA'}
+            if x[2] != ':': raise ValueError()
+            n = int(x[3:])
+            if n < 1: raise ValueError()
+            return {'exact':True, 'method':'VA', 'niters':n}
+        raise ValueError()
+    @staticmethod
+    def __exact_desc(x):
+        if not x.get('exact', False) or 'method' not in x: return ''
+        s = ' (' + x['method']
+        if x['method'] == 'LM' and 'order'  in x: s += ':' + str(x['order'])
+        if x['method'] == 'VA' and 'niters' in x: s += ':' + str(x['niters'])
+        return s + ')'
+        
     @classmethod
     def name(cls): return 'histogram equalization'
     @classmethod
@@ -541,9 +566,8 @@ class HistEqCommand(Command):
     def _opts(cls): return (
         Opt('hist',     'The histogram to match to, specified either as an integer (for a uniform histogram with that many bins) or a readable file (or - for stdin) where one line will be read that has white-space seperated value', Opt.cast_or(Opt.cast_int(lambda x:x>=2), '-', Opt.cast_readable_file()), None, '256 if exact is true, 64 otherwise'),
         Opt('use_mask', 'Only use and update the pixels where the mask is True', Opt.cast_bool(), False),
-        Opt('exact',    'Force the image\'s histogram to exactly the given histogram', Opt.cast_bool(), False),
+        Opt('exact',    'Force the image\'s histogram to exactly the given histogram with some control over the quality vs speed of the algorithm', HistEqCommand.__cast_exact, {}, 'False'),
         Opt('src_hist', 'The histogram to map from, either the current slice, the entire stack, or a custom one from a file or stdin (-); must be slice if exact is true or the input data has a heterogeneous data type', Opt.cast_or('slice', 'stack', '-', Opt.cast_readable_file()), 'slice'),
-        Opt('order',    'The order of the exact histogram, from 2 to 6 (higher values have higher accuracy but take more time and memory), only used if exact is true', Opt.cast_int(lambda x:x>=2 and x<=6), 6),
         )
     @classmethod
     def print_help(cls, width):
@@ -559,7 +583,7 @@ Consumes:  image stack to change the histogram of
 Produces:  image stack with the histogram changed""")
         p.newline()
         p.text("Command format:")
-        p.cmds("--histeq [hist] [use_mask] [exact] [src_hist] [order]")
+        p.cmds("--histeq [hist] [use_mask] [exact] [src_hist]")
         p.newline()
         p.text("Options:")
         p.opts(*cls._opts())
@@ -573,43 +597,47 @@ compressed and have a .gz or .bz2 ending. Ever slice is changed to the same hist
 If a mask is used, then only pixels where the mask is True are changed.
 
 If exact is used, then the output image will have a histogram that perfectly matches the given
-histogram, but takes longer and more memory.
-
+histogram, but takes longer and more memory. The exact option can be one of several options,
+including the following:
+""")
+        p.list('false - use approximate method',
+               'true  - use default exact options, equivilent to VA:5',
+               'LM    - use the local means ordering method based on Coltuc et al',
+               'LM:#  - where # is from 2 to 6 for the order, default is 6',
+               'VA    - use the variational method based on Nikolova et al',
+               'VA:#  - where # is >=0 for the iterations to use, default is 5')
+        p.newline()
+        p.text("""
 The option src_hist overrides the source histogram, allowing one to define the direct mapping of
 pixel values. This option can only be used when exact is false and the image stack has a homogeneous
 data type. The most common non-default value will be 'stack' which allows the entire stack to mapped
 at once.
 
-The order option effects the quality of results of the exact histogram equalization. Higher values
-increase accuracy of seperating the pixels from each other and placing them in the right output bins
-but take more time and memory (although, for 8-bit images, there is no memory increase and the time
-increase is minor).
-
 Exact Histogram Equalization References:
 """)
         p.list('Coltuc D, Bolon P, 1999, "Strict ordering on discrete images and applications"',
-               'Coltuc D, Bolon P, Chassery J-M, 2006, "Exact histogram specification", IEEE Transcations on Image Processing 15(5):1143-1152')
+               'Coltuc D, Bolon P, Chassery J-M, 2006, "Exact histogram specification", IEEE Transcations on Image Processing 15(5):1143-1152',
+               'Nikolova M, Wen Y-W, and Chan R, 2013, "Exact histogram specification for digital images using a variational approach", J of Mathematical Imaging and Vision, 46(3):309-325',
+               'Nikolova M and Steidl G, 2014, "Fast Ordering Algorithm for Exact Histogram Specification" IEEE Trans. on Image Processing, 23(12):5274-5283')
         p.newline()
         p.text("See also:")
         p.list('imhist')
     def __str__(self):
         return '%shistogram equalization with %s%s%s%s' % (
-            'exact ' if self.__exact else '',
+            'exact ' if self.__exact.get('exact', False) else '',
             ('bins from %s'%('stdin' if self.__hist=='-' else self.__hist)) if isinstance(self.__hist, String) else '%s equal bins'%self.__hist,
             ' using a mask' if self.__use_mask else '',
             ' across entire stack' if self.__src_hist is True else ('' if self.__src_hist is None else (' using source histogram from %s'%('stdin' if self.__src_hist=='-' else self.__src_hist))),
-            (' (order=%d)'%self.__exact) if not isinstance(self.__exact, bool) else '',
+            HistEqCommand.__exact_desc(self.__exact),
             )
     def __init__(self, args, stack):
-        self.__hist,self.__use_mask,self.__exact,self.__src_hist,order = args.get_all(*HistEqCommand._opts())
+        self.__hist,self.__use_mask,self.__exact,self.__src_hist = args.get_all(*HistEqCommand._opts())
         stack.pop()
         if self.__use_mask: stack.pop()
         stack.push()
-        if self.__exact and self.__src_hist != 'slice': raise ValueError('When exact is true, src_hist must be \'slice\'')
-        if order != 6:
-            if not self.__exact: raise ValueError('When exact is false, order cannot be used')
-            self.__exact = order
-        if self.__hist is None: self.__hist = 256 if self.__exact else 64
+        if self.__exact.get('exact', False) and self.__src_hist != 'slice':
+            raise ValueError('When exact, src_hist must be \'slice\'')
+        if self.__hist is None: self.__hist = 256 if self.__exact.get('exact', False) else 64
         if self.__src_hist == 'slice': self.__src_hist = None
         elif self.__src_hist == 'stack': self.__src_hist = True
 
@@ -628,4 +656,4 @@ Exact Histogram Equalization References:
         mask = stack.pop() if self.__use_mask else None
         h_dst = HistEqCommand.__get_hist(self.__hist)
         h_src = HistEqCommand.__get_hist(self.__src_hist)
-        stack.push(HistEqImageStack(ims, h_dst, h_src, mask, self.__exact))
+        stack.push(HistEqImageStack(ims, h_dst, h_src, mask, **self.__exact))
