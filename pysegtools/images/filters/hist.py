@@ -148,9 +148,9 @@ def histeq(im, h_dst=64, h_src=None, mask=None):
     with bool/logical, use convert.bw. The h_dst and h_src must have at least 2 bins.
 
     The performs an approximate histogram equalization. This is the most "standard" technique used.
-    A more-exact histogram equalization is available with histeq_exact, however it takes
-    substantially more memory and time, and cannot be given the source histogram or split into two
-    functions (thus it cannot be easily parallelized).
+    Am exact histogram equalization is available with histeq_exact, however it takes substantially
+    more memory and time, and cannot be given the source histogram or split into two functions
+    (thus it cannot be easily parallelized).
     """
     im = check_image_single_channel(im)
     if im.dtype.kind not in 'iuf': raise ValueError("Unsupported data-type")
@@ -161,52 +161,75 @@ def histeq(im, h_dst=64, h_src=None, mask=None):
         return im
     return __histeq(im, h_dst, h_src)
 
-def __n_argmax(a, n):
-    # argpartition is way faster but was not introduced until numpy v1.8 and we want to work with v1.7
-    return (a.argpartition(-n) if hasattr(a, 'argpartition') else a.argsort())[-n:]
-
-def histeq_exact(im, h_dst=256, mask=None, order=6):
+def histeq_exact(im, h_dst=256, mask=None, method='VA', **kwargs):
     """
     Like histeq except the histogram of the output image is exactly as given in h_dst. This is
-    acomplished by ordering all pixels based on their gray level and the gray level of the
-    neighboring pixels. The higher the order, the further away pixels are used to help distinguish
-    pixels from each other. An order of 1 would be using only the pixel itself and no neighbors.
-
-    There is currently no way to specify the source histogram or to calculate the transform to apply
-    to different images.
+    acomplished by strictly ordering all pixels based on other properties of the image. There is
+    currently no way to specify the source histogram or to calculate the transform to apply to
+    different images. See histeq for the details of the arguments h_dst and mask.
     
-    This method takes more time and memory than the approximate ("standard") version. This has been
-    optimized for 8-bit images which take about twice the memory and 10x the time. While this may
-    seem poor, it's better than for other image types which can take 7x the memory and 40x the time.
+    This method takes significantly more time than the approximate ("standard") version. See below
+    for more details.
+    
+    Internally this uses either the local mean ordering (LM) by Coltuc, Bolon and Chassery or the
+    variational approach (VA) of Nikolova, Wen and Chan to create the strict ordering of pixels.
+    The method defaults to 'VA' which is a bit slower than 'LM' for 8-bit images but faster for
+    other types. Also it is more accurate in general.
+    
+    LM:
+        This uses the gray levels of expanding mean filters to distinguish between same-valued
+        pixels. Accepts a `order` argument which has a maximum and default of 6 that controls how
+        far away pixels are used to help distinguish pixels from each other. An order of 1 would be
+        using only the pixel itself and no neighbors (but this isn't allowed). It has been
+        optimized for 8-bit images which take about twice the memory and 8x the time from standard
+        histeq. Other image types which can take 7x the memory and 40x the time.
+        
+    VA:
+        This attempts to reconstruct the original real-valued version of the image and thus is a
+        continuous-valued version of the image which could be strictly ordered. Accepts a `niters`
+        argument that specifies how many minimization iterations to perform to make sure the real-
+        valued image is faithly reproduced. The default is 5. If takes about twice the memory and
+        10x the time from standard histeq regardless of type.
 
     REFERENCES:
-      1. Coltuc D. and Bolon P., 1999, "Strict ordering on discrete images and applications"
-      2. Coltuc D., Bolon P. and Chassery J-M., 2006, "Exact histogram specification", IEEE
-         Transcations on Image Processing 15(5):1143-1152
+      1. Coltuc D and Bolon P, 1999, "Strict ordering on discrete images and applications"
+      2. Coltuc D, Bolon P and Chassery J-M, 2006, "Exact histogram specification", IEEE
+         Trans. on Image Processing 15(5):1143-1152
+      3. Nikolova M, Wen Y-W, and Chan R, 2013, "Exact histogram specification for digital images
+         using a variational approach", J of Mathematical Imaging and Vision, 46(3):309-325
+      4. Nikolova M and Steidl G, 2014, "Fast Ordering Algorithm for Exact Histogram Specification"
+         IEEE Trans. on Image Processing, 23(12):5274-5283
     """
+    from numbers import Integral
+    from numpy import tile, floor, intp, empty, repeat, linspace, count_nonzero
+    from pysegtools.images.types import check_image_single_channel, get_dtype_min_max
+    
+    # Check arguments
     im = check_image_single_channel(im)
-
     n, sh, dt = im.size, im.shape, im.dtype
     if dt.kind not in 'iuf': raise ValueError('Unsupported data-type')
     mn, mx = get_dtype_min_max(dt)
-
-    ##### Assign strict order to pixels #####
-    idx = __pixel_order(im, order)
-    del im
-
-    ##### Handle the mask #####
     if mask is not None:
         mask = check_image_single_channel(mask)
         if mask.dtype != bool or mask.shape != sh: raise ValueError('The mask must be a binary image with equal dimensions to the image')
         mask = mask.ravel()
         n = count_nonzero(mask)
+    h_dst = tile(n/h_dst, h_dst) if isinstance(h_dst, Integral) else h_dst.ravel()*(n/h_dst.sum()) #pylint: disable=no-member
+    if len(h_dst) < 2: raise ValueError('Invalid histogram')
+    
+    ##### Assign strict order to pixels #####
+    if method == 'LM':   idx = __pixel_order_lm(im, **kwargs)
+    elif method == 'VA': idx = __pixel_order_va(im, **kwargs)
+    else:                raise ValueError('method')
+    del im
+    
+    ##### Handle the mask #####
+    if mask is not None:
         idx[~mask] = 0
         idx[mask] = idx[mask].argsort().argsort()
         del mask
 
     ##### Create the transform that is the size of the image but with sorted histogram values #####
-    h_dst = tile(n/h_dst, h_dst) if isinstance(h_dst, Integral) else h_dst.ravel()*(n/h_dst.sum()) #pylint: disable=no-member
-    if len(h_dst) < 2: raise ValueError('Invalid histogram')
     # Since there could be fractional amounts, make sure they are added up and put somewhere
     H_whole = floor(h_dst)
     R = __n_argmax(h_dst-H_whole, int(n-H_whole.sum()))
@@ -219,11 +242,20 @@ def histeq_exact(im, h_dst=256, mask=None, order=6):
     
     ##### Create the equalized image #####
     return T.take(idx).reshape(sh)
+    
+def __n_argmax(a, n):
+    # argpartition is way faster but was not introduced until numpy v1.8 and we want to work with v1.7
+    return (a.argpartition(-n) if hasattr(a, 'argpartition') else a.argsort())[-n:]
 
-def __pixel_order(im, order=6):
+############### Histeq-Exact LM ###############
+def __pixel_order_lm(im, order=6):
     """
     Assign strict ordering to image pixels. Outputs an array that has the same size as the input.
     Its element entries correspond to the order of the gray level pixel in that position.
+
+    This implements the method by Coltuc et al which takes increasing uniform filter sizes to find
+    the local means. It takes an argument for the order (called k in the paper) which must be from
+    2 to 6 and defaulting to 6.
 
     REFERENCES:
       1. Coltuc D. and Bolon P., 1999, "Strict ordering on discrete images and applications"
@@ -239,9 +271,10 @@ def __pixel_order(im, order=6):
         Fs = __create_uint_filter(order, im.dtype.itemsize)
         if im.dtype.itemsize == 1 or order <= 3:
             ##### Single convolution and no lexsort #####
+            shift = 63-8*im.dtype.itemsize
             im = im.astype(int64)
             FR = correlate(im, Fs[0])
-            left_shift(im, 55, im)
+            left_shift(im, shift, im)
             return add(FR, im, im).ravel().argsort().argsort()
     else: # if im.dtype.kind == 'f' or im.dtype.itemsize > 2:
         Fs = __filters_float[-order+1:]
@@ -251,10 +284,7 @@ def __pixel_order(im, order=6):
     FR[...,-1] = im = im.astype(float64)
     for i,F in enumerate(Fs): correlate(im, F, FR[...,i])
     del im
-    FR = FR.reshape((-1, FR.shape[-1]))
-    idx = lexsort(FR.T, 0)
-    del FR
-    return idx.argsort()
+    return lexsort(FR.reshape((-1, FR.shape[-1])).T, 0).argsort()
 
 __filter3 = array([[3,2,3],[2,1,2],[3,2,3]])
 __filter5 = array([[6,5,4,5,6],[5,3,2,3,5],[4,2,1,2,4],[5,3,2,3,5],[6,5,4,5,6]])
@@ -287,6 +317,100 @@ def __create_uint_filter(order, nbytes):
     __filters_uint[idx] = out
     return out
 
+############### Histeq-Exact VA ###############
+def __pixel_order_va(im, niters=5):
+    """
+    Assign strict ordering to image pixels. Outputs an array that has the same size as the input.
+    Its element entries correspond to the order of the gray level pixel in that position.
+    
+    This implements the method by Nikolova et al which attempts to reconstruct the original real-
+    valued version of the image using a very fast minimization method. It takes an argument for the
+    number of iterations to perform, defaulting to 5.
+    
+    Always uses eta=4 (4-connected instead of 8-connected), alpha1=0.05, alpha2=0.05, beta=0.1, and
+    theta-2.
+    
+    REFERENCE:
+      1. Nikolova M, Wen Y-W, and Chan R, 2013, "Exact histogram specification for digital images
+         using a variational approach", J of Mathematical Imaging and Vision, 46(3):309-325
+      2. Nikolova M and Steidl G, 2014, "Fast Ordering Algorithm for Exact Histogram Specification"
+         IEEE Trans. on Image Processing, 23(12):5274-5283
+    """
+    from numpy import float64, empty, divide, abs
+    assert niters > 0
+    ALPHA_1 = 0.05
+    ALPHA_2 = 0.05
+    BETA    = 0.1
+    f = im.astype(float64)
+    # Minimization method from 2014 paper using theta-2
+    R = empty(im.shape)
+    for k in xrange(niters):
+        # Up/down difference
+        t = f[1:,:] - f[:-1,:]
+        tmp = abs(t); tmp += ALPHA_2; t /= tmp # t/(alpha2+|t|), t = diff(f, axis=0)
+        R[0].fill(0); R[1:,:] = t; R[:-1,:] -= t
+        # Left/right difference
+        t = f[:,1:] - f[:,:-1]
+        tmp = abs(t); tmp += ALPHA_2; t /= tmp # t/(alpha2+|t|), t = diff(f, axis=1)
+        R[:,1:] += t; R[:,:-1] -= t
+        # Core
+        R *= BETA
+        abs(R, f); f -= 1; divide(ALPHA_1, f, f); f *= R; # R*alpha1 / (|R|-1)
+        f += im
+        del t, tmp
+        # This, in general, is slower than just doing more iterations
+        #if k >= 1 and __is_unique(f.ravel()): break
+    return f.ravel().argsort().argsort()
+
+def __is_unique(x, overwrite=False):
+    """
+    This checks if the data in x is unique. This tries to early-exit in situations where there are
+    duplicate data points using a recursive algorithm and the numpy methods partition and sort.
+    This combination makes it nearly as fast as doing np.unique(x).size == x.size in the situation
+    where it returns True but several times faster (up to ~4x in example runs) when it returns
+    False (even when the duplicate values are spread out). If the only duplicated values are near
+    the max values then this won't be any faster than using unique.
+    """
+    from numpy import partition, sort
+    if x.size > 51200:
+        i = x.size // 2
+        if overwrite: x.partition(i)
+        else:         x = partition(x, i)
+        return __is_unique2(x[:i+1], True) and __is_unique2(x[i:], True)
+    if overwrite: x.sort()
+    else:         x = sort(x)
+    return not (x[1:] == x[:-1]).any()
+
+# Slower minimization method using theta-1 (doesn't take into account 2014 paper)
+#def J(f, im):
+#    f = f.reshape(im.shape)
+#    return Psi(f, im, ALPHA_1) + BETA*Phi(f, ALPHA_2)
+#def Psi(f, im, alpha): return theta(f-im, alpha).sum()
+#def Phi(f, alpha):
+#    return (theta(f[:,:-1]-f[:,1:], alpha).sum() + # left neighbor
+#            theta(f[:,1:]-f[:,:-1], alpha).sum() + # right neighbor
+#            theta(f[:-1,:]-f[1:,:], alpha).sum() + # top neighbor
+#            theta(f[1:,:]-f[:-1,:], alpha).sum() + # bottom neighbor
+#            theta(array(0.0), alpha)*2*(f.shape[0]+f.shape[1])) # edges
+#def theta(t, alpha): t *= t; t += alpha; return sqrt(t, out=t) # sqrt(t*t+alpha)
+#def jac(f, im):
+#    f = f.reshape(im.shape)
+#    out = dPhi(f, ALPHA_2); out *= BETA; out += dPsi(f, im, ALPHA_1)
+#    return out.ravel()
+#def dPsi(f, im, alpha): return dtheta(f-im, alpha)
+#def dPhi(f, alpha):
+#    fp = pad(f, 1, 'edge')
+#    out  = dtheta(f-fp[1:-1,2:],  alpha) # left neighbor
+#    out += dtheta(f-fp[1:-1,:-2], alpha) # right neighbor
+#    out += dtheta(f-fp[2:,1:-1],  alpha) # top neighbor
+#    out += dtheta(f-fp[:-2,1:-1], alpha) # bottom neighbor
+#    out *= 2
+#    return out
+#def dtheta(t, alpha): tt = t*t; tt += alpha; sqrt(tt, out=tt); t /= tt; return t # t/sqrt(t*t+alpha)
+#from scipy.optimize import minimize
+#f = minimize(J, f, (im,), jac=jac, method='L-BFGS-B', options={'maxiter':niters, 'gtol':5e-04, 'ftol':1e-06}).x
+#return f.argsort().argsort()
+
 
 ##### Image Stack #####
 class HistEqImageStack(UnchangingFilteredImageStack):
@@ -305,7 +429,7 @@ class HistEqImageStack(UnchangingFilteredImageStack):
             if not isinstance(exact, bool):
                 order = int(exact)
                 if order < 2 or order > 6: raise ValueError()
-            self._histeq = lambda im,mk: histeq_exact(im, h_dst, mk, order=order)
+            self._histeq = lambda im,mk: histeq_exact(im, h_dst, mk, 'LM', order=order)
         else:
             if h_dst is None: h_dst = 64
             if h_src is not None:
