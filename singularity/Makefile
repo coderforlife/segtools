@@ -9,6 +9,8 @@ clean:
 
 singularity: clean
 	@echo 'Creating Singularity image'
+	cd ../;python setup.py sdist
+	cp -f ../dist/pysegtools*.gz .
 	mkdir -p build
 	vers=`grep "version='" ../setup.py | sed "s/^.*='//" | sed "s/'.*//"` ; \
 	echo "Version $$vers"; \
