@@ -36,5 +36,7 @@ RunCmd "mkdir /oasis"
 RunCmd "mkdir /projects"
 RunCmd "mkdir /data"
 
+RunCmd "cd /pysegtools-0.1;python setup.py install"
+
 Cleanup
 
