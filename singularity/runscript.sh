@@ -1,6 +1,4 @@
 #!/bin/bash
 
-
-echo "Add invocation of segtools here... $@"
-
+python -m pysegtools.imstack_main "$@"
 
