@@ -15,7 +15,7 @@ InstallPkgs gcc gcc-gfortran gcc-c++ python python-devel python-virtualenv atlas
 InstallPkgs xorg-x11-fonts-* mesa-* python-pip python-wheel python-pillow python-pillow-devel R readline readline-devel python-singledispatch
 
 InstallFile runscript.sh /singularity
-InstallFile pysegtools-${VERSION}.tar.gz /
+InstallFile build/pysegtools-${VERSION}.tar.gz /
 RunCmd "cd /; tar -zxf pysegtools-${VERSION}.tar.gz"
 
 RunCmd "updatedb"
