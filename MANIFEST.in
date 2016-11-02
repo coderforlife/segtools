@@ -7,6 +7,8 @@ include INSTALL
 
 recursive-include tests *
 recursive-exclude * __pycache__
-recursive-exclude * *.py[co]
+recursive-exclude * *.py[cod]
+recursive-exclude * *.cpp
+recursive-exclude * *.so
 
 recursive-include docs *.rst conf.py Makefile make.bat
