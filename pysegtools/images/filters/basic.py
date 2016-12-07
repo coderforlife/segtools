@@ -79,11 +79,14 @@ class FlipImageSlice(UnchangingFilteredImageSlice):
 
 
 class RotateImageStack(FilteredImageStack):
-    def __init__(self, ims, direction='cw'):
+    def __init__(self, ims, direction='cw'): #, axis='xy'):
         """dir can be cw, cww, or full"""
         self._dir = direction
+        #self._axis = axis
         try: self._k = ('ccw', 'full', 'cw').index(direction) + 1
         except ValueError: raise ValueError('Unsupported direction')
+        #try: self._a = ('xy', 'yz', 'xz').index(axis)
+        #except ValueError: raise ValueError('Unsupported axis')
         super(RotateImageStack, self).__init__(ims, RotateImageSlice)
 class RotateImageSlice(FilteredImageSlice):
     #pylint: disable=protected-access
@@ -101,20 +104,21 @@ class InvertImageSlice(UnchangingFilteredImageSlice):
 class ExtractChannelsImageStack(FilteredImageStack):
     def __init__(self, ims, channels):
         """channels must be an integer value (0-based) or a sequence of integers."""
-        
-        ims = [ImageSource.as_image_source(im) for im in ims]
+        ims = ImageStack.as_image_stack(ims)
         if isinstance(channels, Integral):
             channels = [channels]
         elif not (isinstance(channels, Sequence) and all(isinstance(c,Integral) for c in channels)):
             raise ValueError('channel number is invalid')
-        dtypes,nchans = [list(i) for i in izip(get_im_dtype_and_nchan(dt) for dt in im.dtype for im in ims)]
+        info = [get_im_dtype_and_nchan(im.dtype) for im in ims]
+        dtypes = [dt for dt,_ in info]
+        nchans = [n for _,n in info]
         if len(channels) == 0 or min(channels) < 0 or max(channels) >= min(nchans):
             raise ValueError('channel number is invalid')
         super(ExtractChannelsImageStack, self).__init__(ims,
-            [ExtractChannelsImageSlice(self,z,im,dt,channels) for z,(im,dt) in enumerate(zip(ims,dtypes))])
+            [ExtractChannelsImageSlice(im,self,z,dt,channels) for z,(im,dt) in enumerate(izip(ims,dtypes))])
 class ExtractChannelsImageSlice(FilteredImageSlice):
-    def __init__(self, stack, z, im, dt, channels):
-        super(ExtractChannelsImageSlice, self).__init__(stack, z, im)
+    def __init__(self, im, stack, z, dt, channels):
+        super(ExtractChannelsImageSlice, self).__init__(im, stack, z)
         self.__channels = channels
         self._set_props(create_im_dtype(dt, dt.byteorder, len(channels)), None)
     def _get_props(self):
@@ -229,7 +233,7 @@ class ExtractChannelsCommand(CommandEasy):
     def cast(x):
         from ...general import splitstr
         x = splitstr(x, int, ',')
-        if not all(0 <= x < 5): raise ValueError()
+        if not all(0 <= c < 5 for c in x): raise ValueError()
         return x
 
     _channels = None
@@ -248,7 +252,7 @@ class ExtractChannelsCommand(CommandEasy):
     @classmethod
     def _produces(cls): return ('The image with just the extracted channels in the order given',)
     @classmethod
-    def _see_also(cls): return ('combine-channels')
+    def _see_also(cls): return ('combine-channels',)
     def __str__(self):
         from ...general import itr2str
         return ('extract channels '+itr2str(self._channels,',')) if len(self._channels)>1 else 'extract channel '+str(self._channels[0])
