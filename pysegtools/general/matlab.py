@@ -1633,7 +1633,7 @@ class _MAT73File(_MATFile):
         if name not in self._entries: return self.append(name, data)
         return self.__simple_set(name, data)
         # TODO: Try to reuse old entry storage
-        # This is quite complicated, and may not be owrth it...
+        # This is quite complicated, and may not be worth it...
 ##        entry = self._entries[name]
 ##        if not entry.is_image: return self.__simple_set(name, data) # TODO
 ##        old_shape, old_dt = entry.shape + entry.dtype.shape, entry.dtype.base
@@ -1902,6 +1902,7 @@ class _MAT73Entry(_MATEntry):
         dt = _MAT73Entry.__class2dtype.get(clazz, None)
         metadata = {'global':True} if entry.attrs.get('MATLAB_global', 0) == 1 else {}
         int_dec, obj_dec = entry.attrs.get('MATLAB_int_decode', 0), entry.attrs.get('MATLAB_object_decode', 0)
+
         if dt is None and obj_dec == 2:
             dt = void # object stored as struct
             metadata['class_name'] = clazz
@@ -2068,16 +2069,16 @@ def mat_nice(mat, squeeze_me=True, chars_as_strings=True, inplace=True):
 
     dt = mat.dtype
     if dt.kind == 'O':
+        mn = lambda m:mat_nice(m, squeeze_me, chars_as_strings, inplace)
         if inplace:
             mat_flat = mat.flat
-            for i in xrange(mat.size):
-                mat_flat[i] = mat_nice(mat_flat[i], squeeze_me, chars_as_strings, inplace)
-        else:
-            mat = vectorize(lambda e:mat_nice(e, squeeze_me, chars_as_strings, inplace), otypes=(object_,))(mat)
+            for i in xrange(mat.size): mat_flat[i] = mn(mat_flat[i])
+        else: mat = vectorize(mn, otypes=(object_,))(mat)
         
     elif dt.kind == 'V':
+        mn = lambda m:mat_nice(m, squeeze_me, chars_as_strings, inplace)
         out = mat if inplace else empty(mat.shape, mat.dtype)
-        for fn in dt.names: out[fn] = mat_nice(mat[fn], squeeze_me, chars_as_strings, inplace)
+        for fn in dt.names: out[fn] = mn(mat[fn])
         mat = out
         
     elif chars_as_strings and mat.ndim > 0 and mat.shape[-1] > 1 and (dt.kind, dt.itemsize) in (('S',1), ('U',4)):
