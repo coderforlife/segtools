@@ -14,3 +14,5 @@ dist/
 htmlcov/
 build/
 vagrant/.vagrant/
+singularity/build/
+singularity/pysegtools-*.tar.gz
