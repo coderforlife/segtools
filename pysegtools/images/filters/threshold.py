@@ -199,6 +199,7 @@ def multithreshold(im, thresh=4):
     number of shades of gray and automatically calculates the thresholds using Otsu's method.
     Default value is 4 levels.
     """
+    from numpy import digitize
     check_image(im)
     dt, nchan = get_im_dtype_and_nchan(im)
     if dt.kind == 'c' or nchan != 1: raise ValueError('unsupported image type')
