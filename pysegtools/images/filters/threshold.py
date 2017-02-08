@@ -131,7 +131,7 @@ def __otsus_multithresh(omega, mu, mu_t, N):
     # Otherwise N > 2 - operate recursively to limit the range of values we look over
     # This does give accurate results but gets really slow above N = 5 or so and also starts
     # taking lots of memory.
-    # TODO: use this accurate mathod until N = 4 or 5 or 6, then switch over to a
+    # TODO: use this accurate method until N = 4 or 5 or 6, then switch over to a
     # minimization-optimization method using the results from this to seed the search which by
     # N = 4 means that only about 64 numbers in each range need to be minimized over, increasing
     # its accuracy.
