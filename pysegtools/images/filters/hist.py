@@ -51,10 +51,10 @@ __eps = sqrt(spacing(1))
 def histeq_trans(h_src, h_dst, dt):
     """
     Calculates the histogram equalization transform. It takes a source histogram, destination
-    histogram, and a data type. It returns the transform, which has len(h_src) elements of data-type
-    similar to the given data-type (but unsigned). This transform be used with histeq_apply.
-    This allows you to calculate the transform just once for the same source and destination
-    histograms and use it many times.
+    histogram, and a data type. It returns the transform, which has len(h_src) elements of a
+    data-type similar to the given data-type but unsigned. This transform can be used with
+    histeq_apply. This allows you to calculate the transform just once for the same source and
+    destination histograms and use it many times.
 
     This is really just one-half of histeq, see it for more details.
     """
@@ -148,7 +148,7 @@ def histeq(im, h_dst=64, h_src=None, mask=None):
     with bool/logical, use convert.bw. The h_dst and h_src must have at least 2 bins.
 
     The performs an approximate histogram equalization. This is the most "standard" technique used.
-    Am exact histogram equalization is available with histeq_exact, however it takes substantially
+    An exact histogram equalization is available with histeq_exact, however it takes substantially
     more memory and time, and cannot be given the source histogram or split into two functions
     (thus it cannot be easily parallelized).
     """
@@ -295,6 +295,7 @@ __filters_float = delayed(lambda:(
     (__filter3==3).astype(float64),(__filter3==2).astype(float64)), tuple)
 
 def __create_uint_filter(order, nbytes):
+    # TODO: work backwards so that the unused bits are at the front instead of the back
     idx = (order, nbytes)
     if idx in __filters_uint: return __filters_uint[idx]
     
