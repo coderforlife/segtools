@@ -49,13 +49,14 @@ def otsus_multithresh(im, levels=2, mask=None, output_metric=False):
         # TODO: is this accurate?
         if mask is not None: raise ValueError('mask cannot be given with histogram data')
         p, bins = im
-        if p.dtype.type in 'iu': p = p.astype(intp)
         if len(p) != len(bins): raise ValueError('histogram counts and values must be the same length')
+        if p.dtype.kind in 'biu': p = p.astype(intp, copy=False)
         mn, mx = bins[0], bins[-1]
         scale = (mx-mn)/(len(bins)-1)
+        dt = bins.dtype
         
     else:
-        if im.dtype.kind == 'c': raise ValueError('complex types not excepted')
+        if im.dtype.kind == 'c': raise ValueError('complex types not accepted')
         if mask is not None: im = im[mask]
 
         # Calculate pdf
@@ -66,6 +67,7 @@ def otsus_multithresh(im, levels=2, mask=None, output_metric=False):
             else: return getDegenerateThresholds([mn], levels-1) # TODO
         p, bins = histogram(im, mn, mx, 256).astype(intp), arange(256)
         scale = (mx-mn)/(len(bins)-1)
+        dt = im.dtype
 
     # Calculate omega and mu
     # Note: for simplicity we actually calculate everything as times npix (so p is actually counts
@@ -78,8 +80,8 @@ def otsus_multithresh(im, levels=2, mask=None, output_metric=False):
     thresh, sigma_max = __otsus_multithresh(omega, mu, mu_t, levels - 1)
     
     thresh = mn+array(thresh)*scale
-    if im.dtype.kind in 'biu': thresh = (thresh+0.000000001).round()
-    thresh = tuple(thresh.astype(im.dtype))
+    if dt.kind in 'biu': thresh = (thresh+0.000000001).round()
+    thresh = tuple(thresh.astype(dt))
     if output_metric:
         x = bins-mu_t
         metric = sigma_max/(p*x*x).sum()
