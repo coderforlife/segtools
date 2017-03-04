@@ -182,25 +182,16 @@ def __get_distutils_extension_wrap(depends):
     return get_distutils_extension
 
 def _load_mod(mod, path, build_dir):
-    import time, errno
+    from ..filelock import FileLock
     fullname = mod.__name__
 
     # Obtain a lock for the path
-    lockpath = path + '.lock'
-    while True:
-        try:
-            lock = os.open(lockpath, os.O_CREAT|os.O_EXCL|os.O_RDWR)
-            break
-        except OSError as e:
-            if e.errno != errno.EEXIST: raise
-        time.sleep(0.01) # re-check every 10 ms
+    with FileLock(path+'.lock').acquire(timeout=10, delay=0.01):
+        # Check that the module wasn't already loaded while waiting to obtain the lock
+        if sys.modules[fullname] is not mod:
+            return sys.modules[fullname]
 
-    # Check that the module wasn't already loaded while waiting to obtain the lock
-    if sys.modules[fullname] is not mod:
-        return sys.modules[fullname]
-
-    # Perform the actual load
-    try:
+        # Load the module
         del mod.__class__.__repr__
         del mod.__class__.__dir__
         del mod.__class__.__getattr__
@@ -209,12 +200,7 @@ def _load_mod(mod, path, build_dir):
         del sys.modules[fullname]
         new = load_module(fullname, path, build_dir)
         mod.__dict__.update(new.__dict__)
-    finally:
-        # Unlock the path
-        os.close(lock)
-        os.unlink(lockpath)
-    
-    return new
+        return new
 
 class CythonFallbackLoader(object):
     def __init__(self, fullname, path, build_dir):
