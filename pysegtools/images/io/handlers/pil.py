@@ -325,7 +325,7 @@ class _PILSource(object):
             pal.palette if pal.rawmode == pal.mode else self.im.getpalette()), dtype=dt)
     @property
     def data(self): # return ndarray
-        from numpy import frombuffer
+        from numpy import frombuffer, unpackbits, uint8
         dt = self.dtype_raw # the intermediate dtype
         dt_final = self.dtype # the resulting dtype
         if self.im.mode == 'P':
@@ -339,6 +339,8 @@ class _PILSource(object):
                 alpha = zeros((a.shape[0],1), dtype=dt.base)
                 place(alpha, (a!=trans).all(1), get_dtype_max(dt.base))
                 a = concatenate((a,alpha), axis=1)
+        elif dt.kind == 'b':
+            a = unpackbits(frombuffer(self.im.tobytes(), dtype=uint8)).view(bool)
         else:
             a = frombuffer(self.im.tobytes(), dtype=dt)
         return a.reshape(tuple(reversed(dt_final.shape+self.im.size)))
