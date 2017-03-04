@@ -87,6 +87,7 @@ _dtype2mode = delayed(__get_dtype2mode, dict)
 
 ########## PIL interaction class ##########
 class DummyImage(Image.Image):
+    #pylint: disable=abstract-method
     def __init__(self, frmt, dt, shape):
         Image.Image.__init__(self) # Image.Image is an old-style class until early 2015
         self.format = frmt

@@ -10,7 +10,7 @@ from StringIO import StringIO
 
 from numpy import dtype, int64, intp, float64, finfo
 from numpy import array, empty, zeros, linspace, tile, repeat, vstack, savetxt, loadtxt
-from numpy import add, left_shift, floor, sqrt
+from numpy import add, divide, left_shift, floor, sqrt
 from numpy import lexsort, spacing, count_nonzero
 from scipy.ndimage import histogram
 
@@ -200,10 +200,6 @@ def histeq_exact(im, h_dst=256, mask=None, method='VA', **kwargs):
       4. Nikolova M and Steidl G, 2014, "Fast Ordering Algorithm for Exact Histogram Specification"
          IEEE Trans. on Image Processing, 23(12):5274-5283
     """
-    from numbers import Integral
-    from numpy import tile, floor, intp, empty, repeat, linspace, count_nonzero
-    from pysegtools.images.types import check_image_single_channel, get_dtype_min_max
-    
     # Check arguments
     im = check_image_single_channel(im)
     n, sh, dt = im.size, im.shape, im.dtype
@@ -337,7 +333,6 @@ def __pixel_order_va(im, niters=5):
       2. Nikolova M and Steidl G, 2014, "Fast Ordering Algorithm for Exact Histogram Specification"
          IEEE Trans. on Image Processing, 23(12):5274-5283
     """
-    from numpy import float64, empty, divide, abs
     assert niters > 0
     ALPHA_1 = 0.05
     ALPHA_2 = 0.05
@@ -345,7 +340,7 @@ def __pixel_order_va(im, niters=5):
     f = im.astype(float64)
     # Minimization method from 2014 paper using theta-2
     R = empty(im.shape)
-    for k in xrange(niters):
+    for _ in xrange(niters):
         # Up/down difference
         t = f[1:,:] - f[:-1,:]
         tmp = abs(t); tmp += ALPHA_2; t /= tmp # t/(alpha2+|t|), t = diff(f, axis=0)
@@ -356,31 +351,12 @@ def __pixel_order_va(im, niters=5):
         R[:,1:] += t; R[:,:-1] -= t
         # Core
         R *= BETA
-        abs(R, f); f -= 1; divide(ALPHA_1, f, f); f *= R; # R*alpha1 / (|R|-1)
+        abs(R, f); f -= 1; divide(ALPHA_1, f, f); f *= R # R*alpha1 / (|R|-1)
         f += im
         del t, tmp
         # This, in general, is slower than just doing more iterations
         #if k >= 1 and __is_unique(f.ravel()): break
     return f.ravel().argsort().argsort()
-
-def __is_unique(x, overwrite=False):
-    """
-    This checks if the data in x is unique. This tries to early-exit in situations where there are
-    duplicate data points using a recursive algorithm and the numpy methods partition and sort.
-    This combination makes it nearly as fast as doing np.unique(x).size == x.size in the situation
-    where it returns True but several times faster (up to ~4x in example runs) when it returns
-    False (even when the duplicate values are spread out). If the only duplicated values are near
-    the max values then this won't be any faster than using unique.
-    """
-    from numpy import partition, sort
-    if x.size > 51200:
-        i = x.size // 2
-        if overwrite: x.partition(i)
-        else:         x = partition(x, i)
-        return __is_unique2(x[:i+1], True) and __is_unique2(x[i:], True)
-    if overwrite: x.sort()
-    else:         x = sort(x)
-    return not (x[1:] == x[:-1]).any()
 
 # Slower minimization method using theta-1 (doesn't take into account 2014 paper)
 #def J(f, im):

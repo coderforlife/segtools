@@ -12,7 +12,6 @@ from numpy import flipud, fliplr, rot90
 
 from ._stack import FilteredImageStack, FilteredImageSlice, UnchangingFilteredImageStack, UnchangingFilteredImageSlice
 from .._stack import ImageStack, ImageSlice
-from ..source import ImageSource
 from ..types import check_image, get_im_dtype_and_nchan, create_im_dtype, get_im_min_max, get_dtype_max
 from ...imstack import Command, CommandEasy, Opt, Help
 

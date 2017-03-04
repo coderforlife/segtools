@@ -101,6 +101,7 @@ Examples:""")
                 inds.append((i+last_ind) if i < 0 else i)
                 #all_neg = False
         out = ImageStackCollection(ims[inds])
+        #pylint: disable=protected-access
         out._ims = ims # make sure we save a reference to the image stack so it doesn't get cleaned up
         stack.push(out)
 

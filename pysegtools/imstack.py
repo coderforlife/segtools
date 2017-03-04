@@ -12,12 +12,14 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+import sys
+
 __all__ = ["main", "Help", "Opt", "Command", "CommandEasy"]
 
 # If this was called as the main program, restart by calling imstack_main
 # This is quite hackish, but should be fine
-if __name__ == "__main__":
-    import os, sys, ctypes
+def __main_hack():
+    import os, ctypes
     argv, argc = ctypes.POINTER(ctypes.c_char_p)(), ctypes.c_int()
     ctypes.pythonapi.Py_GetArgcArgv(ctypes.byref(argc), ctypes.byref(argv))
     argv = [argv[i] for i in xrange(argc.value)]
@@ -26,8 +28,10 @@ if __name__ == "__main__":
             # Correct the module name (note: Python always modifies this to -c so it always needs to be updated)
             argv[i+1] = 'pysegtools.imstack_main'
             os.execv(sys.executable, argv)
+if __name__ == "__main__":
+    __main_hack()
+    sys.exit() # should never reaches here
     
-import sys
 from abc import ABCMeta, abstractmethod
 String = str if sys.version_info[0] == 3 else basestring
 from numbers import Integral, Real, Complex
@@ -698,7 +702,7 @@ class Help(object):
         f18 = TextWrapper(width=out_width, subsequent_indent=' '*18).fill
         print(fill("===== Image Stack Reader and Converter Tool " + ("="*max(0, out_width-44))))
         try:
-            program_name = __loader__.fullname
+            program_name = __loader__.fullname #pylint: disable=undefined-variable
         except NameError:
             program_name = basename(sys.argv[0])
 
