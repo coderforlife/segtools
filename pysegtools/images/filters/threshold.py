@@ -17,7 +17,7 @@ from ..types import check_image, get_im_dtype_and_nchan, get_dtype_min_max
 from ._stack import FilteredImageStack, FilteredImageSlice
 from .._stack import Homogeneous
 from ...imstack import CommandEasy, Opt
-from ...general import delayed, pairwise
+from ...general import pairwise
 
 __all__ = ['otsus_multithresh', 'threshold', 'hysteresis_threshold'] # , 'multithreshold'
 
@@ -46,28 +46,31 @@ def otsus_multithresh(im, levels=2, mask=None, output_metric=False):
     # levels == 2 means just a single threshold (not-multilevel), still returned as a tuple though
 
     if isinstance(im, tuple):
-        # TODO: is this accurate?
         if mask is not None: raise ValueError('mask cannot be given with histogram data')
         p, bins = im
-        if len(p) != len(bins): raise ValueError('histogram counts and values must be the same length')
-        if p.dtype.kind in 'biu': p = p.astype(intp, copy=False)
-        mn, mx = bins[0], bins[-1]
-        scale = (mx-mn)/(len(bins)-1)
         dt = bins.dtype
+        if dt.kind == 'c': raise ValueError('complex types not accepted')
+        if len(p) != len(bins): raise ValueError('histogram counts and values must be the same length')
+        if (bins[:-1] >= bins[1:]).any(): raise ValueError('bins must be strictly increasing')
+        if (p < 0).any(): raise ValueError('histogram counts cannot be negative')
+        inds = where(p != 0)[0]
+        p,bins = p[inds[0]:inds[-1]+1], bins[inds[0]:inds[-1]+1]
+        if len(p) == 0: raise ValueError('total histogram counts is zero')
+        if len(p) == 1: TODO
+        if p.dtype.kind in 'biu': p = p.astype(intp, copy=False)
+        mn,mx = bins[0], bins[-1]
         
     else:
         if im.dtype.kind == 'c': raise ValueError('complex types not accepted')
         if mask is not None: im = im[mask]
 
         # Calculate pdf
-        mn = im.min()
-        mx = im.max()
+        mn,mx,dt = im.min(), im.max(), im.dtype
         if mn == mx:
-            if levels == 2: return (mn,0.0) if output_metric else mn
+            if levels == 2: return ((mn,),0.0) if output_metric else (mn,)
             else: return getDegenerateThresholds([mn], levels-1) # TODO
         p, bins = histogram(im, mn, mx, 256).astype(intp), arange(256)
-        scale = (mx-mn)/(len(bins)-1)
-        dt = im.dtype
+    scale = (mx-mn)/(len(bins)-1)
 
     # Calculate omega and mu
     # Note: for simplicity we actually calculate everything as times npix (so p is actually counts
@@ -170,7 +173,7 @@ def threshold(im, thresh=None):
     check_image(im)
     dt, nchan = get_im_dtype_and_nchan(im)
     if dt.kind == 'c' or nchan != 1: raise ValueError('unsupported image type')
-    if threshold is None: thresh = otsus_multithresh(im, 2)
+    if thresh is None: thresh = otsus_multithresh(im, 2)[0]
     return im>=thresh
 
 def hysteresis_threshold(im, thresh=None, footprint=None):
@@ -220,31 +223,34 @@ class ThresholdImageStack(FilteredImageStack):
             if not ims.is_dtype_homogeneous: raise ValueError('Cannot threshold the entire stack if it does not have a homogeneous data type')
             if len(ims.dtype.shape): raise ValueError('Multichannel images not supported')
             if ims.dtype.kind == 'c': raise ValueError('Complex type not supported')
-            thresh = [delayed(self._stack_threshold, Real)]*len(ims)
+            self.__thresh = None
         elif thresh == 'auto':
-            thresh = [None]*len(ims)
+            self.__thresh = [None]*len(ims)
         elif isinstance(thresh, Sequence):
-            if len(thresh) < len(ims):
-                thresh = list(thresh) + [thresh[-1]]*(len(ims)-len(thresh))
+            self.__thresh = list(thresh)
+            if len(self.__thresh) < len(ims):
+                last = thresh[-1]
+                self.__thresh.extend(last for _ in xrange(len(ims)-len(thresh)))
         else:
-            thresh = [thresh] * len(ims)
-        super(ThresholdImageStack, self).__init__(ims,
-            [ThresholdImageSlice(im, self, z, t) for z,(im,t) in enumerate(izip(ims, thresh))])
-    def _stack_threshold(self):
-        if self._thresh is None:
+            self.__thresh = [thresh for _ in xrange(len(ims))]
+        super(ThresholdImageStack, self).__init__(ims, ThresholdImageSlice)
+    @property
+    def thresholds(self):
+        if self.__thresh is None:
             #pylint: disable=protected-access
-            mn,mx = get_dtype_min_max(self._ims.dtype)
+            dt = self._ims.dtype
+            mn,mx = get_dtype_min_max(dt)
             h = zeros(256, intp)
             for slc in self._slices: h += histogram(slc._input.data, mn, mx, 256)
-            self._thresh = otsus_multithresh((h, linspace(mn, mx, 256)), 2)[0]
-        return self._thresh
+            thresh = otsus_multithresh((h, linspace(mn, mx, 256, dtype=dt)), 2)[0]
+            self.__thresh = [thresh for _ in xrange(len(self._ims))]
+        return self.__thresh
 class ThresholdImageSlice(FilteredImageSlice):
-    def __init__(self, im, stack, z, thresh):
+    def __init__(self, im, stack, z):
         super(ThresholdImageSlice, self).__init__(im, stack, z)
-        self.__threshold = thresh
         self._set_props(dtype(bool), None)
     def _get_props(self): self._set_props(None, self._input.shape)
-    def _get_data(self): return threshold(self._input.data, self.__threshold)
+    def _get_data(self): return threshold(self._input.data, self._stack.thresholds[self._z])
 
 class HysteresisThresholdImageStack(FilteredImageStack):
     _thresh = None
@@ -253,64 +259,67 @@ class HysteresisThresholdImageStack(FilteredImageStack):
         if thresh == 'auto-stack':
             if not ims.is_dtype_homogeneous: raise ValueError('Cannot threshold the entire stack if it does not have a homogeneous data type')
             if ims.dtype.kind == 'c': raise ValueError('Complex type not supported')
-            thresh = [delayed(self._stack_threshold, tuple)]*len(ims)
+            self.__thresh = None
         elif thresh == 'auto':
-            thresh = [None]*len(ims)
+            self.__thresh = [None]*len(ims)
         elif isinstance(thresh, Sequence):
-            if len(thresh) < len(ims):
-                thresh = list(thresh) + [thresh[-1]]*(len(ims)-len(thresh))
+            self.__thresh = list(thresh)
+            if len(self.__thresh) < len(ims):
+                last = thresh[-1]
+                self.__thresh.extend(last for _ in xrange(len(ims)-len(thresh)))
         else:
-            thresh = [thresh] * len(ims)
-        super(HysteresisThresholdImageStack, self).__init__(ims,
-            [HysteresisThresholdImageSlice(im, self, z, t) for z,(im,t) in enumerate(izip(ims, thresh))])
-    def _stack_threshold(self):
-        if self._thresh is None:
+            self.__thresh = [thresh for _ in xrange(len(ims))]
+        super(HysteresisThresholdImageStack, self).__init__(ims, HysteresisThresholdImageSlice)
+    @property
+    def thresholds(self):
+        if self.__thresh is None:
             #pylint: disable=protected-access
-            mn,mx = get_dtype_min_max(self._ims.dtype)
+            dt = self._ims.dtype
+            mn,mx = get_dtype_min_max(dt)
             h = zeros(256, intp)
             for slc in self._slices: h += histogram(slc._input.data, mn, mx, 256)
-            self._thresh = otsus_multithresh((h, linspace(mn, mx, 256)), 3)
-        return self._thresh
+            thresh = otsus_multithresh((h, linspace(mn, mx, 256, dtype=dt)), 3)
+            self.__thresh = [thresh for _ in xrange(len(self._ims))]
+        return self.__thresh
 class HysteresisThresholdImageSlice(FilteredImageSlice):
-    def __init__(self, im, stack, z, thresh):
+    def __init__(self, im, stack, z):
         super(HysteresisThresholdImageSlice, self).__init__(im, stack, z)
-        self.__threshold = thresh
         self._set_props(dtype(bool), None)
     def _get_props(self): self._set_props(None, self._input.shape)
-    def _get_data(self): return hysteresis_threshold(self._input.data, self.__threshold)
+    def _get_data(self): return hysteresis_threshold(self._input.data, self._stack.thresholds[self._z])
 
 class MultithresholdImageStack(FilteredImageStack):
     _thresh = None
     def __init__(self, ims, thresh=4):
         if isinstance(thresh, Sequence):
-            thresh =  list(thresh)
-            if len(thresh) > 255: raise ValueError('Only up to 255 levels supported')
+            self.__thresh = list(thresh)
+            if len(self.__thresh) > 255: raise ValueError('Only up to 255 levels supported')
         elif abs(thresh) > 255 or abs(thresh) < 2: raise ValueError('Only up to 255 levels supported')
-        elif thresh < 0:
-            self._thresh = -thresh
-            thresh = delayed(self._stack_threshold, tuple)
-        super(MultithresholdImageStack, self).__init__(ims, MultithresholdImageSlice, thresh)
-    def _stack_threshold(self):
-        if not isinstance(self._thresh, Sequence):
+        elif thresh < 0: self.__thresh, self.__levels = None, -thresh
+        else: self.__thresh = thresh
+        super(MultithresholdImageStack, self).__init__(ims, MultithresholdImageSlice)
+    @property
+    def threshold(self):
+        if self.__thresh is None:
             #pylint: disable=protected-access
-            mn,mx = get_dtype_min_max(self._ims.dtype)
+            dt = self._ims.dtype
+            mn,mx = get_dtype_min_max(dt)
             h = zeros(256, intp)
             for slc in self._slices: h += histogram(slc._input.data, mn, mx, 256)
-            self._thresh = otsus_multithresh((h, linspace(mn, mx, 256)), self._thresh)
-        return self._thresh
+            self.__thresh = otsus_multithresh((h, linspace(mn, mx, 256, dtype=dt)), self.__levels)
+        return self.__thresh
 #def __init_uint_maxes():
 #    from numpy import iinfo, sctypes
 #    return [1,bool] + sorted((iinfo(dt).max,dt) for dt in sctypes['uint'])
 #_uint_maxes = delayed(__init_uint_maxes, list)
 class MultithresholdImageSlice(FilteredImageSlice):
-    def __init__(self, im, stack, z, thresh):
+    def __init__(self, im, stack, z):
         super(MultithresholdImageSlice, self).__init__(im, stack, z)
-        self.__threshold = thresh
         #n = len(thresh) if isinstance(thresh, Sequence) else thresh
         #self._set_props(dtype(next(dt for um,dt in _uint_maxes if n <= um)), None)
         self._set_props(dtype(uint8), None)
     def _get_props(self): self._set_props(None, self._input.shape)
-    def _get_data(self): return multithreshold(self._input.data, self.__threshold)
+    def _get_data(self): return multithreshold(self._input.data, self._stack.threshold)
 
 
 ########## Commands ##########
