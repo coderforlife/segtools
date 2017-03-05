@@ -7,7 +7,6 @@ from __future__ import unicode_literals
 from itertools import izip, islice
 from collections import Sequence
 from math import ceil, floor
-from numbers import Real
 
 from numpy import zeros, array, arange, dtype, uint8, intp, tile, linspace
 from numpy import where, triu_indices, nan_to_num, seterr
@@ -47,18 +46,10 @@ def otsus_multithresh(im, levels=2, mask=None, output_metric=False):
 
     if isinstance(im, tuple):
         if mask is not None: raise ValueError('mask cannot be given with histogram data')
-        p, bins = im
-        dt = bins.dtype
-        if dt.kind == 'c': raise ValueError('complex types not accepted')
-        if len(p) != len(bins): raise ValueError('histogram counts and values must be the same length')
-        if (bins[:-1] >= bins[1:]).any(): raise ValueError('bins must be strictly increasing')
-        if (p < 0).any(): raise ValueError('histogram counts cannot be negative')
-        inds = where(p != 0)[0]
-        p,bins = p[inds[0]:inds[-1]+1], bins[inds[0]:inds[-1]+1]
-        if len(p) == 0: raise ValueError('total histogram counts is zero')
-        if len(p) == 1: TODO
-        if p.dtype.kind in 'biu': p = p.astype(intp, copy=False)
-        mn,mx = bins[0], bins[-1]
+
+        # Check and prepare the pdf and bins
+        p,bins = __check_pdf_and_bins(im)
+        mn,mx,dt = bins[0], bins[-1], bins.dtype
         
     else:
         if im.dtype.kind == 'c': raise ValueError('complex types not accepted')
@@ -67,8 +58,8 @@ def otsus_multithresh(im, levels=2, mask=None, output_metric=False):
         # Calculate pdf
         mn,mx,dt = im.min(), im.max(), im.dtype
         if mn == mx:
-            if levels == 2: return ((mn,),0.0) if output_metric else (mn,)
-            else: return getDegenerateThresholds([mn], levels-1) # TODO
+            thresh = __degenerate_thresholds(mn, levels)
+            return (thresh,0.0) if output_metric else thresh
         p, bins = histogram(im, mn, mx, 256).astype(intp), arange(256)
     scale = (mx-mn)/(len(bins)-1)
 
@@ -91,6 +82,26 @@ def otsus_multithresh(im, levels=2, mask=None, output_metric=False):
         if levels == 2: metric *= omega[-1]
         return thresh, metric
     return thresh
+
+def __check_pdf_and_bins(X):
+    p, bins = X
+    if bins.dtype.kind == 'c': raise ValueError('complex types not accepted')
+    if len(p) != len(bins): raise ValueError('histogram counts and values must be the same length')
+    if (bins[:-1] >= bins[1:]).any(): raise ValueError('bins must be strictly increasing')
+    if (p < 0).any(): raise ValueError('histogram counts cannot be negative')
+    inds = where(p != 0)[0]
+    p,bins = p[inds[0]:inds[-1]+1], bins[inds[0]:inds[-1]+1]
+    if len(p) == 0: raise ValueError('total histogram counts is zero')
+    if len(p) == 1:
+        thresh = __degenerate_thresholds(mn, levels)
+        return (thresh,0.0) if output_metric else thresh
+    if p.dtype.kind in 'biu': p = p.astype(intp, copy=False)
+    return p,bins
+
+def __degenerate_thresholds(mn, levels):
+    if levels == 2: return (mn,)
+    # TODO:
+    #return getDegenerateThresholds([mn], levels-1)
 
 def __otsus_multithresh(omega, mu, mu_t, N):
     if N == 1:
