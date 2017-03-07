@@ -62,6 +62,7 @@ class FileLock(object):
             try:
                 self.__lockfile = os.open(self.__file, os.O_CREAT|os.O_EXCL|os.O_RDWR)
                 os.write(self.__lockfile, str(os.getpid()))
+                os.fsync(self.__lockfile)
             except OSError as e:
                 if e.errno != EEXIST: self.release(); raise
                 if timeout is not None and time() - start >= timeout: raise OSError("timeout occured")
