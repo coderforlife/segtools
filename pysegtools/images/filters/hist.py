@@ -334,6 +334,7 @@ def __pixel_order_va(im, niters=5):
          IEEE Trans. on Image Processing, 23(12):5274-5283
     """
     assert niters > 0
+    from numpy import abs
     ALPHA_1 = 0.05
     ALPHA_2 = 0.05
     BETA    = 0.1
