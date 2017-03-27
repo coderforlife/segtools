@@ -32,7 +32,7 @@ if not hasattr(Image, 'PILLOW_VERSION') or StrictVersion(Image.PILLOW_VERSION) <
 
 # PIL won't open very large images to prevent large buffer compression attacks
 # But our images are going to be large so lets up the limit significantly
-PIL.Image.MAX_IMAGE_PIXELS = 250000*250000
+Image.MAX_IMAGE_PIXELS = 250000*250000
 
 ########## PIL dtypes ##########
 _native = byteorder!='little'
