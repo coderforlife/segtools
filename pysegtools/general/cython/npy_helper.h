@@ -415,8 +415,8 @@ struct complex
     CONSTEXPR inline bool operator <=(const F& b) const { return (this->R == b) ? (this->I <= 0) : (this->R <= b); }
     CONSTEXPR inline bool operator >=(const F& b) const { return (this->R == b) ? (this->I >= 0) : (this->R >= b); }
 
-    CONSTEXPR inline complex<F> operator+() { return complex<F>(+this->R, +this->I); }
-    CONSTEXPR inline complex<F> operator-() { return complex<F>(-this->R, -this->I); }
+    CONSTEXPR inline complex<F> operator+() const { return complex<F>(+this->R, +this->I); }
+    CONSTEXPR inline complex<F> operator-() const { return complex<F>(-this->R, -this->I); }
 
     inline complex<F>& operator+=(const complex<F>& b) { this->R += b.R, this->I += b.I; return *this; }
     inline complex<F>& operator-=(const complex<F>& b) { this->R -= b.R, this->I -= b.I; return *this; }
