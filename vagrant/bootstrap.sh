@@ -10,6 +10,7 @@ yum install -y python-pip python-wheel
 yum install -y python-pillow python-pillow-devel
 yum install -y R readline readline-devel python-singledispatch
 updatedb
+pip install --upgrade pip
 pip install wheel
 pip install numpy
 pip install cython
