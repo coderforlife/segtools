@@ -1,42 +1,48 @@
-
-RELEASE=7
-VERSION=$1
-echo "Setting RELEASE=$RELEASE"
-
-DistType "redhat"
-MirrorURL "http://mirror.centos.org/centos-${RELEASE}/${RELEASE}/os/\$basearch/"
-
-Setup
-Bootstrap
-
-InstallPkgs yum cmake git epel-release wget tcsh xauth xclock mlocate time tree
-InstallPkgs numpy numpy-f2py scipy tar gzip
-InstallPkgs gcc gcc-gfortran gcc-c++ python python-devel python-virtualenv atlas atlas-devel lapack lapack-devel lapack64 lapack64-develzlib zlib-devel libtiff libtiff-devel libjpeg-turbo libjpeg-turbo-devel hdf5 hdf5-devel fftw fftw-devel libpng libpng-devel libpng-static
-InstallPkgs xorg-x11-fonts-* mesa-* python-pip python-wheel python-pillow python-pillow-devel R readline readline-devel python-singledispatch
-
-InstallFile runscript.sh /singularity
-InstallFile build/pysegtools-${VERSION}.tar.gz /
-RunCmd "cd /; tar -zxf pysegtools-${VERSION}.tar.gz"
-
-RunCmd "updatedb"
-RunCmd "pip install wheel"
-RunCmd "pip install numpy"
-RunCmd "pip install cython"
-RunCmd "pip install scipy --upgrade"
-RunCmd "pip install pillow --upgrade"
-RunCmd "pip install psutil"
-RunCmd "pip install subprocess32"
-RunCmd "pip install h5py"
-RunCmd "pip install pyfftw"
-RunCmd "pip install rpy2"
+# Copyright (c) 2015-2016, Gregory M. Kurtzer. All rights reserved.
+# 
+# "Singularity" Copyright (c) 2016, The Regents of the University of California,
+# through Lawrence Berkeley National Laboratory (subject to receipt of any
+# required approvals from the U.S. Dept. of Energy).  All rights reserved.
 
 
-# Make directories used on Gordon, Comet, & Rocce
-RunCmd "mkdir /oasis"
-RunCmd "mkdir /projects"
-RunCmd "mkdir /data"
+BootStrap: yum
+OSVersion: 7
+MirrorURL: http://mirror.centos.org/centos-%{OSVERSION}/%{OSVERSION}/os/$basearch/
+Include: yum
 
-RunCmd "cd /pysegtools-${VERSION};python setup.py install"
+# If you want the updates (available at the bootstrap date) to be installed
+# inside the container during the bootstrap instead of the General Availability
+# point release (7.x) then uncomment the following line
+#UpdateURL: http://mirror.centos.org/centos-%{OSVERSION}/%{OSVERSION}/updates/$basearch/
 
-Cleanup
+%setup
+   cp runscript.sh "$SINGULARITY_ROOTFS/singularity"
+   chmod a+rx "$SINGULARITY_ROOTFS/singularity"
+   SEGTOOLS_TAR_GZ=`find build/ -name "pysegtools*gz" -type f`
+   cp $SEGTOOLS_TAR_GZ "$SINGULARITY_ROOTFS/."
+
+%post
+   echo "Hello from inside the container"
+   yum -y install epel-release  
+   yum -y install cmake git wget tcsh xauth xclock mlocate time tree numpy numpy-f2py scipy tar gzip gcc gcc-gfortran gcc-c++ python python-devel python-virtualenv atlas atlas-devel lapack lapack-devel lapack64 lapack64-develzlib zlib-devel libtiff libtiff-devel libjpeg-turbo libjpeg-turbo-devel hdf5 hdf5-devel fftw fftw-devel libpng libpng-devel libpng-static xorg-x11-fonts-* mesa-* python2-pip python-wheel python-pillow python-pillow-devel R readline readline-devel python-singledispatch
+
+   updatedb
+   pip install --upgrade pip
+   pip install wheel
+   pip install numpy
+   pip install cython
+   pip install scipy --upgrade
+   pip install pillow --upgrade
+   pip install psutil
+   pip install subprocess32
+   pip install h5py
+   pip install pyfftw
+   pip install rpy2
+
+   mkdir -p /oasis /projects /data /state/partition1 /scratch /scratch1 /scratch2
+   cd / ; tar -zxf pysegtools-*.tar.gz
+   cd /pysegtools-*;python setup.py install
+
+%test
+   /singularity --check 
 
