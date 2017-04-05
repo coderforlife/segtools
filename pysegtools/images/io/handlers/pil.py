@@ -330,6 +330,7 @@ class _PILSource(object):
     @property
     def data(self): # return ndarray
         from numpy import frombuffer, unpackbits, uint8
+        from ....general import prod
         dt = self.dtype_raw # the intermediate dtype
         dt_final = self.dtype # the resulting dtype
         if self.im.mode == 'P':
@@ -345,6 +346,9 @@ class _PILSource(object):
                 a = concatenate((a,alpha), axis=1)
         elif dt.kind == 'b':
             a = unpackbits(frombuffer(self.im.tobytes(), dtype=uint8)).view(bool)
+            w,h = self.im.size
+            w8 = w if w%8 == 0 else w+8-w%8
+            return a.reshape((h,w8)+tuple(dt_final.shape))[:,:w]
         else:
             a = frombuffer(self.im.tobytes(), dtype=dt)
         return a.reshape(tuple(reversed(dt_final.shape+self.im.size)))
