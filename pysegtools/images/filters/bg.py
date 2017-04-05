@@ -7,7 +7,7 @@ from __future__ import unicode_literals
 from numbers import Integral
 from itertools import islice
 
-from numpy import zeros, ones, empty, array, vstack, hstack, dstack
+from numpy import zeros, ones, empty, array, vstack, hstack, dstack, dtype
 from numpy import roll, flipud, fliplr, transpose
 from numpy import mean, nonzero, sign, logical_and, logical_or, equal, argsort
 
@@ -348,10 +348,10 @@ class BackgroundMask(FilteredImageStack):
                 MaskProjection.All : logical_and,
                 MaskProjection.Any : logical_or}[mode], None
             super(BackgroundMask, self).__init__(ims, BackgroundMaskSlice_OP)
-        self._dtype, self._homogeneous = bool, Homogeneous.DType
+        self._dtype, self._homogeneous = dtype(bool), Homogeneous.DType
 class BackgroundMaskSlice(FilteredImageSlice):
     #pylint: disable=protected-access
-    def _get_props(self): self._set_props(bool, self._input.shape)
+    def _get_props(self): self._set_props(dtype(bool), self._input.shape)
     def _get_data(self): return get_bg_mask(self._input.data, self._stack._color)
 class BackgroundMaskSlice_OP(BackgroundMaskSlice):
     #pylint: disable=protected-access
