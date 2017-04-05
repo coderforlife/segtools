@@ -41,15 +41,14 @@ def get_bg_padding(im, bg_color=None):
         if bg_color is None: return (0,0,0,0) # no discoverable bg color, no paddding
     else:
         bg_color = get_color(bg_color, im)
-    shp = im.shape
-    w,h = shp[1]-1, shp[0]-1
-    t,l,b,r = 0, 0, h, w
+    w,h = im.shape
+    t,l,b,r = 0, 0, h-1, w-1
     mask = empty(max(w,h), dtype=bool)
     while t < h and equal(im[t,:,...], bg_color, out=mask[:w]).all(): t += 1
     while b > t and equal(im[b,:,...], bg_color, out=mask[:w]).all(): b -= 1
     while l < w and equal(im[:,l,...], bg_color, out=mask[:h]).all(): l += 1
     while r > l and equal(im[:,r,...], bg_color, out=mask[:h]).all(): r -= 1
-    return (t,l,h-b,w-r)
+    return (t,l,h-1-b,w-1-r)
 
 def get_bg_mask(im, bg_color=None):
     """
