@@ -227,14 +227,17 @@ def histeq_exact(im, h_dst=256, mask=None, method='VA', **kwargs):
 
     ##### Create the transform that is the size of the image but with sorted histogram values #####
     # Since there could be fractional amounts, make sure they are added up and put somewhere
-    H_whole = floor(h_dst)
-    R = __n_argmax(h_dst-H_whole, int(n-H_whole.sum()))
-    h_dst = H_whole.astype(intp, copy=False)
-    h_dst[R] += 1
-    del R, H_whole
+    H_whole = floor(h_dst).astype(intp, copy=False)
+    nw = H_whole.sum()
+    if n == nw: h_dst = H_whole
+    else:
+        R = __n_argmax(h_dst-H_whole, n-nw)
+        h_dst = H_whole
+        h_dst[R] += 1
+        del R
     T = empty(idx.size, dtype=dt)
     T[-n:] = repeat(linspace(mn, mx, len(h_dst), dtype=dt), h_dst)
-    del h_dst
+    del h_dst, H_whole
     
     ##### Create the equalized image #####
     return T.take(idx).reshape(sh)
