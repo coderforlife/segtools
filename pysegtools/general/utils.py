@@ -170,3 +170,37 @@ def __get_terminal_width_nix():
             except (AttributeError, OSError): pass
     except ImportError: return None
     return w
+
+def get_rss_limit(pid=None):
+    """
+    Gets the RSS limit for a process if there is one, or -1 if there is not.
+    On non-Linux machines this always returns -1.
+    """
+    import psutil
+    if not hasattr(psutil, 'RLIMIT_RSS'): return -1
+    return psutil.Process(pid).rlimit(psutil.RLIMIT_RSS)[0]
+
+def get_cpu_limit(pid=None):
+    """
+    Gets the CPU limit for a process based on the CPU affinity.
+    Normally this will return the number of logical CPUs.
+    """
+    import psutil
+    return len(psutil.Process(pid).cpu_affinity())
+
+def get_mem_usable():
+    """
+    Get the amount of usable memory for this process. This is the minimum of the RSS limit and
+    the available amount of memory on the machine.
+    """
+    import psutil
+    rss, avail = get_rss_limit(), psutil.virtual_memory().available
+    return avail if rss == -1 else min(avail, rss)
+
+def get_ncpus_usable():
+    """
+    Get the number of usable CPUs for this process. This is the minimum of the CPU limit and
+    the total number of logical CPUs.
+    """
+    import psutil
+    return min(get_cpu_limit(), psutil.cpu_count(True)) 
