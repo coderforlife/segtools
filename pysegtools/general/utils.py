@@ -79,13 +79,11 @@ def unpack1(fmt, b): return struct.unpack(str(fmt), b)[0]
 ##### filesystem utilities #####
 def make_dir(d):
     """Makes a directory tree. If the path exists as a regular file already False is returned."""
-    if os.path.isdir(d): return True
-    if os.path.exists(d): return False
-    try:
-        os.makedirs(d)
+    def mkdir(path):
+        try: os.makedirs(path)
+        except OSError as exc:
+            return exc.errno == errno.EEXIST and os.path.isdir(path)
         return True
-    except OSError:
-        return False
 def only_keep_num(d, allowed, match_slice=slice(None), pattern='*'):
     """
     Searches for all files matching a particular glob pattern, extracts the given slice as an
