@@ -108,8 +108,12 @@ def shrink_integer(im, min_dt=None):
 def _shrink_int_dtype(im, min_dt):
     if im.dtype.kind not in 'iu': raise ValueError('Can only take integral data types')
     unsigned = im.dtype.kind == 'u'
-    min_dt = dtype(uint8 if unsigned else int8) if min_dt is None else dtype(min_dt)
     mn, mx = (0 if unsigned else im.min()), im.max()
+    if min_dt is not None:
+        min_dt = dtype(min_dt)
+        mx = get_dtype_max(min_dt)
+    else:
+        min_dt = dtype(uint8 if unsigned else int8)
     return _shrink_int_dtype_raw(mn, mx, min_dt)
 def _shrink_int_dtype_raw(mn, mx, min_dt):
     # At this point min_dt must be a dtype and the min and max values are passed directly
