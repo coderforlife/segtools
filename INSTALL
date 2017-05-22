@@ -32,8 +32,7 @@ Now run these commands:
     virtualenv .
     source bin/activate
     git clone git@github.com:slash-segmentation/segtools.git
-    cd segtools
-    pip install[OPT,PIL,MATLAB] -e
+    pip install -e segtools[OPT,MATLAB,PIL]
     imstack --check
 
 Where OPT forces cython and fftw to be installed (for optimum performance), PIL forces pillow to be
@@ -55,6 +54,5 @@ On the SDSC Comet cluster I did the following to install (not all parts may be n
     source bin/activate # must be done after module load
     pip install --no-binary :all: numpy cython scipy # numpy/scipy binary comes linked to a BLAS library that causes a seg-fault
     git clone git@github.com:slash-segmentation/segtools.git
-    cd segtools
-    pip install[OPT,PIL,MATLAB] -e
+    pip install -e segtools[OPT,MATLAB,PIL]
     imstack --check
