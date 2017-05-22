@@ -16,8 +16,8 @@ Recommended:
  * hdf5 devel package for reading and writing modern MATLAB files
  * fftw devel package for faster FFT calculations
 
-So on CentOS-7 all of these can be installed with the following yum.
-The following command installs all of them (including recommended, but not including some image formats):
+So on CentOS-7 all of these can be installed with the following yum command.
+The following command installs all of them (including recommended, but not all image formats):
     yum install gcc gcc-gfortran python python-devel python-virtualenv \
                 atlas atlas-devel lapack lapack-devel lapack64 lapack64-devel \
                 zlib zlib-devel libtiff libtiff-devel libjpeg-turbo libjpeg-turbo-devel \
@@ -26,31 +26,21 @@ The following command installs all of them (including recommended, but not inclu
                 
 Now run these commands:
 
-cd ~               # or wherever
-mkdir imstack-env
-cd imstack-env
-virtualenv .
-source bin/activate
-pip install numpy cython scipy
-pip install pillow psutil subprocess32
-pip install h5py pyfftw # only if the corresponding devel packages are installed
-git clone git@github.com:slash-segmentation/segtools.git
-ln -s ../segtools/imstack bin/imstack
-imstack --check
+    cd ~               # or wherever
+    mkdir imstack-env
+    cd imstack-env
+    virtualenv .
+    source bin/activate
+    git clone git@github.com:slash-segmentation/segtools.git
+    cd segtools
+    pip install[OPT,PIL,MATLAB] -e
+    imstack --check
 
-
-
-Note that you can also use pip for many of these steps:
-
-pip install[OPT,PIL,MATLAB,tasks]
-
-Where OPT forces cython and fftw to be installed (for optimum performance), PIL forces PIL to be
-installed, MATLAB forces h5py to be installed, and tasks forces psutil to be installed. Note that
-these cannot force the installation of system devel packages, but may fail if those packages are
-not installed. One MAJOR exception is that PIP will install just fine without support for PNGs,
-TIFFs, JPEGs, etc if those devel libraries are not installed first!
-
-Additionally, pip will not handle the last 2 steps - you must add these if desired.
+Where OPT forces cython and fftw to be installed (for optimum performance), PIL forces pillow to be
+installed, and MATLAB forces h5py to be installed. Note that these cannot force the installation of
+system devel packages, but may fail if those packages are not installed. One MAJOR exception is
+that PIP will install just fine without support for PNGs, TIFFs, JPEGs, etc if those devel
+libraries are not installed first!
 
 ## SDSC Installation Notes
 
@@ -62,11 +52,9 @@ On the SDSC Comet cluster I did the following to install (not all parts may be n
     cd virtualenv-15.1.0
     python virtualenv.py ../virtenv
     cd ../virtenv
-    . bin/activate # must be done after module load
-    pip install --no-binary :all: numpy cython scipy # numpy binary comes linked to a BLAS library that causes a seg-fault
-    pip install pillow psutil subprocess32
-    pip install h5py pyfftw
-    # optional: pip install ipython
+    source bin/activate # must be done after module load
+    pip install --no-binary :all: numpy cython scipy # numpy/scipy binary comes linked to a BLAS library that causes a seg-fault
     git clone git@github.com:slash-segmentation/segtools.git
-    ln -s ../segtools/imstack bin/imstack
+    cd segtools
+    pip install[OPT,PIL,MATLAB] -e
     imstack --check
