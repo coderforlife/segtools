@@ -195,7 +195,7 @@ class EnumMeta(type):
         return cls._create_(value, names, module=module, typ=typ)
 
     def __contains__(cls, member):
-        return member.name in (cls._member_map_ if isinstance(member, cls) else cls._value2member_map_)
+        return (member.name in cls._member_map_ if isinstance(member, cls) else member in cls._value2member_map_)
 
     def __delattr__(cls, attr):
         # nicer error message when someone tries to delete an attribute
