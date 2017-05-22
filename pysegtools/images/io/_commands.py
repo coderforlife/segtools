@@ -220,7 +220,7 @@ cases filenames with '=' in them, or are only '[' or ']', are not supported.
 
         p.newline()
         p.subtitle("3D Image Files")
-        p.text("""Command Format: --load filepath [options...]
+        p.text("""Command Format: --save filepath [options...]
 Supported handlers are:""")
         p.list(*sorted(FileImageStack.handlers(False)))
         p.text("""
