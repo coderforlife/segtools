@@ -7,8 +7,8 @@
 
 from __future__ import division
 
-include "pysegtools/general/cython/npy_helper.pxi"
-include "pysegtools/general/cython/fused.pxi"
+include "npy_helper.pxi"
+include "fused.pxi"
 
 from libc.string cimport memcmp, memcpy, memmove
 
