@@ -79,10 +79,9 @@ def get_im_dtype(im_or_dtype):
     """
     if isinstance(im_or_dtype, ndarray):
         return dtype((im_or_dtype.dtype, im_or_dtype.shape[2] if im_or_dtype.ndim == 3 else 1))
-    elif isinstance(im_or_dtype, dtype):
+    if isinstance(im_or_dtype, dtype):
         return im_or_dtype
-    else:
-        return dtype(tuple(im_or_dtype[:2]) if len(im_or_dtype) > 1 else im_or_dtype[0])
+    return dtype(tuple(im_or_dtype[:2]) if len(im_or_dtype) > 1 else im_or_dtype[0])
 def get_im_dtype_and_nchan(im_or_dtype):
     """
     Gets the base dtype of an image and the number of channels. This also accepts dtypes (with the
@@ -91,10 +90,9 @@ def get_im_dtype_and_nchan(im_or_dtype):
     """
     if isinstance(im_or_dtype, ndarray):
         return im_or_dtype.dtype, im_or_dtype.shape[2] if im_or_dtype.ndim == 3 else 1
-    elif isinstance(im_or_dtype, dtype):
+    if isinstance(im_or_dtype, dtype):
         return im_or_dtype.base, im_or_dtype.shape[0] if len(im_or_dtype.shape) else 1
-    else:
-        return im_or_dtype[0], int(im_or_dtype[1]) if len(im_or_dtype) > 1 else 1
+    return im_or_dtype[0], int(im_or_dtype[1]) if len(im_or_dtype) > 1 else 1
 def im_dtype_desc(im_or_dtype):
     """
     Get very brief string description of the data type of an image. The format is:

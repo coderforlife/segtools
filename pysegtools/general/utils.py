@@ -79,7 +79,7 @@ def unpack1(fmt, b): return struct.unpack(str(fmt), b)[0]
 ##### filesystem utilities #####
 def make_dir(path):
     """Makes a directory tree. If the path exists as a regular file already False is returned."""
-    import os, errno
+    import errno
     try: os.makedirs(path)
     except OSError as exc:
         return exc.errno == errno.EEXIST and os.path.isdir(path)

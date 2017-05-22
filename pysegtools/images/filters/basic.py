@@ -253,6 +253,7 @@ class ExtractChannelsCommand(CommandEasy):
     @classmethod
     def _see_also(cls): return ('combine-channels',)
     def __str__(self):
+        #pylint: disable=unsubscriptable-object
         from ...general import itr2str
         return ('extract channels '+itr2str(self._channels,',')) if len(self._channels)>1 else 'extract channel '+str(self._channels[0])
     def execute(self, stack): stack.push(ExtractChannelsImageStack(stack.pop(), self._channels))

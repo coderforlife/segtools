@@ -300,6 +300,7 @@ def __get_name_from_fd(fd):
 
 def get_file_name(f):
     """Get the absolute path of a file, either from the filename or file-object."""
+    #pylint: disable=unsubscriptable-object
     if isinstance(f, String): return os.path.abspath(f)
     if hasattr(file, 'name'):
         if isinstance(file.name, String) and len(file.name) > 0 and file.name[0] != '<' and file.name[-1] != '>':
@@ -442,12 +443,15 @@ class FileInsertIO(io.BufferedIOBase):
         self.__buf_raw = bytearray(buf_size)
         self.__buf = memoryview(self.__buf_raw)
         self.__buf_size = 0
+        self.closed = False
 
+    #pylint: disable=no-self-use
     def isatty(self): return False
     def readable(self): return False
     def writable(self): return True
     def seekable(self): return False
     def fileno(self): raise IOError() # use .raw.fileno() if you want the underlying file number
+    
     def tell(self): return self.__off_start + self.__off + self.__buf_size
     @property
     def raw(self): return self.__f

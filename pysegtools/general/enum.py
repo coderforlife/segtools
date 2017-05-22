@@ -195,7 +195,7 @@ class EnumMeta(type):
         return cls._create_(value, names, module=module, typ=typ)
 
     def __contains__(cls, member):
-        return isinstance(member, cls) and member.name in cls._member_map_ or member in cls._value2member_map_
+        return member.name in (cls._member_map_ if isinstance(member, cls) else cls._value2member_map_)
 
     def __delattr__(cls, attr):
         # nicer error message when someone tries to delete an attribute
@@ -316,6 +316,9 @@ class EnumMeta(type):
         base_class: Enum or Flags
 
         """
+        # Pylint thinks that bases is not iterable or scriptable
+        #pylint: disable=not-an-iterable,unsubscriptable-object
+        
         if not bases or base_class is None:
             return object, base_class
 
@@ -651,8 +654,8 @@ class FlagsMeta(EnumMeta):
         else:
             # otherwise, functional API: we're creating a new Flags type
             return cls._create_(value, names, module=module, typ=typ)
-    def __contains__(cls, member): return isinstance(member, cls) and member.name in cls._member_map_ or (member & cls._mask_) == member
-    def __dir__(self): return ['__mask__'] + super(FlagsMeta, self).__dir__()
+    def __contains__(cls, member): return member.name in cls._member_map_ if isinstance(member, cls) else (member & cls._mask_) == member
+    def __dir__(self): return ['__mask__'] + dir(super(FlagsMeta, self))
 
     @property
     def __mask__(cls):

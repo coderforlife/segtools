@@ -25,7 +25,7 @@ class FileImageSource(DeferredPropertiesImageSource, HandlerManager):
     def _create_trans(cls, im): return ImageSource.as_image_source(im)
     
     def close(self): pass
-    def __delete__(self): self.close()
+    def __delete__(self, instance): self.close()
     @property
     def readonly(self): return self._readonly
     @property

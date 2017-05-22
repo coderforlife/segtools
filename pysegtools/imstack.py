@@ -30,7 +30,7 @@ def __main_hack():
             os.execv(sys.executable, argv)
 if __name__ == "__main__":
     __main_hack()
-    sys.exit() # should never reaches here
+    sys.exit() # should never reach here
     
 from abc import ABCMeta, abstractmethod
 String = str if sys.version_info[0] == 3 else basestring
@@ -410,7 +410,7 @@ class Opt(object):
             if isinstance(x, Complex):
                 x = complex(x)
                 if x.imag == 0.0: x = x.real
-                else: from cmath import isnan
+                else: from cmath import isnan #pylint: disable=reimported
             if isinstance(x, Real):
                 x = float(x)
                 if x.is_integer(): x = int(x)

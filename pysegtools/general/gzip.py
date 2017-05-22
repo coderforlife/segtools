@@ -148,6 +148,7 @@ def _read_gzip_header_str(read, crc32):
 # Adler32 checksum
 
 def compress_file(inpt, output=None, level=9, method=None):
+    #pylint: disable=redefined-argument-from-local
     if method is None: method = 'gzip'
 
     # Get output filename
@@ -182,6 +183,7 @@ def __compress_file_gzip_opts(in_filename, inpt):
     return opts
 
 def decompress_file(inpt, output=None, method=None):
+    #pylint: disable=redefined-argument-from-local
     with GzipFile(inpt, 'rb', method=method) as inpt:
         # Get the output filename if not provided
         in_filename = _get_filename(inpt)
@@ -281,6 +283,7 @@ def __decompress_zlib(inpt):
     return out
 
 def guess_file_compression_method(f):
+    #pylint: disable=redefined-argument-from-local
     if isinstance(f, String):
         with io.open(f, 'rb') as f: return guess_compression_method(f.read(3))
     else: return guess_compression_method(f.read(3))
@@ -534,7 +537,6 @@ class GzipFile(io.BufferedIOBase):
         return base
 
     # Random Properties
-    def fileno(self): raise IOError('gzip file does not have a file number, try this.raw.fileno()')
     def isatty(self):
         """Returns True if the underlying file object is interactive."""
         return self.__base.isatty()
@@ -554,6 +556,9 @@ class GzipFile(io.BufferedIOBase):
             self.__base.truncate(state[0])
         else:
             self.__new_member, self.__base_buf, self.__decomp_buf = state[5:7]
+    #pylint: disable=no-self-use
+    def fileno(self): raise IOError('gzip file does not have a file number, try this.raw.fileno()')
+    def truncate(self, _size=None): raise IOError('Truncate not supported for gzip files')
 
     # Position
     def seekable(self): return not self.__writing
@@ -578,7 +583,6 @@ class GzipFile(io.BufferedIOBase):
         if offset < self.__offset: self.rewind() # for negative seek, rewind and do positive seek
         self.__skip(offset - self.__offset)
         return self.__offset
-    def truncate(self, size_=None): raise IOError('Truncate not supported for gzip files')
 
     # Writing
     def __init_writing(self, level):

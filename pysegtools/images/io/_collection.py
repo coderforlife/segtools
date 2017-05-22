@@ -23,7 +23,7 @@ class FileCollectionStack(FileImageStack):
     #pylint: disable=protected-access
 
     @classmethod
-    def open(cls, files, readonly=False, handler=None, pattern=None, start=0, step=1, **options):
+    def open(cls, files, readonly=False, handler=None, pattern=None, start=0, step=1, **options): #pylint: disable=arguments-differ
         """
         Opens many files (from an iterable) as a single image-stack. You can specify if changes can
         be made or not. The list of files can contain both existing and non-existing files, however
@@ -53,7 +53,7 @@ class FileCollectionStack(FileImageStack):
         return FileCollectionStack(h, True, not readonly, files, files[:num_files_found], handler, **options)
 
     @classmethod
-    def openable(cls, files, readonly=False, handler=None, pattern=None, start=0, step=1, **options):
+    def openable(cls, files, readonly=False, handler=None, pattern=None, start=0, step=1, **options):#pylint: disable=arguments-differ
         """
         Checks if a set of files can be opened with the given options.
         """
@@ -70,7 +70,7 @@ class FileCollectionStack(FileImageStack):
         return False
 
     @classmethod
-    def create(cls, files, ims, writeonly=False, handler=None, pattern=None, start=0, step=1, **options):
+    def create(cls, files, ims, writeonly=False, handler=None, pattern=None, start=0, step=1, **options):#pylint: disable=arguments-differ
         """
         Creates an image-stack saving to multiple files. The files are an iterable of filenames to
         save slices as, or if None then only the pattern is used. The files are overwritten and
@@ -94,7 +94,7 @@ class FileCollectionStack(FileImageStack):
         return s
 
     @classmethod
-    def creatable(cls, files, writeonly=False, handler=None, pattern=None, start=0, step=1, **options):
+    def creatable(cls, files, writeonly=False, handler=None, pattern=None, start=0, step=1, **options):#pylint: disable=arguments-differ
         """
         Checks if a set of files can be opened with the given options.
         """
@@ -179,8 +179,8 @@ class FileCollectionStack(FileImageStack):
             slc._source = FileImageSource.create(f, src, self._writeonly, self._handler, **opts)
             slc._cache_data(im)
 
-    def _delete(self, idx):
-        for start, stop in idx:
+    def _delete(self, idxs):
+        for start, stop in idxs:
             # This could be done in a slightly better way by going from the lowest start to the
             # highest like how file_remove_ranges does it (instead of highest to lowest like is
             # easier). This would only reduce the number of renames while complicating the process.

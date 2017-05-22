@@ -263,8 +263,7 @@ from signed to unsigned integers of the same size).
     def __str__(self):
         if len(self._dtype) == 1:
             return 'raw-convert to %s' % im_dtype_desc(self._dtype)
-        else:
-            return 'raw-convert to [%s]' % (",".join(im_dtype_desc(dt) for dt in self._dtype))
+        return 'raw-convert to [%s]' % (",".join(im_dtype_desc(dt) for dt in self._dtype)) #pylint: disable=not-an-iterable
     def execute(self, stack): stack.push(RawConvertImageStack(stack.pop(), self._dtype))
 
 class ByteOrderConvertCommand(CommandEasy):
@@ -303,10 +302,7 @@ single-character symbols (e.g. '<><><>').
     @classmethod
     def _see_also(cls): return ('raw-convert',)
     def __str__(self):
-        if len(self._new) == 1:
-            return 'byte-order-convert to %s' % self._new
-        else:
-            return 'byte-order-convert to [%s]' % self._new
+        return ('byte-order-convert to %s' if len(self._new) == 1 else 'byte-order-convert to [%s]') % self._new
     def execute(self, stack): stack.push(ConvertByteOrderImageStack(stack.pop(), self._new))
 
 class ConvertScaleConvertCommand(CommandEasy):

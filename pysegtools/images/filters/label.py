@@ -129,8 +129,7 @@ def _shrink_int_dtype_raw(mn, mx, min_dt):
 
 ########## Image Stacks ##########
 class _LabeledImageStack(FilteredImageStack):
-    def __init__(self, ims, slcs):
-        super(_LabeledImageStack, self).__init__(ims, slcs)
+    pass
 class _LabeledImageSlice(FilteredImageSlice):
     def _get_props(self): self._set_props(dtype(uintp), self._input.shape)
     @abstractmethod
@@ -179,13 +178,9 @@ class _LabelImageSlice(_LabeledImageSlice):
     def _get_data(self): return self._stack.stack[self._z]
 
 class LabelImageStack(_LabeledImageStackWithStruct):
-    def __init__(self, ims, per_slice=True, structure=None):
-        super(LabelImageStack, self).__init__(ims, per_slice, structure)
     def _calc_label(self, im): return _label2(im, self._structure)[0]
     def _calc_labels(self, ims): return _label3(ims, self._structure)
 class RelabelImageStack(_LabeledImageStackWithStruct):
-    def __init__(self, ims, per_slice=True, structure=None):
-        super(RelabelImageStack, self).__init__(ims, per_slice, structure)
     def _calc_label(self, im): return _label.relabel2(im, self._structure)[0]
     def _calc_labels(self, ims): return _label.relabel3(ims, self._structure)
 

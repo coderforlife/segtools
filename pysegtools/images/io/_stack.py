@@ -88,10 +88,10 @@ class FileImageStack(ImageStack, HandlerManager):
         """
         if isinstance(filename, String):
             return HandlerManager.openable.__func__(cls, filename, readonly, handler, **options)
-        elif isinstance(filename, Iterable):
+        if isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
             return FileCollectionStack.openable(filename, readonly, handler, **options)
-        else: return False
+        return False
 
     @classmethod
     def open_cmd(cls, args, readonly=True):
@@ -107,7 +107,7 @@ class FileImageStack(ImageStack, HandlerManager):
     def _create_trans(cls, im): return ImageStack.as_image_stack(im)
     
     @classmethod
-    def create(cls, filename, ims, writeonly=False, handler=None, **options):
+    def create(cls, filename, im, writeonly=False, handler=None, **options):
         """
         Creates an image-stack file or writes to a series of images as a stack. If 'filename' is a
         string then it is treated as a new file. Otherwise it needs to be an iterable of file names
@@ -126,11 +126,11 @@ class FileImageStack(ImageStack, HandlerManager):
         stack.
         """
         if isinstance(filename, String):
-            return HandlerManager.create.im_func(cls, filename, ims, writeonly, handler, **options)
-        elif filename is None or isinstance(filename, Iterable):
+            return HandlerManager.create.__func__(cls, filename, im, writeonly, handler, **options)
+        if filename is None or isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
-            return FileCollectionStack.create(filename, [ImageSource.as_image_source(im) for im in ims], writeonly, handler, **options)
-        else: raise ValueError()
+            return FileCollectionStack.create(filename, [ImageSource.as_image_source(i) for i in im], writeonly, handler, **options)
+        raise ValueError()
 
     @classmethod
     def creatable(cls, filename, writeonly=False, handler=None, **options):
@@ -141,11 +141,11 @@ class FileImageStack(ImageStack, HandlerManager):
         "pattern" option with an extension and %d in it.
         """
         if isinstance(filename, String):
-            return HandlerManager.creatable.im_func(cls, filename, writeonly, handler, **options)
-        elif filename is None or isinstance(filename, Iterable):
+            return HandlerManager.creatable.__func__(cls, filename, writeonly, handler, **options)
+        if filename is None or isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
             return FileCollectionStack.creatable(filename, writeonly, handler, **options)
-        else: return False
+        return False
 
     @classmethod
     def create_cmd(cls, args, ims, writeonly=True):
@@ -179,7 +179,7 @@ class FileImageStack(ImageStack, HandlerManager):
         if self._readonly: raise AttributeError('readonly')
         self._header.save()
     def close(self): pass
-    def __delete__(self): self.close()
+    def __delete__(self, instance): self.close()
     @property
     def readonly(self): return self._readonly
     @property
@@ -459,8 +459,6 @@ class FileImageSlice(ImageSlice):
     _get_props function (the trivial one would be def _get_props(self): pass).
     """
     #pylint: disable=protected-access
-    def __init__(self, stack, z): super(FileImageSlice, self).__init__(stack, z)
-
     @property
     def header(self): #pylint: disable=no-self-use
         """
@@ -471,7 +469,7 @@ class FileImageSlice(ImageSlice):
         """
         return None
 
-    @ImageSlice.data.setter
+    @ImageSlice.data.setter #pylint: disable=no-member
     def data(self, im): #pylint: disable=arguments-differ
         if self._stack._readonly: raise ValueError('cannot set data for readonly image stack')
         self._cache_data(self._set_data(ImageSource.as_image_source(im)))
@@ -625,11 +623,9 @@ class FileImageStackHeader(DictionaryWrapperWithAttr):
             elif f.ro: raise AttributeError('%s cannot be edited in header' % _key)
             else: self._data[key] = f.cast(default, self)
         return self._data[key]
-    def update(self, d=None, **kwargs):
+    def update(self, *args, **kwargs): 
         if self._imstack._readonly: raise AttributeError('header is readonly')
-        if d is None: d = kwargs
-        itr = d.iteritems() if isinstance(d, dict) else d
-        for k,v in itr: self[k] = v
+        super(FileImageStackHeader, self).update(*args, **kwargs)
 
 class _FieldMetaclass(type):
     """This metaclass mirrors all the 'cast_' static methods from Opt into field."""
@@ -637,7 +633,7 @@ class _FieldMetaclass(type):
         if name.startswith('cast_') and hasattr(Opt, name): return getattr(Opt, name)
         raise AttributeError
     def __dir__(self):
-        d = super(_FieldMetaclass, self).__dir__()
+        d = dir(super(_FieldMetaclass, self))
         d.update({k:v for k,v in dir(Opt).iteritems() if k.startswith('cast_')})
         return d
         

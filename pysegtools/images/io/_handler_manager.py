@@ -33,18 +33,20 @@ class HandlerManager(object):
     @classmethod
     def is_handler(cls, handler, read=True):
         """Checks that the given string is a valid handler for this type."""
+        #pylint: disable=protected-access
         assert cls != HandlerManager
-        return any(handler == cls.name() and (read and cls._can_read() or not read and cls._can_write())
-                   for cls in all_subclasses(cls))
+        return any(handler == sub.name() and (read and sub._can_read() or not read and sub._can_write())
+                   for sub in all_subclasses(cls))
 
     @classmethod
     def handlers(cls, read=True):
         """Get a list of all handlers of this type."""
+        #pylint: disable=protected-access
         assert cls != HandlerManager
         handlers = []
-        for cls in all_subclasses(cls):
-            h = cls.name()
-            if h is not None and (read and cls._can_read() or not read and cls._can_write()):
+        for sub in all_subclasses(cls):
+            h = sub.name()
+            if h is not None and (read and sub._can_read() or not read and sub._can_write()):
                 handlers.append(h)
         return handlers
 

@@ -79,7 +79,7 @@ class MRC(HomogeneousFileImageStack):
     """
 
     @classmethod
-    def open(cls, f, readonly=False, **options):
+    def open(cls, f, readonly=False, **options): #pylint: disable=arguments-differ
         """
         Opens an MRC file. Provide a filename or a file-like object. You can specify if it should be
         opened readonly or not. No extra options are supported.
@@ -110,7 +110,7 @@ class MRC(HomogeneousFileImageStack):
                 0 <= u32(raw, 220) <= LBL_COUNT) # nlbl
 
     @classmethod
-    def create(cls, f, ims, writeonly=False, **options):
+    def create(cls, f, ims, writeonly=False, **options): #pylint: disable=arguments-differ
         """
         Creates a new MRC file. Provide a filename or a file-like object. The image stack must
         contain at least one image.
@@ -168,9 +168,9 @@ Supported image types:""")
 
     def _get_off(self, z): return self._off+z*self._slc_bytes
 
-    def _delete(self, idx):
-        file_remove_ranges(self._file, [(self._get_off(start), self._get_off(stop)) for start,stop in idx])
-        for start,stop in idx: self._delete_slices(start, stop)
+    def _delete(self, idxs):
+        file_remove_ranges(self._file, [(self._get_off(start), self._get_off(stop)) for start,stop in idxs])
+        for start,stop in idxs: self._delete_slices(start, stop)
     def _insert(self, idx, ims):
         if any(self._shape != im.shape or self._dtype != im.dtype for im in ims): raise ValueError('MRC files require all slices to be the same data type and size')
         end = idx + len(ims)
@@ -525,8 +525,8 @@ class LabelList(ListWrapper):
             else: raise ValueError('too many labels') # inserting in middle
         self._data.insert(i, value)
         self._hdr['nlabl'] = int32(len(self._data))
-    def extend(self, values):
-        values = [Unicode(value) for value in values]
+    def extend(self, itr):
+        values = [Unicode(value) for value in itr]
         if len(values) > LBL_COUNT: raise ValueError('adding too many labels')
         if any(len(value) > LBL_LEN for value in values): raise ValueError('label too long')
         if len(self._data) + len(values) > LBL_COUNT:

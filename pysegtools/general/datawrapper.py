@@ -155,7 +155,6 @@ class _DictView(object):
     def __contains__(self, item): pass
 
 class _DictViewSetLike(_DictView):
-    def __init__(self, d): super(_DictViewSetLike, self).__init__(d)
     @abstractmethod
     def __iter__(self): pass
     @abstractmethod
@@ -192,12 +191,10 @@ class _DictViewSetLike(_DictView):
     def __rxor__(self, other): return _DictViewSetLike.__set_op(other, self, set.symmetric_difference_update)
 
 class _DictViewKeys(_DictViewSetLike, collections.KeysView):
-    def __init__(self, d): super(_DictViewKeys, self).__init__(d)
     def __iter__(self): return self._d.iterkeys()
     def __contains__(self, key): return key in self._d
 
 class _DictViewItems(_DictViewSetLike, collections.ItemsView):
-    def __init__(self, d): super(_DictViewItems, self).__init__(d)
     def __iter__(self): return self._d.iteritems()
     def __contains__(self, item):
         if not isinstance(item, tuple) or len(item) != 2: return False
@@ -205,7 +202,6 @@ class _DictViewItems(_DictViewSetLike, collections.ItemsView):
         return key in self._d and self._d[key] == value
 
 class _DictViewValues(_DictView, collections.ValuesView):
-    def __init__(self, d): super(_DictViewValues, self).__init__(d)
     def __iter__(self): return self._d.itervalues()
     def __contains__(self, value): return any(x == value for x in self)
 
@@ -217,7 +213,6 @@ class DictionaryWrapperWithAttr(DictionaryWrapper):
     circumvented using self.__dict__['attr'] = x the first time).
     """
     _data = None
-    def __init__(self, d): super(DictionaryWrapperWithAttr, self).__init__(d)
     def __setattr__(self, key, value):
         x = self
         while x != type:
@@ -229,8 +224,6 @@ class DictionaryWrapperWithAttr(DictionaryWrapper):
     def __delattr__(self, key): del self[key]
 
 class ReadOnlyDictionaryWrapper(DictionaryWrapper):
-    def __init__(self, d): super(ReadOnlyDictionaryWrapper, self).__init__(d)
-
     # Mutating functions only raise errors
     def __delitem__(self, key): raise AttributeError('Illegal action for readonly dictionary')
     def clear(self): raise AttributeError('Illegal action for readonly dictionary')
@@ -400,14 +393,16 @@ class ListOfSame(ReadOnlyListWrapper): # does allow 'deleting' though
         self.__len = length
     def __len__(self): return maxsize if self.__len is None else self.__len
     def __getitem__(self, i):
+        #pylint: disable=invalid-unary-operand-type
         if isinstance(i, Integral):
-            if self.__len is None and (i >= self.__len or i < -self.__len): raise ValueError()
+            if self.__len is not None and (i >= self.__len or i < -self.__len): raise ValueError()
             return self.__val
         elif isinstance(i, slice):
             return [self.__val] * len(i.indices(self.__len))
         else:
             raise ValueError()
     def __detitem__(self, i):
+        #pylint: disable=invalid-unary-operand-type
         if not isinstance(i, (slice, Integral)): raise ValueError()
         if self.__len is not None:
             if isinstance(i, slice):
@@ -416,8 +411,9 @@ class ListOfSame(ReadOnlyListWrapper): # does allow 'deleting' though
             elif i >= self.__len or i < -self.__len: raise ValueError()
             self.__len -= 1
     def remove(self, value):
-        if value == self.__val and self.__len != 0: self.__len -= 1
-        raise ValueError('%s is not in list' % value)
+        if value == self.__val and self.__len != 0:
+            if self.__len is not None: self.__len -= 1
+        else: raise ValueError('%s is not in list' % value)
     def __iter__(self): return repeat(self.__val, self.__len)
     def __reversed__(self): return repeat(self.__val, self.__len)
     def __contains__(self, value): return self.__len != 0 and value == self.__val

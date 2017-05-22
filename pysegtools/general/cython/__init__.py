@@ -134,6 +134,7 @@ def __get_dependencies(filename):
     recursively searched. Also the contents of the pyxdep file are added. Does not recursively go
     through .h, .c, .cpp or other files.
     """
+    #pylint: disable=too-many-branches
     dirname = os.path.dirname(filename)
     def fullpath(filename): return os.path.normpath(os.path.join(dirname, filename))
     files = [fullpath(filename)]

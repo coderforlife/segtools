@@ -757,7 +757,7 @@ def __get_mha_writer(fields):
 
 class MetaImage(FileImageSource):
     @classmethod
-    def open(cls, filename, readonly=False, **options):
+    def open(cls, filename, readonly=False, **options): #pylint: disable=arguments-differ
         if len(options) > 0: raise ValueError('Invalid option given')
         with openfile(filename, 'rb') as f:
             fields, headersize = read_mha_header(f)
@@ -779,7 +779,7 @@ class MetaImage(FileImageSource):
                    'ElementNumberOfChannels', 'ElementNBits', 'ElementType'}
 
     @classmethod
-    def create(cls, filename, im, writeonly=False, **fields):
+    def create(cls, filename, im, writeonly=False, **fields): #pylint: disable=arguments-differ
         if len(fields.viewkeys() & MetaImage.__forbidden) != 0: raise ValueError("Forbidden fields given")
         fields.setdefault('BinaryData', True)
         mha = os.path.splitext(filename)[1].lower() == '.mha'

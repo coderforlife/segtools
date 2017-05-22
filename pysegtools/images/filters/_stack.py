@@ -24,10 +24,10 @@ class FilteredImageStack(ImageStack):
         if ims is not None: self._ims = ImageStack.as_image_stack(ims)
         if isinstance(slices, type): slices = [slices(im,self,z,*args,**kwargs) for z,im in enumerate(self._ims)]
         super(FilteredImageStack, self).__init__(slices)
-    def print_detailed_info(self, width=None):
-        #fill = ImageStack._get_print_fill(width)
-        #print(fill("Filter:      " + str(self)))
-        super(FilteredImageStack, self).print_detailed_info(width)
+    #def print_detailed_info(self, width=None):
+    #    fill = ImageStack._get_print_fill(width)
+    #    print(fill("Filter:      " + str(self)))
+    #    super(FilteredImageStack, self).print_detailed_info(width)
 
 class FilteredImageSlice(ImageSlice):
     """A slice from a filtered image. This base class simply stores the image source as `_input`."""

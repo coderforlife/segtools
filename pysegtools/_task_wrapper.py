@@ -12,10 +12,11 @@ def __reopen(std, path, mode):
     os.dup2(fd, std.fileno())
     os.close(fd)
 
+#pylint: disable=too-many-arguments
 def _pyproc(func, args, kwargs, wd, stdin, stdout, stdout_append, stderr, stderr_append):
     os.chdir(wd)
     if stdin:  __reopen(sys.stdin, stdin, 0)
     if stdout: __reopen(sys.stdout, stdout, 1 + stdout_append)
-    if stderr is -2: os.dup2(sys.stdout.fileno(), sys.stderr.fileno())
+    if stderr == -2: os.dup2(sys.stdout.fileno(), sys.stderr.fileno())
     elif stderr: __reopen(sys.stderr, stderr, 1 + stderr_append)
     return func(*args, **kwargs)

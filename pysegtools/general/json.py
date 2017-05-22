@@ -28,9 +28,9 @@ def load(path):
     standard dictionaries, lists, strings, numbers, and booleans.
     """
     from pysegtools.general import GzipFile
-    from json import load
+    from json import load as json_load
     with GzipFile(path, 'rb') as f:
-        return load(f, object_hook=__json_load_hook)
+        return json_load(f, object_hook=__json_load_hook)
 
 def add_class_name(name, cls):
     """
