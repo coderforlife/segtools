@@ -164,8 +164,14 @@ class _PILSource(object):
             im = im.quantize() if palette is True else im.quantize(colors=palette)
         im.encoderinfo = options
         im.encoderconfig = ()
+        #try:
         self._save(im, f, filename)
-
+        # TODO:
+        #except IOError:
+            #if im.mode.startswith('I;'):
+            #    im.mode = 'I'
+            #    self._save(im, f, filename)
+                
     def _parse_open_options(self, **options): #pylint: disable=no-self-use
         """
         Parse the options list for options this format supports while opening. Return both the
@@ -313,13 +319,22 @@ class _PILSource(object):
     @property
     def dtype(self):
         dt = self.dtype_raw
-        if self.im.mode=='P' and 'transparency' in self.im.info:
+        if self.im.mode == 'P' and 'transparency' in self.im.info:
             # need to add an extra channel for the transparency data
             from numpy import dtype
             dt = dtype((dt.base, 2 if len(dt.shape) == 0 else (dt.shape[0]+1)))
+        if self.im.mode == 'I':
+            # I is sometimes used for any grayscale image, e.g. PNG u16 images are listed as I
+            # However the "tile" attribute may contain the real mode we should use
+            try:
+                mode = self.im.tile[0][3]
+                if isinstance(mode, (list,tuple)): mode = mode[0]
+                dt = _mode2dtype[mode].newbyteorder('=')
+            except (AttributeError, LookupError, ValueError, TypeError): pass
         return dt
     @property
-    def dtype_raw(self): return _mode2dtype[self.im.palette.mode if self.im.mode == 'P' else self.im.mode]
+    def dtype_raw(self):
+        return _mode2dtype[self.im.palette.mode if self.im.mode == 'P' else self.im.mode]
     @property
     def shape(self): return tuple(reversed(self.im.size))
     def _get_palette(self, dt):
@@ -349,7 +364,7 @@ class _PILSource(object):
             w8 = w if w%8 == 0 else w+8-w%8
             return a.reshape((h,w8)+tuple(dt_final.shape))[:,:w]
         else:
-            a = frombuffer(self.im.tobytes(), dtype=dt)
+            a = frombuffer(self.im.tobytes(), dtype=dt).astype(dt_final, copy=False)
         return a.reshape(tuple(reversed(dt_final.shape+self.im.size)))
     def set_data(self, im): # im is an ImageSource
         im = imsrc2pil(im)
