@@ -185,8 +185,8 @@ class FileImageStack(ImageStack, HandlerManager):
     @property
     def header(self): return self._header
     @staticmethod
-    def _print_header(header, width=None, first_indent=None, indent=2, sub_indent=20):
-        if header is None or len(header) == 0: return
+    def _print_header(header, width=None, first_indent=None, indent=2, sub_indent=20, skip=frozenset()):
+        if header is None or len(header) == 0 or len(header.viewkeys() - skip) == 0: return
         flt_wdth = 50 if width is None else width-sub_indent
         def _filter(x):
             if isinstance(x, bytes) and not all((32 <= ord(c) < 128) or (c in (b'\t\r\n\v')) for c in x):
@@ -211,24 +211,50 @@ class FileImageStack(ImageStack, HandlerManager):
             fill = (lambda x:first_indent+x) if width is None else \
                    TextWrapper(width=width, initial_indent=first_indent, subsequent_indent=' '*sub_indent).fill
         for k,v in header.iteritems():
+            if k in skip: continue
             v = _filter(v)
             s = k+": "
             if len(k) < sub_indent - indent - 2:
                 s += " "*(sub_indent - indent - 2 - len(k))
             print(fill(s+v))
             fill = fill_sub
+    def _shared_header(self):
+        # Gets the shared header items of all slices
+        if len(self._slices) <= 1: return {}
+        def _ne(a, b):
+            from numpy import ndarray
+            if isinstance(a, ndarray) and isinstance(b, ndarray): return (a!=b).any()
+            return a != b
+        itr = iter(self._slices)
+        hdr = next(itr).header
+        if hdr is None or len(hdr) == 0: return {} # no possible shared header
+        shared = dict(hdr)
+        for im in itr:
+            hdr = im.header
+            if hdr is None or len(hdr) == 0: return {} # no possible shared header
+            for k in shared.viewkeys() - hdr.viewkeys(): del shared[k] # remove all keys that are no longer there
+            for k in (k for k,v in shared.iteritems() if _ne(hdr[k], v)): del shared[k] # remove all keys that have changed values
+            if len(shared) == 0: return {} # no possible shared header
+        return shared
     def _print_general_header(self, width=None):
         if self.header and len(self.header) > 0:
             print(ImageStack._get_print_fill(width)("Header:"))
             FileImageStack._print_header(self.header, width)
+        # Get the shared header items of all slices
+        shared = self._shared_header()
+        if shared is not None:
+            print("  shared slice header:")
+            FileImageStack._print_header(shared, width, None, len(str(self._d-1))+4)
     def _print_homo_slice_header_gen(self, width=None):
         z_width = len(str(self._d-1))
         ind = "  {z:0>%d}: " % z_width
-        for z,im in enumerate(self._slices): yield FileImageStack._print_header(im.header, width, ind.format(z=z), z_width+4)
+        skip = self._shared_header().viewkeys()
+        for z,im in enumerate(self._slices): yield FileImageStack._print_header(im.header, width, ind.format(z=z), z_width+4, skip=skip)
     def _print_hetero_slice_header_gen(self, width=None):
         gen = super(FileImageStack, self)._print_hetero_slice_header_gen(width)
         z_width = len(str(self._d-1))
-        for im,_ in izip(self._slices, gen): yield FileImageStack._print_header(im.header, width, None, z_width+2)
+        skip = self._shared_header().viewkeys()
+        for im,_ in izip(self._slices, gen): yield FileImageStack._print_header(im.header, width, None, z_width+2, skip=skip)
 
 
     # Internal slice manipulations - primary functions to be implemented by base classes

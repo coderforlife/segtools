@@ -122,20 +122,22 @@ class FileCollectionStack(FileImageStack):
         fill = ImageStack._get_print_fill(width)
         z_width = len(str(self._d-1))
         line = "  {z:0>%d}: {handler}: {filename}" % z_width
+        skip = self._shared_header().viewkeys()
         for z,im in enumerate(self._slices):
             print(fill(line.format(z=z, filename=im._source.filename, handler=type(im._source).__name__)))
-            yield FileImageStack._print_header(im.header, width, None, z_width+4)
+            yield FileImageStack._print_header(im.header, width, None, z_width+4, skip=skip)
     def _print_hetero_slice_header_gen(self, width=None):
         from .._stack import ImageStack
         from ..types import im_dtype_desc
         fill = ImageStack._get_print_fill(width)
         z_width = len(str(self._d-1))
         line = "{z:0>%d}: {handler}: {w}x{h} {dt} {nb}kb {filename}" % z_width
+        skip = self._shared_header().viewkeys()
         for z,im in enumerate(self._slices):
             nb = im.w*im.h*im.dtype.itemsize//1024
             print(fill(line.format(z=z, w=im.w, h=im.h, dt=im_dtype_desc(im.dtype), nb=nb,
                                    filename=im._source.filename, handler=type(im._source).__name__)))
-            yield FileImageStack._print_header(im.header, width, None, z_width+2)
+            yield FileImageStack._print_header(im.header, width, None, z_width+2, skip=skip)
 
     @property
     def filenames(self): return tuple(ravel(s._source.filenames for s in self._slices))
