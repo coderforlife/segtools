@@ -251,57 +251,71 @@ def replace_rows(keys not None, vals not None, arr not None):
 
 ########## Search Sorted ##########
 cdef extern from * nogil:
-    cdef void row_lower_bounds[T](const T*, const T*, const T*, const T*, uintp*, intp)
-    cdef void row_upper_bounds[T](const T*, const T*, const T*, const T*, uintp*, intp)
+    cdef uintp row_lower_bound[T](const T*, const T*, const T*, intp)
+    cdef uintp row_upper_bound[T](const T*, const T*, const T*, intp)
 
-    
 def __searchsorted_rows_left_fallback(ndarray s not None, ndarray a not None, ndarray out not None):
+    cdef intp i, nrows = PyArray_DIM(a,0), ncols = PyArray_STRIDE(a,0)
+    cdef npy_ubyte* first = <npy_ubyte*>PyArray_DATA(s)
+    cdef npy_ubyte* last = first + PyArray_DIM(s,0)*ncols
+    cdef npy_ubyte* vals = <npy_ubyte*>PyArray_DATA(a)
+    cdef uintp* out_p = <uintp*>PyArray_DATA(out)
     with nogil:
-        row_lower_bounds(<npy_ubyte*>PyArray_DATA(s), <npy_ubyte*>PyArray_DATA(s)+PyArray_STRIDE(s,0),
-                         <npy_ubyte*>PyArray_DATA(a), <npy_ubyte*>PyArray_DATA(a)+PyArray_STRIDE(a,0),
-                         <uintp*>PyArray_DATA(out), PyArray_STRIDE(a,0))
+        for i in xrange(nrows): out_p[i] = row_lower_bound(first, last, vals, ncols)
 
 @fused(fallback=__searchsorted_rows_left_fallback)
 def __searchsorted_rows_left(ndarray[npy_number, ndim=2] s not None, ndarray[npy_number, ndim=2] a not None, ndarray out not None):
-    cdef intp ncols = PyArray_DIM(a,1)
+    cdef intp i, nrows = PyArray_DIM(a,0), ncols = PyArray_DIM(a,1)
+    cdef npy_ubyte* first = <npy_ubyte*>PyArray_DATA(s)
+    cdef npy_ubyte* last = first + PyArray_DIM(s,0)*ncols
+    cdef npy_ubyte* vals = <npy_ubyte*>PyArray_DATA(a)
+    cdef uintp* out_p = <uintp*>PyArray_DATA(out)
     with nogil:
-        row_lower_bounds(<npy_number*>PyArray_DATA(s), <npy_number*>PyArray_DATA(s)+PyArray_DIM(s,0)*ncols,
-                         <npy_number*>PyArray_DATA(a), <npy_number*>PyArray_DATA(a)+PyArray_DIM(a,0)*ncols,
-                         <uintp*>PyArray_DATA(out), ncols)
+        for i in xrange(nrows): out_p[i] = row_lower_bound(first, last, vals, ncols)
             
 def __searchsorted_rows_right_fallback(ndarray s not None, ndarray a not None, ndarray out not None):
+    cdef intp i, nrows = PyArray_DIM(a,0), ncols = PyArray_STRIDE(a,0)
+    cdef npy_ubyte* first = <npy_ubyte*>PyArray_DATA(s)
+    cdef npy_ubyte* last = first + PyArray_DIM(s,0)*ncols
+    cdef npy_ubyte* vals = <npy_ubyte*>PyArray_DATA(a)
+    cdef uintp* out_p = <uintp*>PyArray_DATA(out)
     with nogil:
-        row_upper_bounds(<npy_ubyte*>PyArray_DATA(s), <npy_ubyte*>PyArray_DATA(s)+PyArray_STRIDE(s,0),
-                         <npy_ubyte*>PyArray_DATA(a), <npy_ubyte*>PyArray_DATA(a)+PyArray_STRIDE(a,0),
-                         <uintp*>PyArray_DATA(out), PyArray_STRIDE(a,0))
+        for i in xrange(nrows): out_p[i] = row_upper_bound(first, last, vals, ncols)
 
 @fused(fallback=__searchsorted_rows_right_fallback)
 def __searchsorted_rows_right(ndarray[npy_number, ndim=2] s not None, ndarray[npy_number, ndim=2] a not None, ndarray out not None):
-    cdef intp ncols = PyArray_DIM(a,1)
+    cdef intp i, nrows = PyArray_DIM(a,0), ncols = PyArray_DIM(a,1)
+    cdef npy_number* first = <npy_number*>PyArray_DATA(s)
+    cdef npy_number* last = first + PyArray_DIM(s,0)*ncols
+    cdef npy_number* vals = <npy_number*>PyArray_DATA(a)
+    cdef uintp* out_p = <uintp*>PyArray_DATA(out)
     with nogil:
-        row_upper_bounds(<npy_number*>PyArray_DATA(s), <npy_number*>PyArray_DATA(s)+PyArray_DIM(s,0)*ncols,
-                         <npy_number*>PyArray_DATA(a), <npy_number*>PyArray_DATA(a)+PyArray_DIM(a,0)*ncols,
-                         <uintp*>PyArray_DATA(out), ncols)
+        for i in xrange(nrows): out_p[i] = row_upper_bound(first, last, vals, ncols)
 
 def searchsorted_rows(sorted not None, arr not None, side='left'):
     """
     Takes each row in arr and searches for it in sorted using a binary search. This is basically the
     Numpy method searchsorted but it works on rows and doesn't support the "sorter" option argument.
 
+    sorted is the sorted data to go through. arr is the row or rows to search for. If sorted is MxN
+    then arr must be an N long vector or a PxN matrix where P is the number of samples to check for. 
+
     For non-basic data types this falls back to using the same method on the raw binary data of each
     row.
     """
-    cdef ndarray a = npy_check(arr, 2)
     cdef ndarray s = npy_check2D(sorted)
+    cdef ndarray a = npy_check2D(arr)
     cdef NPY_SEARCHSIDE sside
+    cdef intp n = PyArray_DIM(a,0)
     PyArray_SearchsideConverter(side, &sside)
     if not PyArray_EquivArrTypes(s,a): raise ValueError('Input and sorted arrays must have the same dtype')
-    if PyArray_DIM(s,1) != PyArray_DIM(a,PyArray_NDIM(a)-1): raise ValueError('Input and sorted arrays must have the same number of columns')
-    cdef ndarray out = PyArray_EMPTY(PyArray_NDIM(a)-1, PyArray_SHAPE(a), NPY_UINTP, False)
+    if PyArray_DIM(s,1) != PyArray_DIM(a,1): raise ValueError('Input and sorted arrays must have the same number of columns')
+    cdef ndarray out = PyArray_EMPTY(1, &n, NPY_UINTP, False)
     if PyArray_SIZE(a) == 0: pass
-    elif sside == NPY_SEARCHLEFT:  __searchsorted_rows_left[PyArray_TYPE(a)](npy_ravel_rows(a), s, out)
-    elif sside == NPY_SEARCHRIGHT: __searchsorted_rows_right[PyArray_TYPE(a)](npy_ravel_rows(a), s, out)
-    return out
+    elif sside == NPY_SEARCHLEFT:  __searchsorted_rows_left[PyArray_TYPE(a)](s, a, out)
+    elif sside == NPY_SEARCHRIGHT: __searchsorted_rows_right[PyArray_TYPE(a)](s, a, out)
+    else: raise ValueError('Unknown side value')
+    return out[0] if n == 1 else out
 
 
 ########## Number ##########

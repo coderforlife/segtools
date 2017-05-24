@@ -213,16 +213,16 @@ class ConsecutivelyNumberImageStack(_LabeledImageStack):
             self.__calc_im = lambda im: None
             self._n_labels = 0
             return
-        dt, nchans = get_im_dtype_and_nchan(self.dtype)
+        dt, nchans = get_im_dtype_and_nchan(self._ims.dtype)
         single_chan = nchans == 1
         slices = iter(self._slices)
         if single_chan:
             vals = _label.unique_fast(next(slices)._input.data)
-            for slc in slices: vals = _label.unique_merge(vals, _label.unique_fast(slc._input._data))
+            for slc in slices: vals = _label.unique_merge(vals, _label.unique_fast(slc._input.data))
             zero = dt.type(0)
         else:
             vals = _label.unique_rows_fast(next(slices)._input.data)
-            for slc in slices: vals = _label.unique_rows_merge(vals, _label.unique_rows_fast(slc._input._data))
+            for slc in slices: vals = _label.unique_rows_merge(vals, _label.unique_rows_fast(slc._input.data))
 
         if _label.with_cython:
             # Prepare to use replace (vals, idxs)
@@ -230,7 +230,7 @@ class ConsecutivelyNumberImageStack(_LabeledImageStack):
                 pos0 = vals.searchsorted(zero)
             else:
                 zero = zeros((1,nchans), dtype=dt)
-                pos0 = _label.searchsorted_rows(vals, zero)[0]
+                pos0 = _label.searchsorted_rows(vals, zero)
             if pos0 == len(vals) or (vals[pos0] != 0).any():
                 vals = concatenate((zero, vals)) # add 0 to the beginning
             elif pos0 != 0:
