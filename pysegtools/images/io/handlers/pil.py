@@ -164,14 +164,8 @@ class _PILSource(object):
             im = im.quantize() if palette is True else im.quantize(colors=palette)
         im.encoderinfo = options
         im.encoderconfig = ()
-        #try:
         self._save(im, f, filename)
-        # TODO:
-        #except IOError:
-            #if im.mode.startswith('I;'):
-            #    im.mode = 'I'
-            #    self._save(im, f, filename)
-                
+
     def _parse_open_options(self, **options): #pylint: disable=no-self-use
         """
         Parse the options list for options this format supports while opening. Return both the
@@ -367,8 +361,8 @@ class _PILSource(object):
             a = frombuffer(self.im.tobytes(), dtype=dt).astype(dt_final, copy=False)
         return a.reshape(tuple(reversed(dt_final.shape+self.im.size)))
     def set_data(self, im): # im is an ImageSource
-        im = imsrc2pil(im)
-        with open(self.filename, 'wb') as f: self._save_pil_image(f, self.filename, im, **self.save_options)
+        pil = imsrc2pil(im)
+        with open(self.filename, 'wb') as f: self._save_pil_image(f, self.filename, pil, **self.save_options)
         if isinstance(self.im, DummyImage): # if writeonly don't reopen image
             self.im.set(im.dtype, im.shape)
         else:
@@ -480,6 +474,12 @@ class _PNGSource(_PILSource):
         save_options['compression'] = compression
         if _bool(optimize): save_options['optimize'] = True
         return save_options, options
+    def _save_pil_image(self, f, filename, im, palette=False, **options):
+        # This wrapper makes up for the fact that PIL PNG writer requires a 32-bit grayscale image
+        # when actually saving a 16-bit grayscale image.
+        if im.mode in ('I', 'I;32', 'I;32B', 'I;32L', 'I;32N'): raise ValueError('PNG images do not support 32-bit grayscale images')
+        if im.mode in ('I;16', 'I;16B', 'I;16L', 'I;16N'): im = im.convert('I')
+        super(_PNGSource, self)._save_pil_image(f, filename, im, palette, **options)
     # The text values seem to be already included in info, so don't double add them
     #@property
     #def header_info(self):
