@@ -68,8 +68,6 @@ def scale(im, in_scale=None, out_scale=None, dt=None):
     out_scale[0] != out_scale[1]
     """
     
-    print(in_scale, out_scale)
-    
     # Process arguments
     check_image_or_stack(im)
     if in_scale is None and out_scale is None and dt is None: return im
@@ -100,8 +98,6 @@ def scale(im, in_scale=None, out_scale=None, dt=None):
 
     rev = out_scale[0] > out_scale[1]
     if rev: out_scale = out_scale[::-1]
-
-    print(in_scale, out_scale)
     
     # Perform conversion
     # b -> any
@@ -134,7 +130,7 @@ def scale(im, in_scale=None, out_scale=None, dt=None):
             in_range, out_range = in_range//d, out_range//d
             if in_range == 1:
                 im = im.astype(u_dt, copy=False)
-                im *= im.u_dt.type(out_range)
+                im *= u_dt.type(out_range)
             elif out_range == 1:
                 im /= im.dtype.type(in_range)
             else:
