@@ -49,12 +49,15 @@ class MRCFlags(int32, Flags): #pylint: disable=no-init
     SignedByte = 1
     PixelSpacingFromSizeInExtHeader = 2
     OriginSignInverted = 4
+    RMSNegIfInvalid = 8
+    Nibble2InByte = 16
 
 class MRCEndian(bytes, Enum): #pylint: disable=no-init
-    Little    = b'\x44\x41\x00\x00'
-    LittleAlt = b'\x44\x00\x00\x00'
-    Big       = b'\x17\x17\x00\x00'
-    BigAlt    = b'\x17\x00\x00\x00'
+    Little     = b'\x44\x41\x00\x00'
+    LittleAlt  = b'\x44\x00\x00\x00'
+    LittleAlt2 = b'\x44\x44\x00\x00'
+    Big        = b'\x17\x17\x00\x00'
+    BigAlt     = b'\x17\x00\x00\x00'
 
 _dtype2mode = {
     1:{uint8:MRCMode.Byte, int8:MRCMode.Byte, int16:MRCMode.Short, uint16:MRCMode.UShort,
@@ -79,7 +82,7 @@ class MRC(HomogeneousFileImageStack):
     """
 
     @classmethod
-    def open(cls, f, readonly=False, **options):
+    def open(cls, f, readonly=False, **options): #pylint: disable=arguments-differ
         """
         Opens an MRC file. Provide a filename or a file-like object. You can specify if it should be
         opened readonly or not. No extra options are supported.
@@ -99,7 +102,7 @@ class MRC(HomogeneousFileImageStack):
         if raw[208:212] == MAP_:
             stamp = raw[212:216]
             if stamp in (MRCEndian.Big, MRCEndian.BigAlt): endian = '>'
-            elif stamp not in (MRCEndian.Little, MRCEndian.LittleAlt): return False
+            elif stamp not in (MRCEndian.Little, MRCEndian.LittleAlt, MRCEndian.LittleAlt2): return False
         u32_struct = Struct(str(endian+'i'))
         u32 = lambda b,off: u32_struct.unpack_from(b,off)[0]
         return (u32(raw, 0) > 0 and u32(raw, 4) > 0 and u32(raw, 8) >= 0 and # nx/ny/nz
@@ -110,7 +113,7 @@ class MRC(HomogeneousFileImageStack):
                 0 <= u32(raw, 220) <= LBL_COUNT) # nlbl
 
     @classmethod
-    def create(cls, f, ims, writeonly=False, **options):
+    def create(cls, f, ims, writeonly=False, **options): #pylint: disable=arguments-differ
         """
         Creates a new MRC file. Provide a filename or a file-like object. The image stack must
         contain at least one image.
@@ -168,9 +171,9 @@ Supported image types:""")
 
     def _get_off(self, z): return self._off+z*self._slc_bytes
 
-    def _delete(self, idx):
-        file_remove_ranges(self._file, [(self._get_off(start), self._get_off(stop)) for start,stop in idx])
-        for start,stop in idx: self._delete_slices(start, stop)
+    def _delete(self, idxs):
+        file_remove_ranges(self._file, [(self._get_off(start), self._get_off(stop)) for start,stop in idxs])
+        for start,stop in idxs: self._delete_slices(start, stop)
     def _insert(self, idx, ims):
         if any(self._shape != im.shape or self._dtype != im.dtype for im in ims): raise ValueError('MRC files require all slices to be the same data type and size')
         end = idx + len(ims)
@@ -288,7 +291,7 @@ class MRCHeader(FileImageStackHeader):
                 endian = '<'
                 stamp = raw[212:216]
                 if stamp in (MRCEndian.Big, MRCEndian.BigAlt): endian = '>'
-                elif stamp not in (MRCEndian.Little, MRCEndian.LittleAlt): raise ValueError('MRC file is invalid')
+                elif stamp not in (MRCEndian.Little, MRCEndian.LittleAlt, MRCEndian.LittleAlt2): raise ValueError('MRC file is invalid')
                 flds, s = MRCHeader.__fields_new, endian + MRCHeader.__format_new
             else:
                 self._is_new = False
@@ -298,9 +301,10 @@ class MRCHeader(FileImageStackHeader):
             self._data = h = OrderedDict(izip(self._fields, self._struct.unpack(raw)))
             #if self._data['mode'] == 5: self._data['mode'] = 0
             self._check()
-            #h['imodFlags'] = MRCFlags(h['imodFlags']) if h['imodStamp'] == IMOD else MRCFlags.None
-
-            if h['nx'] <= 0 or h['ny'] <= 0 or h['nz'] < 0:  raise ValueError('MRC file is invalid (dims are %dx%dx%d)' % (h['nx'], h['ny'], h['nz']))
+            if self._data['imodStamp'] == IMOD and MRCFlags.Nibble2InByte in self._data['imodFlags']:
+                raise ValueError('nibble based MRC files are not supported')
+            
+            if h['nx'] <= 0 or h['ny'] <= 0 or h['nz'] < 0: raise ValueError('MRC file is invalid (dims are %dx%dx%d)' % (h['nx'], h['ny'], h['nz']))
             if (h['mapc'],h['mapr'],h['maps']) != (1,2,3): raise ValueError('MRC file has an unsupported data ordering (%d, %d, %d)' % (h['mapc'], h['mapr'], h['maps']))
 
             self._labels = self.__get_labels(f)
@@ -353,6 +357,7 @@ class MRCHeader(FileImageStackHeader):
         ny, nx = shape
         self._fields.update(MRCHeader.__fields_new)
         self._struct = Struct(str(endian + MRCHeader.__format_new))
+        flags = (MRCFlags.SignedByte|MRCFlags.RMSValueNegIfInvalid) if dt.type == int8 else MRCFlags.RMSValueNegIfInvalid
         self._data = OrderedDict([
             ('nx',nx), ('ny',ny), ('nz',0),
             ('mode',mode),
@@ -362,12 +367,12 @@ class MRCHeader(FileImageStackHeader):
             ('alpha',90.0), ('beta',90.0), ('gamma',90.0), ('mapc',1), ('mapr',2), ('maps',3),
             ('amin',0.0), ('amax',0.0), ('amean',0.0),
             ('ispf',0), ('next',0), ('creatid',0), ('nint',0), ('nreal',0),
-            ('imodStamp',IMOD), ('imodFlags',MRCFlags.SignedByte if dt.type == int8 else MRCFlags(0)),
+            ('imodStamp',IMOD), ('imodFlags',flags),
             ('idtype',0), ('lens',0), ('nd1',0), ('nd2',0), ('vd1',0), ('vd2',0),
             ('tiltangles0',0.0), ('tiltangles1',0.0), ('tiltangles2',0.0), ('tiltangles3',0.0), ('tiltangles4',0.0), ('tiltangles5',0.0),
             ('xorg',0.0), ('yorg',0.0), ('zorg',0.0),
             ('cmap',MAP_), ('stamp',MRCEndian.Little if endian == '<' else MRCEndian.Big),
-            ('rms',0.0),
+            ('rms',-1.0),
             ('nlabl',1),
         ])
         self._labels = ['Python MRC Creation']
@@ -399,7 +404,8 @@ class MRCHeader(FileImageStackHeader):
         del self._data['wave5']
         self._data['cmap'] = MAP_
         self._data['stamp'] = MRCEndian.Little
-        self._data['rms'] = float32(0.0)
+        self._data['imodFlags'] |= MRCFlags.RMSNegIfInvalid
+        self._data['rms'] = float32(-1.0)
         self._fields = MRCHeader.__fields_base.copy()
         self._fields.update(MRCHeader.__fields_new)
         self._struct = Struct(str('<' + MRCHeader.__format_new))
@@ -480,6 +486,8 @@ class MRCHeader(FileImageStackHeader):
         """
         if self._imstack._readonly: raise AttributeError('header is readonly')
         if update_pixel_values: self.update_pixel_values()
+        self._data['imodFlags'] |= MRCFlags.RMSNegIfInvalid
+        self._data['rms'] = float32(-1.0)
         self._check()
         if self._old_next != self._data['next']:
             # Header changed size, need to shift image data
@@ -525,8 +533,8 @@ class LabelList(ListWrapper):
             else: raise ValueError('too many labels') # inserting in middle
         self._data.insert(i, value)
         self._hdr['nlabl'] = int32(len(self._data))
-    def extend(self, values):
-        values = [Unicode(value) for value in values]
+    def extend(self, itr):
+        values = [Unicode(value) for value in itr]
         if len(values) > LBL_COUNT: raise ValueError('adding too many labels')
         if any(len(value) > LBL_LEN for value in values): raise ValueError('label too long')
         if len(self._data) + len(values) > LBL_COUNT:

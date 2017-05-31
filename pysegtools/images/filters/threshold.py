@@ -361,14 +361,14 @@ list of thresholds - one for each slice.
     @classmethod
     def _see_also(cls): return ('hysteresis-threshold','multithreshold','invert','scale')
     def __str__(self):
+        #pylint: disable=not-an-iterable
         if self._thresh == 'auto':
             return 'threshold'
-        elif self._thresh == 'auto-stack':
+        if self._thresh == 'auto-stack':
             return 'threshold stack'
-        elif len(self._thresh) == 1:
+        if len(self._thresh) == 1:
             return ('threshold at %s' % self._thresh)
-        else:
-            return 'threshold at [%s]' % (",".join(str(t) for t in self._thresh))
+        return 'threshold at [%s]' % (",".join(str(t) for t in self._thresh))
     def execute(self, stack): stack.push(ThresholdImageStack(stack.pop(), self._thresh))
 
 class HysteresisThresholdCommand(CommandEasy):
@@ -399,18 +399,18 @@ colon or a comma-seperated list of colon-separated thresholds - one for each sli
     @classmethod
     def _see_also(cls): return ('threshold','multithreshold','invert','scale')
     def __str__(self):
+        #pylint: disable=not-an-iterable
         if self._thresh == 'auto':
             return 'hysteresis-threshold'
-        elif self._thresh == 'auto-stack':
+        if self._thresh == 'auto-stack':
             return 'hysteresis-threshold stack'
-        elif len(self._thresh) == 1:
+        if len(self._thresh) == 1:
             return 'hysteresis-threshold at %s:%s' % self._thresh
-        else:
-            return 'hysteresis-threshold at [%s]' % (",".join("%s:%s"%t for t in self._thresh))
+        return 'hysteresis-threshold at [%s]' % (",".join("%s:%s"%t for t in self._thresh))
     def execute(self, stack): stack.push(HysteresisThresholdImageStack(stack.pop(), self._thresh))
 
 class MultithresholdCommand(CommandEasy):
-    _thresh = None
+    _thresh = (4,)
     @classmethod
     def name(cls): return 'multithreshold'
     @classmethod
@@ -425,7 +425,7 @@ slice. If the value is negative it operates across all slices. Default value is 
     def flags(cls): return ('multithreshold', 'multithresh')
     @classmethod
     def _opts(cls): return (
-        Opt('thresh', "The number of thresholds or comma-seperated list of numbers for the thresholds", Opt.cast_tuple_of(Opt.cast_number(), 1), 4),
+        Opt('thresh', "The number of thresholds or comma-seperated list of numbers for the thresholds", Opt.cast_tuple_of(Opt.cast_number(), 1), (4,)),
         )
     @classmethod
     def _consumes(cls): return ('Grayscale image stack to be thresholded',)
@@ -437,8 +437,6 @@ slice. If the value is negative it operates across all slices. Default value is 
         if len(self._thresh) == 1:
             if self._thresh[0] < 0:
                 return 'multithreshold of %d levels across entire stack' % -self._thresh[0]
-            else:
-                return 'multithreshold of %d levels' % self._thresh[0]
-        else:
-            return 'multithreshold with ' + (",".join(str(t) for t in self._thresh))
+            return 'multithreshold of %d levels' % self._thresh[0]
+        return 'multithreshold with ' + (",".join(str(t) for t in self._thresh))
     def execute(self, stack): stack.push(MultithresholdImageStack(stack.pop(), self._thresh[0] if len(self._thresh) == 1 else self._thresh))

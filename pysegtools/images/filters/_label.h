@@ -18,8 +18,8 @@ template <typename T> inline intptr_t row_set_union(const T* first1, const T* la
 template <typename T> intptr_t merge_sort_unique(T* first, T* last);
 template <typename T> inline intptr_t merge_sort_unique_rows(T* first, T* last, const intptr_t ncols);
 // Row-Lower/Upper-Bound: run binary search on a sorted array (see std::lower_bound/std::upper_bound for more details); runs for multiple values
-template <typename T> inline void row_lower_bounds(const T* sorted_first, const T* sorted_last, const T* first, const T* last, uintptr_t* out, const intptr_t ncols);
-template <typename T> inline void row_upper_bounds(const T* sorted_first, const T* sorted_last, const T* first, const T* last, uintptr_t* out, const intptr_t ncols);
+template <typename T> inline void row_lower_bound(const T* sorted_first, const T* sorted_last, const T* first, const T* last, uintptr_t* out, const intptr_t ncols);
+template <typename T> inline void row_upper_bound(const T* sorted_first, const T* sorted_last, const T* first, const T* last, uintptr_t* out, const intptr_t ncols);
 
 
 #include <algorithm> // std::copy, std::unique, std::unique_copy
@@ -479,68 +479,30 @@ inline uintptr_t __row_upper_bound(const T* first, const T* last, const T* val, 
     }
     return (itr-first)/ncols;
 }
-template <typename T>
-inline void __row_lower_bounds(const T* sorted_first, const T* sorted_last,
-                               const T* first, const T* last, uintptr_t* out, const intptr_t ncols)
-{
-    for (; first != last; first += ncols, ++out)
-    {
-        *out = __row_lower_bound(sorted_first, sorted_last, first, ncols);
-    }
-}
-template <typename T>
-inline void __row_upper_bounds(const T* sorted_first, const T* sorted_last,
-                               const T* first, const T* last, uintptr_t* out, const intptr_t ncols)
-{
-    for (; first != last; first += ncols, ++out)
-    {
-        *out = __row_upper_bound(sorted_first, sorted_last, first, ncols);
-    }
-}
-template <typename T, intptr_t ncols>
-inline void __row_lower_bounds(const T* sorted_first, const T* sorted_last,
-                               const T* first, const T* last, uintptr_t* out)
-{
-    for (; first != last; first += ncols, ++out)
-    {
-        *out = __row_lower_bound<T,ncols>(sorted_first, sorted_last, first);
-    }
-}
-template <typename T, intptr_t ncols>
-inline void __row_upper_bounds(const T* sorted_first, const T* sorted_last,
-                               const T* first, const T* last, uintptr_t* out)
-{
-    for (; first != last; first += ncols, ++out)
-    {
-        *out = __row_upper_bound<T,ncols>(sorted_first, sorted_last, first);
-    }
-}
 
 
 // These functions make the above usable in Cython and choose a specialization based on the number of columns (currently 1-4 columns are specialized)
 template <typename T>
-inline void row_lower_bounds(const T* sorted_first, const T* sorted_last,
-                             const T* first, const T* last, uintptr_t* out, const intptr_t ncols)
+inline uintptr_t row_lower_bound(const T* first, const T* last, const T* val, const intptr_t ncols)
 {
     switch (ncols)
     {
-    case 1: return __row_lower_bounds<T,1>(sorted_first, sorted_last, first, last, out);
-    case 2: return __row_lower_bounds<T,2>(sorted_first, sorted_last, first, last, out);
-    case 3: return __row_lower_bounds<T,3>(sorted_first, sorted_last, first, last, out);
-    case 4: return __row_lower_bounds<T,4>(sorted_first, sorted_last, first, last, out);
-    default: return __row_lower_bounds(sorted_first, sorted_last, first, last, out, ncols);
+    case 1: return __row_lower_bound<T,1>(first, last, val);
+    case 2: return __row_lower_bound<T,2>(first, last, val);
+    case 3: return __row_lower_bound<T,3>(first, last, val);
+    case 4: return __row_lower_bound<T,4>(first, last, val);
+    default: return __row_lower_bound(first, last, val, ncols);
     }
 }
 template <typename T>
-inline void row_upper_bounds(const T* sorted_first, const T* sorted_last,
-                             const T* first, const T* last, uintptr_t* out, const intptr_t ncols)
+inline uintptr_t row_upper_bound(const T* first, const T* last, const T* val, const intptr_t ncols)
 {
     switch (ncols)
     {
-    case 1: return __row_upper_bounds<T,1>(sorted_first, sorted_last, first, last, out);
-    case 2: return __row_upper_bounds<T,2>(sorted_first, sorted_last, first, last, out);
-    case 3: return __row_upper_bounds<T,3>(sorted_first, sorted_last, first, last, out);
-    case 4: return __row_upper_bounds<T,4>(sorted_first, sorted_last, first, last, out);
-    default: return __row_upper_bounds(sorted_first, sorted_last, first, last, out, ncols);
+    case 1: return __row_upper_bound<T,1>(first, last, val);
+    case 2: return __row_upper_bound<T,2>(first, last, val);
+    case 3: return __row_upper_bound<T,3>(first, last, val);
+    case 4: return __row_upper_bound<T,4>(first, last, val);
+    default: return __row_upper_bound(first, last, val, ncols);
     }
 }

@@ -38,7 +38,7 @@ class MAT(FileImageSource):
         return name
     
     @classmethod
-    def open(cls, filename, readonly=False, name=None, **options):
+    def open(cls, filename, readonly=False, name=None, **options): #pylint: disable=arguments-differ
         if len(options) > 0: raise ValueError('Invalid option given')
         mat = openmat(filename, 'r' if readonly else 'r+')
         try:
@@ -54,11 +54,11 @@ class MAT(FileImageSource):
         return MAT(mat, e, readonly, name is None)
 
     @classmethod
-    def _openable(cls, filename, f, readonly=False, name=None, **options):
+    def _openable(cls, filename, f, readonly=False, name=None, **options):#pylint: disable=arguments-differ
         return len(options) == 0 and (name is None or not is_invalid_matlab_name(name)) and get_mat_version(f) is not False
 
     @classmethod
-    def create(cls, filename, im, writeonly=False, name=None, version=None, append=False, **options):
+    def create(cls, filename, im, writeonly=False, name=None, version=None, append=False, **options):#pylint: disable=arguments-differ
         if len(options) > 0: raise ValueError('Invalid option given')
         if name is not None and is_invalid_matlab_name(name): raise ValueError('Invalid name for MAT file entries')
         if _bool(append):
@@ -75,7 +75,7 @@ class MAT(FileImageSource):
         return MAT(mat, e, False, False)
 
     @classmethod
-    def _creatable(cls, filename, ext, writeonly=False, name=None, version=None, append=False, **options):
+    def _creatable(cls, filename, ext, writeonly=False, name=None, version=None, append=False, **options):#pylint: disable=arguments-differ
         if len(options) > 0 or (name is not None and is_invalid_matlab_name(name)) or ext != '.mat': return False
         if not _bool(append): return MAT._parse_vers(version) is not False
         if version is not None: return False
@@ -173,7 +173,7 @@ class MATStack(HomogeneousFileImageStack):
                       key=lambda e:int(e.name[a:len(e.name)-b]))
 
     @classmethod
-    def open(cls, filename, readonly=False, name=None, names=None, mode=None, **options):
+    def open(cls, filename, readonly=False, name=None, names=None, mode=None, **options): #pylint: disable=arguments-differ
         if len(options) > 0: raise ValueError('Invalid option given')
         if mode not in (None, 'slices', 'stack'): raise ValueError('Invalid mode given, must be slices or stack')
         if None not in (name, names): raise ValueError('name and names options cannot both be given')
@@ -214,7 +214,7 @@ class MATStack(HomogeneousFileImageStack):
         except: mat.close(); raise
         
     @classmethod
-    def _openable(cls, filename, f, readonly=False, name=None, names=None, mode=None, **options):
+    def _openable(cls, filename, f, readonly=False, name=None, names=None, mode=None, **options): #pylint: disable=arguments-differ
         if len(options) > 0 or mode not in (None, 'slices', 'stack') or None not in (name, names): return False
         if name is not None:
             if mode == 'slices' or is_invalid_matlab_name(name): return False
@@ -228,7 +228,7 @@ class MATStack(HomogeneousFileImageStack):
         return vers is not False and (vers != 0 or name is None and mode != 'stack')
 
     @classmethod
-    def create(cls, filename, ims, writeonly=False,
+    def create(cls, filename, ims, writeonly=False, #pylint: disable=arguments-differ
                name=None, names=None, mode=None, version=None, append=False, **options):
         if len(options) > 0: raise ValueError('Invalid option given')
         if mode not in (None, 'slices', 'stack'): raise ValueError('Invalid mode given, must be slices or stack')
@@ -261,9 +261,8 @@ class MATStack(HomogeneousFileImageStack):
                     if mode == 'stack':
                         entry = mat.append(MAT._uniq_name(mat, 'stack_'), stack) if name is None else mat.set(name, stack)
                         return MATStack(mat, entry, False)
-                    else:
-                        entries = [mat.append(names%z, im.data) for z,im, in enumerate(ims, MATSlices._get_next(mat, names))]
-                        return MATSlices(mat, entries, names, False)
+                    entries = [mat.append(names%z, im.data) for z,im, in enumerate(ims, MATSlices._get_next(mat, names))]
+                    return MATSlices(mat, entries, names, False)
                 except: mat.close(); raise
             # else we let it open normally, file doesn't exist so no appending
         mat = openmat(filename, 'w' if writeonly else 'w+', version)
@@ -271,13 +270,12 @@ class MATStack(HomogeneousFileImageStack):
             if mode == 'stack':
                 entry = mat.append(name or 'stack', stack)
                 return MATStack(mat, entry, False)
-            else:
-                entries = [mat.append(names%z, im.data) for z,im in enumerate(ims)]
-                return MATSlices(mat, entries, names, False)
+            entries = [mat.append(names%z, im.data) for z,im in enumerate(ims)]
+            return MATSlices(mat, entries, names, False)
         except: mat.close(); raise
 
     @classmethod
-    def _creatable(cls, filename, ext, writeonly=False,
+    def _creatable(cls, filename, ext, writeonly=False, #pylint: disable=arguments-differ
                    name=None, names=None, mode=None, version=None, append=False, **options):
         if len(options) > 0 or ext != '.mat' or mode not in (None, 'slices', 'stack') or None not in (name, names): return False
         if name is not None and (mode == 'slices' or is_invalid_matlab_name(name)): return False
@@ -373,16 +371,16 @@ always found.
         self._get_data()
         self._data_slices[z][...] = im
         self._modified = True
-    def _delete(self, idx):
+    def _delete(self, idxs):
         self._get_data()
-        for start,stop in idx: self._delete_slices(start, stop)
+        for start,stop in idxs: self._delete_slices(start, stop)
         if self._data is False:
-            for start,stop in idx:
+            for start,stop in idxs:
                 del self._data_slices[start:stop]
                 del self._data_slices_ro[start:stop]
         else:
-            idx = sorted(chain.from_iterable(xrange(start,stop) for start,stop in idx))
-            self._data = delete(self._data, idx, axis=0)
+            idxs = sorted(chain.from_iterable(xrange(start,stop) for start,stop in idxs))
+            self._data = delete(self._data, idxs, axis=0)
             self._update_data()
         self._modified = True
     def _insert(self, idx, ims):
@@ -446,10 +444,10 @@ class MATSlices(FileImageStack):
         if self._mat: self._mat.close(); self._mat = None
     @property
     def filenames(self): return (self._mat.filename,)
-    def _delete(self, idx_ranges):
-        idx = chain.from_iterable(xrange(start,stop) for start,stop in idx_ranges)
-        del self._mat[[self._slices[i]._entry.name for i in idx]]
-        for start,stop in idx: self._delete_slices(start, stop)
+    def _delete(self, idxs):
+        idxs = chain.from_iterable(xrange(start,stop) for start,stop in idxs)
+        del self._mat[[self._slices[i]._entry.name for i in idxs]]
+        for start,stop in idxs: self._delete_slices(start, stop)
     def _insert(self, idx, ims):
         if idx != self._d: raise RuntimeError('Inserting slices not supported for a set of slices from a MAT file (must append)')
         n = len(ims)

@@ -22,8 +22,7 @@ def _filter(im, flt):
         out = empty(im.shape, dtype=im.dtype)
         for i in xrange(im.shape[2]): flt(im[...,i], output=out[...,i])
         return out
-    else: # Single-channel images
-        return flt(im)
+    return flt(im) # Single-channel images
 
 def _filter3D(ims, flt):
     if ims.ndim not in (3,4): raise ValueError('Unknown image stack type')
@@ -33,8 +32,7 @@ def _filter3D(ims, flt):
         out = empty(ims.shape, dtype=ims.dtype)
         for i in xrange(ims.shape[3]): flt(ims[...,i], output=out[...,i])
         return out
-    else: # Single-channel images
-        return flt(ims)
+    return flt(ims) # Single-channel images
 
 ##### 2D #####
 def gaussian_blur(im, sigma=1.0):

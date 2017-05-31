@@ -88,10 +88,10 @@ class FileImageStack(ImageStack, HandlerManager):
         """
         if isinstance(filename, String):
             return HandlerManager.openable.__func__(cls, filename, readonly, handler, **options)
-        elif isinstance(filename, Iterable):
+        if isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
             return FileCollectionStack.openable(filename, readonly, handler, **options)
-        else: return False
+        return False
 
     @classmethod
     def open_cmd(cls, args, readonly=True):
@@ -107,7 +107,7 @@ class FileImageStack(ImageStack, HandlerManager):
     def _create_trans(cls, im): return ImageStack.as_image_stack(im)
     
     @classmethod
-    def create(cls, filename, ims, writeonly=False, handler=None, **options):
+    def create(cls, filename, im, writeonly=False, handler=None, **options):
         """
         Creates an image-stack file or writes to a series of images as a stack. If 'filename' is a
         string then it is treated as a new file. Otherwise it needs to be an iterable of file names
@@ -126,11 +126,11 @@ class FileImageStack(ImageStack, HandlerManager):
         stack.
         """
         if isinstance(filename, String):
-            return HandlerManager.create.im_func(cls, filename, ims, writeonly, handler, **options)
-        elif filename is None or isinstance(filename, Iterable):
+            return HandlerManager.create.__func__(cls, filename, im, writeonly, handler, **options)
+        if filename is None or isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
-            return FileCollectionStack.create(filename, [ImageSource.as_image_source(im) for im in ims], writeonly, handler, **options)
-        else: raise ValueError()
+            return FileCollectionStack.create(filename, [ImageSource.as_image_source(i) for i in im], writeonly, handler, **options)
+        raise ValueError()
 
     @classmethod
     def creatable(cls, filename, writeonly=False, handler=None, **options):
@@ -141,11 +141,11 @@ class FileImageStack(ImageStack, HandlerManager):
         "pattern" option with an extension and %d in it.
         """
         if isinstance(filename, String):
-            return HandlerManager.creatable.im_func(cls, filename, writeonly, handler, **options)
-        elif filename is None or isinstance(filename, Iterable):
+            return HandlerManager.creatable.__func__(cls, filename, writeonly, handler, **options)
+        if filename is None or isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
             return FileCollectionStack.creatable(filename, writeonly, handler, **options)
-        else: return False
+        return False
 
     @classmethod
     def create_cmd(cls, args, ims, writeonly=True):
@@ -179,14 +179,14 @@ class FileImageStack(ImageStack, HandlerManager):
         if self._readonly: raise AttributeError('readonly')
         self._header.save()
     def close(self): pass
-    def __delete__(self): self.close()
+    def __delete__(self, instance): self.close()
     @property
     def readonly(self): return self._readonly
     @property
     def header(self): return self._header
     @staticmethod
-    def _print_header(header, width=None, first_indent=None, indent=2, sub_indent=20):
-        if header is None or len(header) == 0: return
+    def _print_header(header, width=None, first_indent=None, indent=2, sub_indent=20, skip=frozenset()):
+        if header is None or len(header) == 0 or len(header.viewkeys() - skip) == 0: return
         flt_wdth = 50 if width is None else width-sub_indent
         def _filter(x):
             if isinstance(x, bytes) and not all((32 <= ord(c) < 128) or (c in (b'\t\r\n\v')) for c in x):
@@ -211,24 +211,50 @@ class FileImageStack(ImageStack, HandlerManager):
             fill = (lambda x:first_indent+x) if width is None else \
                    TextWrapper(width=width, initial_indent=first_indent, subsequent_indent=' '*sub_indent).fill
         for k,v in header.iteritems():
+            if k in skip: continue
             v = _filter(v)
             s = k+": "
             if len(k) < sub_indent - indent - 2:
                 s += " "*(sub_indent - indent - 2 - len(k))
             print(fill(s+v))
             fill = fill_sub
+    def _shared_header(self):
+        # Gets the shared header items of all slices
+        if len(self._slices) <= 1: return {}
+        def _ne(a, b):
+            from numpy import ndarray
+            if isinstance(a, ndarray) and isinstance(b, ndarray): return (a!=b).any()
+            return a != b
+        itr = iter(self._slices)
+        hdr = next(itr).header
+        if hdr is None or len(hdr) == 0: return {} # no possible shared header
+        shared = dict(hdr)
+        for im in itr:
+            hdr = im.header
+            if hdr is None or len(hdr) == 0: return {} # no possible shared header
+            for k in shared.viewkeys() - hdr.viewkeys(): del shared[k] # remove all keys that are no longer there
+            for k in (k for k,v in shared.iteritems() if _ne(hdr[k], v)): del shared[k] # remove all keys that have changed values
+            if len(shared) == 0: return {} # no possible shared header
+        return shared
     def _print_general_header(self, width=None):
         if self.header and len(self.header) > 0:
             print(ImageStack._get_print_fill(width)("Header:"))
             FileImageStack._print_header(self.header, width)
+        # Get the shared header items of all slices
+        shared = self._shared_header()
+        if shared is not None:
+            print("  shared slice header:")
+            FileImageStack._print_header(shared, width, None, len(str(self._d-1))+4)
     def _print_homo_slice_header_gen(self, width=None):
         z_width = len(str(self._d-1))
         ind = "  {z:0>%d}: " % z_width
-        for z,im in enumerate(self._slices): yield FileImageStack._print_header(im.header, width, ind.format(z=z), z_width+4)
+        skip = self._shared_header().viewkeys()
+        for z,im in enumerate(self._slices): yield FileImageStack._print_header(im.header, width, ind.format(z=z), z_width+4, skip=skip)
     def _print_hetero_slice_header_gen(self, width=None):
         gen = super(FileImageStack, self)._print_hetero_slice_header_gen(width)
         z_width = len(str(self._d-1))
-        for im,_ in izip(self._slices, gen): yield FileImageStack._print_header(im.header, width, None, z_width+2)
+        skip = self._shared_header().viewkeys()
+        for im,_ in izip(self._slices, gen): yield FileImageStack._print_header(im.header, width, None, z_width+2, skip=skip)
 
 
     # Internal slice manipulations - primary functions to be implemented by base classes
@@ -459,8 +485,6 @@ class FileImageSlice(ImageSlice):
     _get_props function (the trivial one would be def _get_props(self): pass).
     """
     #pylint: disable=protected-access
-    def __init__(self, stack, z): super(FileImageSlice, self).__init__(stack, z)
-
     @property
     def header(self): #pylint: disable=no-self-use
         """
@@ -471,7 +495,7 @@ class FileImageSlice(ImageSlice):
         """
         return None
 
-    @ImageSlice.data.setter
+    @ImageSlice.data.setter #pylint: disable=no-member
     def data(self, im): #pylint: disable=arguments-differ
         if self._stack._readonly: raise ValueError('cannot set data for readonly image stack')
         self._cache_data(self._set_data(ImageSource.as_image_source(im)))
@@ -625,11 +649,9 @@ class FileImageStackHeader(DictionaryWrapperWithAttr):
             elif f.ro: raise AttributeError('%s cannot be edited in header' % _key)
             else: self._data[key] = f.cast(default, self)
         return self._data[key]
-    def update(self, d=None, **kwargs):
+    def update(self, *args, **kwargs): 
         if self._imstack._readonly: raise AttributeError('header is readonly')
-        if d is None: d = kwargs
-        itr = d.iteritems() if isinstance(d, dict) else d
-        for k,v in itr: self[k] = v
+        super(FileImageStackHeader, self).update(*args, **kwargs)
 
 class _FieldMetaclass(type):
     """This metaclass mirrors all the 'cast_' static methods from Opt into field."""
@@ -637,7 +659,7 @@ class _FieldMetaclass(type):
         if name.startswith('cast_') and hasattr(Opt, name): return getattr(Opt, name)
         raise AttributeError
     def __dir__(self):
-        d = super(_FieldMetaclass, self).__dir__()
+        d = dir(super(_FieldMetaclass, self))
         d.update({k:v for k,v in dir(Opt).iteritems() if k.startswith('cast_')})
         return d
         

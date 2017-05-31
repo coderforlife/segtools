@@ -184,7 +184,7 @@ class FrangiImageSlice(FilteredImageSlice):
 ########## Commands ##########
 _cast_num = Opt.cast_float(lambda x:x>0)
 class FrangiCommand(CommandEasy):
-    _sigmas = None
+    _sigmas = (1,)
     _alpha = None
     _beta = None
     _c = None

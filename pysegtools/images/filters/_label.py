@@ -187,9 +187,9 @@ def relabel3(ims, structure):
     ims, N = (number_rows if ims.ndim == 4 else number)(ims)
     return __relabel_core(ims, N, structure)
 
-def searchsorted_rows(sorted_, arr_, side_='left'):
+def searchsorted_rows(_sorted, _arr, _side='left'):
     raise NotImplementedError('No non-optimized version of searchsorted_rows is available')
-def replace(keys_, vals_, arr_):
+def replace(_keys, _vals, _arr):
     raise NotImplementedError('No non-optimized version of replace is available')
-def replace_rows(keys_, vals_, arr_):
+def replace_rows(_keys, _vals, _arr):
     raise NotImplementedError('No non-optimized version of replace_rows is available')

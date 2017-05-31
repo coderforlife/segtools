@@ -100,7 +100,7 @@ else:
                                 'ru_nsignals',
                                 'ru_nvcsw', 'ru_nivcsw'])
 
-    def wait4(pid, options_ = 0):
+    def wait4(pid, _options = 0):
         h = OpenProcess(PROCESS_QUERY_INFORMATION | SYNCHRONIZE, True, pid)
         WaitForSingleObject(h, INFINITE)
 

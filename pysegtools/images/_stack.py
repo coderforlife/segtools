@@ -45,11 +45,10 @@ class ImageStack(object):
         """
         if isinstance(ims, ImageStack): return ims
         if isinstance(ims, ndarray):
-            if is_image(ims): return ImageStackCollection((ims,))      # single slice
-            else:             return ImageStackArray(ims)              # multi-slice
-        elif isinstance(ims, ImageSource): return ImageStackCollection((ims,)) # single ImageSource
-        elif isinstance(ims, Iterable):    return ImageStackCollection(ims)    # iterable of (presumably) ImageSources/ndarrays
-        else: raise ValueError()
+            return ImageStackCollection((ims,)) if is_image(ims) else ImageStackArray(ims) # single/multi slice
+        if isinstance(ims, ImageSource): return ImageStackCollection((ims,)) # single ImageSource
+        if isinstance(ims, Iterable):    return ImageStackCollection(ims)    # iterable of (presumably) ImageSources/ndarrays
+        raise TypeError('ims')
 
     def __init__(self, slices):
         self._slices = slices
@@ -73,8 +72,8 @@ class ImageStack(object):
     def _get_print_fill(width):
         from textwrap import TextWrapper
         return (lambda x:x) if width is None else TextWrapper(width=width, subsequent_indent=' '*12).fill
-    def _print_general_header(self, width_=None): pass
-    def _print_homo_slice_header_gen(self, width_=None): return xrange(self._d)
+    def _print_general_header(self, width=None): pass #pylint: disable=unused-argument
+    def _print_homo_slice_header_gen(self, width=None): return xrange(self._d) #pylint: disable=unused-argument
     def _print_hetero_slice_header_gen(self, width=None):
         fill = ImageStack._get_print_fill(width)
         line = "{z:0>%d}: {w}x{h} {dt} {nb}kb" % len(str(self._d-1))
@@ -133,9 +132,9 @@ class ImageStack(object):
     @property
     def is_homogeneous(self): return Homogeneous.All == self._get_homogeneous_info()[0]
     @property
-    def is_shape_homogeneous(self): return Homogeneous.Shape in self._get_homogeneous_info()[0]
+    def is_shape_homogeneous(self): return Homogeneous.Shape in self._get_homogeneous_info()[0] #pylint: disable=unsupported-membership-test
     @property
-    def is_dtype_homogeneous(self): return Homogeneous.DType in self._get_homogeneous_info()[0]
+    def is_dtype_homogeneous(self): return Homogeneous.DType in self._get_homogeneous_info()[0] #pylint: disable=unsupported-membership-test
     @property
     def w(self): return self.shape[1]
     @property
@@ -144,7 +143,8 @@ class ImageStack(object):
     def shape(self):
         if self._has_homogeneous_prop(Homogeneous.Shape, '_shape'): return self._shape #pylint: disable=no-member
         h = self._get_homogeneous_info()
-        if Homogeneous.Shape not in h[0]: raise AttributeError('property unavailable on heterogeneous image stacks')
+        if Homogeneous.Shape not in h[0]: #pylint: disable=unsupported-membership-test
+            raise AttributeError('property unavailable on heterogeneous image stacks')
         return h[1]
     @property
     def size(self): sh = self.shape; return sh[0]*sh[1]
@@ -152,7 +152,8 @@ class ImageStack(object):
     def dtype(self):
         if self._has_homogeneous_prop(Homogeneous.DType, '_dtype'): return self._dtype #pylint: disable=no-member
         h = self._get_homogeneous_info()
-        if Homogeneous.DType not in h[0]: raise AttributeError('property unavailable on heterogeneous image stacks')
+        if Homogeneous.DType not in h[0]: #pylint: disable=unsupported-membership-test
+            raise AttributeError('property unavailable on heterogeneous image stacks')
         return h[2]
     @property
     def stack(self):
@@ -167,7 +168,7 @@ class ImageStack(object):
             sh = self._shape #pylint: disable=no-member
             return self._d * sh[0] * sh[1]
         h = self._get_homogeneous_info()
-        if Homogeneous.Shape not in h[0]:
+        if Homogeneous.Shape not in h[0]: #pylint: disable=unsupported-membership-test
             sz = 0
             for slc in self._slices: sz += slc.size
             return sz
@@ -320,7 +321,7 @@ class ImageStackArray(HomogeneousImageStack):
         self.__arr_readonly = ImageSource.get_unwriteable_view(arr)
         super(ImageStackArray, self).__init__(sh[2], sh[1], dt,
             [ImageSliceFromArray(self, z, im, dt) for z,im in enumerate(arr)])
-    @ImageStack.cache_size.setter
+    @ImageStack.cache_size.setter #pylint: disable=no-member
     def cache_size(self, value): pass # prevent actual caching - all in memory #pylint: disable=arguments-differ
     @property
     def stack(self): return self.__arr_readonly
@@ -332,7 +333,7 @@ class ImageSliceFromArray(ImageSlice):
         self._im_readonly = ImageSource.get_unwriteable_view(im)
     def _get_props(self): pass
     def _get_data(self): return self._im_readonly
-    @ImageSlice.data.setter
+    @ImageSlice.data.setter #pylint: disable=no-member
     def data(self, im): #pylint: disable=arguments-differ
         im = ImageSource.as_image_source(im)
         if self._shape != im.shape or self._dtype != im.dtype: raise ValueError('requires all slices to be the same data type and size')

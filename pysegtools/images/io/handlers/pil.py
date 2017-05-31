@@ -123,8 +123,8 @@ def imsrc2pil(im):
         mode = _dtype2mode.get(dt.type)
         if mode is None: raise ValueError
         return Image.frombuffer(mode[0], sh, im.data, 'raw', mode[2 if _native else 1], st, 1)
-def _accept_all(im_): return True
-def _accept_none(im_): return False
+def _accept_all(_im): return True
+def _accept_none(_im): return False
 class _PILSource(object):
     """
     This is the class that does most of the work interacting with the PIL library. It is
@@ -313,13 +313,22 @@ class _PILSource(object):
     @property
     def dtype(self):
         dt = self.dtype_raw
-        if self.im.mode=='P' and 'transparency' in self.im.info:
+        if self.im.mode == 'P' and 'transparency' in self.im.info:
             # need to add an extra channel for the transparency data
             from numpy import dtype
             dt = dtype((dt.base, 2 if len(dt.shape) == 0 else (dt.shape[0]+1)))
+        if self.im.mode == 'I':
+            # I is sometimes used for any grayscale image, e.g. PNG u16 images are listed as I
+            # However the "tile" attribute may contain the real mode we should use
+            try:
+                mode = self.im.tile[0][3]
+                if isinstance(mode, (list,tuple)): mode = mode[0]
+                dt = _mode2dtype[mode].newbyteorder('=')
+            except (AttributeError, LookupError, ValueError, TypeError): pass
         return dt
     @property
-    def dtype_raw(self): return _mode2dtype[self.im.palette.mode if self.im.mode == 'P' else self.im.mode]
+    def dtype_raw(self):
+        return _mode2dtype[self.im.palette.mode if self.im.mode == 'P' else self.im.mode]
     @property
     def shape(self): return tuple(reversed(self.im.size))
     def _get_palette(self, dt):
@@ -329,8 +338,7 @@ class _PILSource(object):
             pal.palette if pal.rawmode == pal.mode else self.im.getpalette()), dtype=dt)
     @property
     def data(self): # return ndarray
-        from numpy import frombuffer, unpackbits, uint8
-        from ....general import prod
+        from numpy import frombuffer, unpackbits
         dt = self.dtype_raw # the intermediate dtype
         dt_final = self.dtype # the resulting dtype
         if self.im.mode == 'P':
@@ -350,11 +358,11 @@ class _PILSource(object):
             w8 = w if w%8 == 0 else w+8-w%8
             return a.reshape((h,w8)+tuple(dt_final.shape))[:,:w]
         else:
-            a = frombuffer(self.im.tobytes(), dtype=dt)
+            a = frombuffer(self.im.tobytes(), dtype=dt).astype(dt_final, copy=False)
         return a.reshape(tuple(reversed(dt_final.shape+self.im.size)))
     def set_data(self, im): # im is an ImageSource
-        im = imsrc2pil(im)
-        with open(self.filename, 'wb') as f: self._save_pil_image(f, self.filename, im, **self.save_options)
+        pil = imsrc2pil(im)
+        with open(self.filename, 'wb') as f: self._save_pil_image(f, self.filename, pil, **self.save_options)
         if isinstance(self.im, DummyImage): # if writeonly don't reopen image
             self.im.set(im.dtype, im.shape)
         else:
@@ -373,7 +381,7 @@ class _PILSource(object):
 def _get_prefix(f):
     from os import SEEK_CUR
     if isinstance(f, String):
-        with open(f, 'rb') as f: return f.read(16)
+        with open(f, 'rb') as f: return f.read(16) #pylint: disable=redefined-argument-from-local
     data = f.read(16)
     f.seek(-len(data), SEEK_CUR)
     return data
@@ -403,22 +411,22 @@ def _openable_source(sources, frmt, f, filename, readonly, **options):
 #  * JPEG/WebP saving param exif
 #  * JPEG2000 opening params mode/reduce/layers and tons of saving params I don't understand
 class _EPSSource(_PILSource):
-    def _parse_open_options(self, scale=1, **options):
+    def _parse_open_options(self, scale=1, **options): #pylint: disable=arguments-differ
         open_options, options = super(_EPSSource, self)._parse_open_options(**options)
         scale = int(scale)
         if scale < 1: raise ValueError('Invalid scale')
         open_options['scale'] = scale
         return open_options, options
-    def _open_pil_image(self, f, filename, scale=1, **options):
+    def _open_pil_image(self, f, filename, scale=1, **options): #pylint: disable=arguments-differ
         im = super(_EPSSource, self)._open_pil_image(f, filename, **options)
         if scale != 1: im.load(scale=scale)
         return im
 class _GIFSource(_PILSource):
-    def _parse_open_options(self, local=False, **options):
+    def _parse_open_options(self, local=False, **options): #pylint: disable=arguments-differ
         open_options, options = super(_GIFSource, self)._parse_open_options(**options)
         open_options['local'] = _bool(local)
         return open_options, options
-    def _open_pil_image(self, f, filename, local=False, **options):
+    def _open_pil_image(self, f, filename, local=False, **options): #pylint: disable=arguments-differ
         im = super(_GIFSource, self)._open_pil_image(f, filename, **options)
         if local and im.tile[0][0] == 'gif':
             tag, (x0, y0, x1, y1), offset, extra = im.tile[0]
@@ -426,7 +434,7 @@ class _GIFSource(_PILSource):
             im.tile = [(tag, (0,0) + im.size, offset, extra)]
         return im
 class _ICNSSource(_PILSource):
-    def _parse_open_options(self, size=None, **options):
+    def _parse_open_options(self, size=None, **options): #pylint: disable=arguments-differ
         open_options, options = super(_ICNSSource, self)._parse_open_options(**options)
         if size is not None:
             if isinstance(size, String): size = size.split(',')
@@ -436,14 +444,14 @@ class _ICNSSource(_PILSource):
             if len(size) != 3 or size[0] < 1 or size[1] < 1 or size[2] not in (1,2): raise ValueError('Invalid size')
             open_options['size'] = size
         return open_options, options
-    def _open_pil_image(self, f, filename, size=None, **options):
+    def _open_pil_image(self, f, filename, size=None, **options): #pylint: disable=arguments-differ
         im = super(_ICNSSource, self)._open_pil_image(f, filename, **options)
         if size is not None:
             if size not in list(im.info['sizes']): raise ValueError('Size not found in file')
             im.size = size
         return im
 class _JPEGSource(_PILSource):
-    def _parse_save_options(self, quality=75, optimize=False, progressive=False, **options):
+    def _parse_save_options(self, quality=75, optimize=False, progressive=False, **options): #pylint: disable=arguments-differ
         save_options, options = super(_JPEGSource, self)._parse_save_options(**options)
         quality = int(quality)
         if quality < 1 or quality > 100: raise ValueError('Invalid quality')
@@ -452,20 +460,26 @@ class _JPEGSource(_PILSource):
         if _bool(progressive): save_options['progressive'] = True
         return save_options, options
 class _PALMSource(_PILSource):
-    def _parse_save_options(self, bpp=4, **options):
+    def _parse_save_options(self, bpp=4, **options): #pylint: disable=arguments-differ
         save_options, options = super(_PALMSource, self)._parse_save_options(**options)
         bpp = int(bpp)
         if bpp not in (1, 2, 4): raise ValueError('Invalid bpp')
         save_options['bpp'] = bpp
         return save_options, options
 class _PNGSource(_PILSource):
-    def _parse_save_options(self, compression=6, optimize=False, **options):
+    def _parse_save_options(self, compression=6, optimize=False, **options): #pylint: disable=arguments-differ
         save_options, options = super(_PNGSource, self)._parse_save_options(**options)
         compression = int(compression)
         if compression < 0 or compression > 9: raise ValueError('Invalid compression')
         save_options['compression'] = compression
         if _bool(optimize): save_options['optimize'] = True
         return save_options, options
+    def _save_pil_image(self, f, filename, im, palette=False, **options):
+        # This wrapper makes up for the fact that PIL PNG writer requires a 32-bit grayscale image
+        # when actually saving a 16-bit grayscale image.
+        if im.mode in ('I', 'I;32', 'I;32B', 'I;32L', 'I;32N'): raise ValueError('PNG images do not support 32-bit grayscale images')
+        if im.mode in ('I;16', 'I;16B', 'I;16L', 'I;16N'): im = im.convert('I')
+        super(_PNGSource, self)._save_pil_image(f, filename, im, palette, **options)
     # The text values seem to be already included in info, so don't double add them
     #@property
     #def header_info(self):
@@ -493,7 +507,7 @@ class _TIFFSource(_PILSource):
         #"tiff_sgilog"   # experimental, rare
         #"tiff_sgilog24" # experimental, rare
     }
-    def _parse_save_options(self, compression="packbits", **options):
+    def _parse_save_options(self, compression="packbits", **options): #pylint: disable=arguments-differ
         save_options, options = super(_TIFFSource, self)._parse_save_options(**options)
         compression = compression.lower()
         if compression not in _TIFFSource.compressions: raise ValueError('Invalid compression')
@@ -506,7 +520,7 @@ class _TIFFSource(_PILSource):
             h.update(_get_tiff_tags(self.im))
         return h
 class _WEBPSource(_PILSource):
-    def _parse_save_options(self, quality=80, lossless=False, **options):
+    def _parse_save_options(self, quality=80, lossless=False, **options): #pylint: disable=arguments-differ
         save_options, options = super(_WEBPSource, self)._parse_save_options(**options)
         quality = int(quality)
         if quality < 1 or quality > 100: raise ValueError('Invalid quality')
@@ -523,7 +537,7 @@ class _PILStack(_PILSource):
     _single_slice = False
     def __init__(self, frmt, open_func, accept, save=None):
         super(_PILStack, self).__init__(frmt, open_func, accept, None)
-    def open(self, file, readonly, slice=None, **options): #pylint: disable=redefined-builtin
+    def open(self, file, readonly, slice=None, **options): #pylint: disable=redefined-builtin,arguments-differ
         s = super(_PILStack, self).open(file, readonly, **options)
         if not s.is_stack: raise ValueError("File is not a stack")
         if slice is not None:
@@ -731,9 +745,9 @@ class _PSDStack(_RandomAccessPILStack):
     # might be using a too-new version of Photoshop...
     @property
     def depth(self): return len(self.im.layers)
-    def seek(self, idx):
-        if idx >= self.depth: raise ValueError('Slice index out of range')
-        try: self.im.seek(idx+1) # +1 for skipping the entire merged image
+    def seek(self, z):
+        if z >= self.depth: raise ValueError('Slice index out of range')
+        try: self.im.seek(z+1) # +1 for skipping the entire merged image
         except (EOFError, ValueError): raise ValueError('Slice index out of range')
 
 
@@ -804,18 +818,18 @@ class PIL(FileImageSource):
         return _static.sources, options
             
     @classmethod
-    def open(cls, f, readonly=False, format=None, **options):
+    def open(cls, f, readonly=False, format=None, **options): #pylint: disable=arguments-differ
         sources, options = PIL.__parse_opts(**options)
         return PIL(_open_source(sources, format, f, readonly, **options))
 
     @classmethod
-    def _openable(cls, filename, f, readonly=False, format=None, **options):
+    def _openable(cls, filename, f, readonly=False, format=None, **options): #pylint: disable=arguments-differ
         try: sources, options = PIL.__parse_opts(**options)
         except ValueError: return False
         return _openable_source(sources, format, f, filename, readonly, **options)
 
     @classmethod
-    def create(cls, filename, im, writeonly=False, format=None, **options):
+    def create(cls, filename, im, writeonly=False, format=None, **options): #pylint: disable=arguments-differ
         if format is None:
             from os.path import splitext
             format = _static.exts.get(splitext(filename)[1].lower())
@@ -823,7 +837,7 @@ class PIL(FileImageSource):
         return PIL(_static.sources[format].create(filename, im, writeonly, **options))
 
     @classmethod
-    def _creatable(cls, filename, ext, writeonly=False, format=None, **options):
+    def _creatable(cls, filename, ext, writeonly=False, format=None, **options): #pylint: disable=arguments-differ
         if format is None:
             format = _static.exts.get(ext)
             if format is None: return False
@@ -897,8 +911,8 @@ are available with this plugin.""")
     def formats(cls, read, write):
         if read: return (_static.read_formats & _static.write_formats) if write else \
                         (_static.read_formats - _static.write_formats)
-        elif write: return _static.write_formats - _static.read_formats
-        else: return frozenset()
+        if write: return _static.write_formats - _static.read_formats
+        return frozenset()
 
     def __init__(self, source):
         self._source = source
@@ -918,11 +932,11 @@ class PILStack(FileImageStack):
     #pylint: disable=redefined-builtin
     
     @classmethod
-    def open(cls, f, readonly=True, format=None, **options):
+    def open(cls, f, readonly=True, format=None, **options): #pylint: disable=arguments-differ
         return PILStack(_open_source(_static.stacks, format, f, readonly, **options))
     
     @classmethod
-    def _openable(cls, filename, f, readonly=True, format=None, **options):
+    def _openable(cls, filename, f, readonly=True, format=None, **options): #pylint: disable=arguments-differ
         return _openable_source(_static.stacks, format, f, filename, readonly, **options)
 
     # TODO: support writing

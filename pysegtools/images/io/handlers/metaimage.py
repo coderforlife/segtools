@@ -15,7 +15,7 @@ import os.path
 from numpy import empty
 
 from .._single import FileImageSource
-from ...types import create_im_dtype, get_dtype_endian, im_decomplexify, im_decomplexify_dtype
+from ...types import create_im_dtype, get_dtype_endian, get_im_dtype_and_nchan, im_decomplexify, im_decomplexify_dtype
 from ....general import Enum, String, Unicode, Byte, sys_endian, prod, delayed
 from ....general.io import openfile, get_file_size, array_read, array_save, array_read_ascii, array_save_ascii
 
@@ -611,7 +611,7 @@ def parse_mha_fields(dt, shape, fields):
     fields['ElementType'] = etype
     
     # Figure out the dimensions
-    echans, shape = 2 if was_complex else 1, list(shape)
+    echans, shape = get_im_dtype_and_nchan(dt)[1], list(shape)
     if 'ElementNumberOfChannels' in fields:
         ElemNumOfChans = get('ElementNumberOfChannels')
         if ElemNumOfChans != echans:
@@ -757,7 +757,7 @@ def __get_mha_writer(fields):
 
 class MetaImage(FileImageSource):
     @classmethod
-    def open(cls, filename, readonly=False, **options):
+    def open(cls, filename, readonly=False, **options): #pylint: disable=arguments-differ
         if len(options) > 0: raise ValueError('Invalid option given')
         with openfile(filename, 'rb') as f:
             fields, headersize = read_mha_header(f)
@@ -779,7 +779,7 @@ class MetaImage(FileImageSource):
                    'ElementNumberOfChannels', 'ElementNBits', 'ElementType'}
 
     @classmethod
-    def create(cls, filename, im, writeonly=False, **fields):
+    def create(cls, filename, im, writeonly=False, **fields): #pylint: disable=arguments-differ
         if len(fields.viewkeys() & MetaImage.__forbidden) != 0: raise ValueError("Forbidden fields given")
         fields.setdefault('BinaryData', True)
         mha = os.path.splitext(filename)[1].lower() == '.mha'

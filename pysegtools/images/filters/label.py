@@ -108,8 +108,12 @@ def shrink_integer(im, min_dt=None):
 def _shrink_int_dtype(im, min_dt):
     if im.dtype.kind not in 'iu': raise ValueError('Can only take integral data types')
     unsigned = im.dtype.kind == 'u'
-    min_dt = dtype(uint8 if unsigned else int8) if min_dt is None else dtype(min_dt)
     mn, mx = (0 if unsigned else im.min()), im.max()
+    if min_dt is not None:
+        min_dt = dtype(min_dt)
+        mx = get_dtype_max(min_dt)
+    else:
+        min_dt = dtype(uint8 if unsigned else int8)
     return _shrink_int_dtype_raw(mn, mx, min_dt)
 def _shrink_int_dtype_raw(mn, mx, min_dt):
     # At this point min_dt must be a dtype and the min and max values are passed directly
@@ -129,8 +133,7 @@ def _shrink_int_dtype_raw(mn, mx, min_dt):
 
 ########## Image Stacks ##########
 class _LabeledImageStack(FilteredImageStack):
-    def __init__(self, ims, slcs):
-        super(_LabeledImageStack, self).__init__(ims, slcs)
+    pass
 class _LabeledImageSlice(FilteredImageSlice):
     def _get_props(self): self._set_props(dtype(uintp), self._input.shape)
     @abstractmethod
@@ -179,13 +182,9 @@ class _LabelImageSlice(_LabeledImageSlice):
     def _get_data(self): return self._stack.stack[self._z]
 
 class LabelImageStack(_LabeledImageStackWithStruct):
-    def __init__(self, ims, per_slice=True, structure=None):
-        super(LabelImageStack, self).__init__(ims, per_slice, structure)
     def _calc_label(self, im): return _label2(im, self._structure)[0]
     def _calc_labels(self, ims): return _label3(ims, self._structure)
 class RelabelImageStack(_LabeledImageStackWithStruct):
-    def __init__(self, ims, per_slice=True, structure=None):
-        super(RelabelImageStack, self).__init__(ims, per_slice, structure)
     def _calc_label(self, im): return _label.relabel2(im, self._structure)[0]
     def _calc_labels(self, ims): return _label.relabel3(ims, self._structure)
 
@@ -214,16 +213,16 @@ class ConsecutivelyNumberImageStack(_LabeledImageStack):
             self.__calc_im = lambda im: None
             self._n_labels = 0
             return
-        dt, nchans = get_im_dtype_and_nchan(self.dtype)
+        dt, nchans = get_im_dtype_and_nchan(self._ims.dtype)
         single_chan = nchans == 1
         slices = iter(self._slices)
         if single_chan:
             vals = _label.unique_fast(next(slices)._input.data)
-            for slc in slices: vals = _label.unique_merge(vals, _label.unique_fast(slc._input._data))
+            for slc in slices: vals = _label.unique_merge(vals, _label.unique_fast(slc._input.data))
             zero = dt.type(0)
         else:
             vals = _label.unique_rows_fast(next(slices)._input.data)
-            for slc in slices: vals = _label.unique_rows_merge(vals, _label.unique_rows_fast(slc._input._data))
+            for slc in slices: vals = _label.unique_rows_merge(vals, _label.unique_rows_fast(slc._input.data))
 
         if _label.with_cython:
             # Prepare to use replace (vals, idxs)
@@ -231,7 +230,7 @@ class ConsecutivelyNumberImageStack(_LabeledImageStack):
                 pos0 = vals.searchsorted(zero)
             else:
                 zero = zeros((1,nchans), dtype=dt)
-                pos0 = _label.searchsorted_rows(vals, zero)[0]
+                pos0 = _label.searchsorted_rows(vals, zero)
             if pos0 == len(vals) or (vals[pos0] != 0).any():
                 vals = concatenate((zero, vals)) # add 0 to the beginning
             elif pos0 != 0:

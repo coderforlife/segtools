@@ -337,8 +337,8 @@ class _MAT45File(_MATFile): # a v4 or v5 file
         self._entries[name] = entry # currently added to the end of the order, but during the next loop we fix that
 
         # Update the entry starts
-        for name in list(islice(self._entries, idx, None)):
-            self._entries[name] = e = self._entries.pop(name) # remove entry and put it at end
+        for n in list(islice(self._entries, idx, None)):
+            self._entries[n] = e = self._entries.pop(n) # remove entry and put it at end
             e._update_start(e._start + new_size)
         
         return entry
@@ -1907,7 +1907,7 @@ class _MAT73Entry(_MATEntry):
             dt = void # object stored as struct
             metadata['class_name'] = clazz
         elif obj_dec != 0: raise ValueError()
-        if (dt is None or int_dec not in (0,1,2) or
+        if (dt is None or int_dec not in (0,1,2) or #pylint: disable=too-many-boolean-expressions
             dt == bool and int_dec != 1 or int_dec != 0 and dt not in (bool, unicode_) or
             dt == unicode_ and int_dec not in (0,2) or int_dec == 2 and dt != unicode_):
             raise ValueError()

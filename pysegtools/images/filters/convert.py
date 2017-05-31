@@ -98,7 +98,7 @@ def scale(im, in_scale=None, out_scale=None, dt=None):
 
     rev = out_scale[0] > out_scale[1]
     if rev: out_scale = out_scale[::-1]
-
+    
     # Perform conversion
     # b -> any
     if cur.kind == 'b':
@@ -130,7 +130,7 @@ def scale(im, in_scale=None, out_scale=None, dt=None):
             in_range, out_range = in_range//d, out_range//d
             if in_range == 1:
                 im = im.astype(u_dt, copy=False)
-                im *= im.u_dt.type(out_range)
+                im *= u_dt.type(out_range)
             elif out_range == 1:
                 im /= im.dtype.type(in_range)
             else:
@@ -149,7 +149,7 @@ def scale(im, in_scale=None, out_scale=None, dt=None):
   
         # im + out_scale[0]
         im = im.astype(u_dt, copy=False)
-        im += out_scale[0]
+        im += out_scale[0] # TODO: produces errors for signed integer types and out_scale[0] as negative
         return im.view(dt)
 
     # any -> f or f -> any
@@ -205,7 +205,7 @@ class ScaleImageStack(FilteredImageStack):
     def __init__(self, ims, in_scale=None, out_scale=None, dt=None):
         if in_scale not in (None, 'data', 'stack-data') and (len(in_scale) != 2 or in_scale[0] >= in_scale[1]): raise ValueError('invalid in_scale')
         if out_scale is not None and (len(out_scale) != 2 or out_scale[0] == out_scale[1]): raise ValueError('invalid out_scale')
-        if dt is not None and dt.base != dt or dt.kind not in 'biuf': raise ValueError('invalid conversion data-type')
+        if dt is not None and (dt.base != dt or dt.kind not in 'biuf'): raise ValueError('invalid conversion data-type')
         self._dtype = dt
         if dt is not None: self._homogeneous = Homogeneous.DType
         if in_scale == 'data':
@@ -224,7 +224,7 @@ class ScaleImageStack(FilteredImageStack):
                 im = slc.data
                 a, b = im.min(), im.max()
                 if mn is None or a < mn: mn = a
-                if mx is None or b < mx: mx = b
+                if mx is None or b > mx: mx = b
             self._stack_range = mn, mx
         return self._stack_range
 class ScaleImageSlice(FilteredImageSlice):
@@ -263,8 +263,7 @@ from signed to unsigned integers of the same size).
     def __str__(self):
         if len(self._dtype) == 1:
             return 'raw-convert to %s' % im_dtype_desc(self._dtype)
-        else:
-            return 'raw-convert to [%s]' % (",".join(im_dtype_desc(dt) for dt in self._dtype))
+        return 'raw-convert to [%s]' % (",".join(im_dtype_desc(dt) for dt in self._dtype)) #pylint: disable=not-an-iterable
     def execute(self, stack): stack.push(RawConvertImageStack(stack.pop(), self._dtype))
 
 class ByteOrderConvertCommand(CommandEasy):
@@ -303,10 +302,7 @@ single-character symbols (e.g. '<><><>').
     @classmethod
     def _see_also(cls): return ('raw-convert',)
     def __str__(self):
-        if len(self._new) == 1:
-            return 'byte-order-convert to %s' % self._new
-        else:
-            return 'byte-order-convert to [%s]' % self._new
+        return ('byte-order-convert to %s' if len(self._new) == 1 else 'byte-order-convert to [%s]') % self._new
     def execute(self, stack): stack.push(ConvertByteOrderImageStack(stack.pop(), self._new))
 
 class ConvertScaleConvertCommand(CommandEasy):

@@ -221,7 +221,7 @@ def histeq_exact(im, h_dst=256, mask=None, method='VA', **kwargs):
     
     ##### Handle the mask #####
     if mask is not None:
-        idx[~mask] = 0
+        idx[~mask] = 0 #pylint: disable=invalid-unary-operand-type
         idx[mask] = idx[mask].argsort().argsort()
         del mask
 
@@ -337,7 +337,7 @@ def __pixel_order_va(im, niters=5):
          IEEE Trans. on Image Processing, 23(12):5274-5283
     """
     assert niters > 0
-    from numpy import abs
+    from numpy import abs #pylint: disable=redefined-builtin
     ALPHA_1 = 0.05
     ALPHA_2 = 0.05
     BETA    = 0.1

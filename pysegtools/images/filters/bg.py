@@ -60,6 +60,7 @@ def get_bg_mask(im, bg_color=None):
     Returns a mask of the background pixels. The background color can be obtained using im[bg][0]
     (if there are any background pixels, if bg.any()).
     """
+    #pylint: disable=invalid-unary-operand-type
     from scipy.ndimage.morphology import binary_fill_holes
     from scipy.stats import mode
 
@@ -237,7 +238,7 @@ def fill(im, mask=None, fill='black'): #pylint: disable=redefined-outer-name
 
     elif fill == 'wrap': raise ValueError
     
-    else: im[mask] = __mean(im[~mask], 1) if fill == 'mean' else get_color(fill, im)
+    else: im[mask] = __mean(im[~mask], 1) if fill == 'mean' else get_color(fill, im) #pylint: disable=invalid-unary-operand-type
     
     return im
 

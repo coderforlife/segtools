@@ -300,13 +300,9 @@ class Interval(object):
         except TypeError:
             raise TypeError("upper_bound is not hashable.")
 
-        lower_closed = not (
-            isinstance(lower_bound, Smallest)
-            or isinstance(lower_bound, Largest)) \
+        lower_closed = not (isinstance(lower_bound, (Smallest, Largest))) \
           and kwargs.get("lower_closed", kwargs.get("closed", True))
-        upper_closed = not (
-            isinstance(upper_bound, Smallest)
-            or isinstance(upper_bound, Largest)) \
+        upper_closed = not (isinstance(upper_bound, (Smallest, Largest))) \
           and kwargs.get("upper_closed", kwargs.get("closed", True))
 
         if upper_bound < lower_bound:
@@ -1345,41 +1341,38 @@ class BaseIntervalSet(object):
             ...
         TypeError: unsupported operand type(s) for -: expected BaseIntervalSet
         """
-        if isinstance(other, BaseIntervalSet):
-            result = IntervalSet(self)
-            for j in other.intervals:
-                temp = IntervalSet()
-                for i in result.intervals:
-                    if i.overlaps(j):
-                        if i in j:
-                            pass
-                        elif j in i:
-                            if j.lower_bound is not None:
-                                temp.add(Interval(
-                                    i.lower_bound, j.lower_bound,
-                                    lower_closed=i.lower_closed,
-                                    upper_closed=not j.lower_closed))
-                            if j.upper_bound is not None:
-                                temp.add(Interval(
-                                    j.upper_bound, i.upper_bound,
-                                    lower_closed=not j.upper_closed,
-                                    upper_closed=i.upper_closed))
-                        elif j.comes_before(i):
-                            temp.add(Interval(
-                                j.upper_bound, i.upper_bound,
-                                lower_closed=not j.upper_closed,
-                                upper_closed=i.upper_closed))
-                        else:
+        if not isinstance(other, BaseIntervalSet):
+            raise TypeError("unsupported operand type(s) for -: expected BaseIntervalSet")
+        result = IntervalSet(self)
+        for j in other.intervals:
+            temp = IntervalSet()
+            for i in result.intervals:
+                if i.overlaps(j):
+                    if i in j: pass
+                    elif j in i:
+                        if j.lower_bound is not None:
                             temp.add(Interval(
                                 i.lower_bound, j.lower_bound,
                                 lower_closed=i.lower_closed,
                                 upper_closed=not j.lower_closed))
+                        if j.upper_bound is not None:
+                            temp.add(Interval(
+                                j.upper_bound, i.upper_bound,
+                                lower_closed=not j.upper_closed,
+                                upper_closed=i.upper_closed))
+                    elif j.comes_before(i):
+                        temp.add(Interval(
+                            j.upper_bound, i.upper_bound,
+                            lower_closed=not j.upper_closed,
+                            upper_closed=i.upper_closed))
                     else:
-                        temp.add(copy.deepcopy(i))
-                result = temp
-        else:
-            raise TypeError(
-                "unsupported operand type(s) for -: expected BaseIntervalSet")
+                        temp.add(Interval(
+                            i.lower_bound, j.lower_bound,
+                            lower_closed=i.lower_closed,
+                            upper_closed=not j.lower_closed))
+                else:
+                    temp.add(copy.deepcopy(i))
+            result = temp
         return self.__class__(result)
 
     def difference(self, other):
@@ -2382,6 +2375,7 @@ class FrozenIntervalSet(BaseIntervalSet):
 
     def __init__(self, items=()):
         "Initializes the FrozenIntervalSet"
+        #pylint: disable=super-init-not-called
         pass
 
     def __repr__(self):

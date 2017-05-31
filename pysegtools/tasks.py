@@ -38,11 +38,11 @@ join_norm = lambda path,*paths: normpath(join(path,*paths))
 from heapq import heapify, heappop, heappush
 
 from multiprocessing import cpu_count, Process as PyProcess
-from subprocess import Popen, CalledProcessError, STDOUT
 if sys.version_info[0] < 3:
     try:
         from subprocess32 import Popen, CalledProcessError, STDOUT
     except ImportError:
+        from subprocess import Popen, CalledProcessError, STDOUT
         if os.name == 'posix':
             import warnings
             warnings.warn('Using the built-in subprocess module on POSIX in Python v2.7 is unreliable with tasks. Please install subprocess32.')
@@ -202,7 +202,9 @@ class Task(object):
     def cpu(self, running):
         return int(math.ceil(self._cpu*running.cores)) if isinstance(self._cpu, float) else \
                min(running.cores, self._cpu)
-    def mem(self, running): return self._mem #plyint: disable=unused-argument
+    def mem(self, running):
+        #pylint: disable=unused-argument
+        return self._mem
     def workingdir(self, running):
         return running.workingdir if self.wd is None else join_norm(running.workingdir, self.wd)
     @abstractmethod
@@ -388,7 +390,7 @@ class TaskUsingCluster(TaskUsingProcess):
         if self._job is None: return super(TaskUsingCluster, self).current_usage()
         return 0, ((time() - TaskUsingCluster._get_time(self._job.started))
                    if self._job.state == saga.RUNNING else 0)
-    @Task.is_running.getter
+    @property
     def is_running(self): return (self._job or self._process) is not None
     @staticmethod
     def _get_time(x):
@@ -525,7 +527,7 @@ class Tasks(object):
                 task = TaskUsingCluster(task, **kwargs) if kwargs.pop('run_on_cluster', False) else \
                        TaskUsingProcess(task, **kwargs)
             else:
-                raise ValueError('%s could not be added because we don\'t know how to make is a task' % task)
+                raise ValueError('%s could not be added because we don\'t know how to make it a task' % task)
         return self.__add(task)
     def __add(self, task):
         """
@@ -575,7 +577,7 @@ class Tasks(object):
         for t in overall_inputs: t.all_after()
         for t in self.generators: t.all_after()
 
-    def display_stats(self, signum_=0, frame_=None):
+    def display_stats(self, _signum=0, _frame=None):
         """
         Writes to standard out a whole bunch of statistics about the current status of the tasks. Do
         not call this except while the tasks are running. It is automatically registered to the USR1
@@ -894,7 +896,7 @@ class RunningTasks(object):
         time through. This checks for changes in the commands themselves, when the commands were run
         relative to their output files, and more.
         """
-        with open(log, 'r+') as log: lines = [line.strip() for line in log]
+        with open(log, 'r+') as log: lines = [line.strip() for line in log] #pylint: disable=redefined-argument-from-local
         lines = [line for line in lines if len(line) != 0]
         #comments = [line for line in lines if line[0] == '#']
         # Note: this will take the last found setting/command with a given and silently drop the others

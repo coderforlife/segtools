@@ -342,16 +342,15 @@ class MemMapCacheImageStack(ImageStack):
         self.__file = TemporaryFile('wb', 0, dir=tmpdir)
         if name == 'nt':
             return mmap(self.__file.fileno(), size, access=ACCESS_WRITE)
-        else:
-            self.__file.truncate(size)
-            return mmap(self.__file.fileno(), size, access=ACCESS_WRITE)
+        self.__file.truncate(size)
+        return mmap(self.__file.fileno(), size, access=ACCESS_WRITE)
 
-    @ImageStack.cache_size.setter
+    @ImageStack.cache_size.setter #pylint: disable=no-member
     def cache_size(self, value): pass # prevent built-in caching - this is a cache! #pylint: disable=arguments-differ
     def close(self):
         self.__file.close()
         self.__file = None
-    def __delete__(self): self.close()
+    def __delete__(self, instance): self.close()
     @property
     def stack(self): return self._arr # only if homogeneous
 

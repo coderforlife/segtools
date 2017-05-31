@@ -63,7 +63,7 @@ def delayed(load, base=object):
     if not isinstance(base, type): raise TypeError('base must be a type')
 
     clazz = None
-    def value(self_):
+    def value(_self):
         """
         Get the underlying value of this object, possibly loading it if it hasn't been loaded yet.
         """
@@ -96,32 +96,22 @@ delayed.unwrap = unwrap
 
 def __direct(name, nargs):
     """Create a method wrapper for the function name that takes nargs argments."""
-    if nargs == 0:
-        return name, lambda self: getattr(self.__value__, name)()
-    elif nargs == 1:
-        return name, lambda self, a: getattr(self.__value__, name)(a)
-    elif nargs == 2:
-        return name, lambda self, a, b: getattr(self.__value__, name)(a, b)
-    elif nargs == 3:
-        return name, lambda self, a, b, c: getattr(self.__value__, name)(a, b, c)
-    else:
-        return name, lambda self, *args: getattr(self.__value__, name)(*args)
+    if nargs == 0: return name, lambda self: getattr(self.__value__, name)()
+    if nargs == 1: return name, lambda self, a: getattr(self.__value__, name)(a)
+    if nargs == 2: return name, lambda self, a, b: getattr(self.__value__, name)(a, b)
+    if nargs == 3: return name, lambda self, a, b, c: getattr(self.__value__, name)(a, b, c)
+    return name, lambda self, *args: getattr(self.__value__, name)(*args)
 def __unary_wrap(func):
     """Create a method wrapper for the unary operator defined by func."""
     return '__'+func.__name__+'__', lambda self: func(self.__value__)
 def __unary_plus_wrap(func, nargs):
     """Create a method wrapper for the unary operator defined by func with nargs extra arguments."""
     name = '__'+func.__name__+'__'
-    if nargs == 0:
-        return name, lambda self: func(self.__value__)
-    elif nargs == 1:
-        return name, lambda self, a: func(self.__value__, a)
-    elif nargs == 2:
-        return name, lambda self, a, b: func(self.__value__, a, b)
-    elif nargs == 3:
-        return name, lambda self, a, b, c: func(self.__value__, a, b, c)
-    else:
-        return name, lambda self, *args: func(self.__value__, *args)
+    if nargs == 0: return name, lambda self: func(self.__value__)
+    if nargs == 1: return name, lambda self, a: func(self.__value__, a)
+    if nargs == 2: return name, lambda self, a, b: func(self.__value__, a, b)
+    if nargs == 3: return name, lambda self, a, b, c: func(self.__value__, a, b, c)
+    return name, lambda self, *args: func(self.__value__, *args)
 def __binary_wrap(func):
     """Create a method wrapper for the binary operator defined by func."""
     return ('__'+func.__name__.rstrip('_')+'__',
