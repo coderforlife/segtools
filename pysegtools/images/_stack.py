@@ -276,7 +276,7 @@ class ImageSlice(DeferredPropertiesImageSource):
     """
     #pylint: disable=protected-access
     def __init__(self, stack, z):
-        self._stack = proxy(stack)
+        self._stack = stack #proxy(stack)
         self._z = z
         self._cache = None
 
