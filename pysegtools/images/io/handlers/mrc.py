@@ -357,7 +357,7 @@ class MRCHeader(FileImageStackHeader):
         ny, nx = shape
         self._fields.update(MRCHeader.__fields_new)
         self._struct = Struct(str(endian + MRCHeader.__format_new))
-        flags = (MRCFlags.SignedByte|MRCFlags.RMSValueNegIfInvalid) if dt.type == int8 else MRCFlags.RMSValueNegIfInvalid
+        flags = (MRCFlags.SignedByte|MRCFlags.RMSNegIfInvalid) if dt.type == int8 else MRCFlags.RMSNegIfInvalid
         self._data = OrderedDict([
             ('nx',nx), ('ny',ny), ('nz',0),
             ('mode',mode),
