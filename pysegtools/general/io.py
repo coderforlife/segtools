@@ -6,12 +6,13 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import os, sys, io
+from contextlib import contextmanager
 from numbers import Integral
 from numpy import fromfile as npy_fromfile, nditer, empty, ascontiguousarray, asfortranarray
 
 from . import String, GzipFile, Flags, prod
 
-__all__ = ['FileMode', 'fromfile', 'tofile',
+__all__ = ['FileMode', 'umask', 'fromfile', 'tofile',
            'check_file_obj', 'isfileobj', 'openfile', 'get_file_size', 'get_file_name',
            'array_read', 'array_skip', 'array_save', 'array_read_ascii', 'array_skip_ascii', 'array_save_ascii',
            'copy_data', 'fill_data', 'file_remove_ranges', 'FileInsertIO']
@@ -56,34 +57,39 @@ class FileMode(int, Flags):
         if FileMode.Binary in mode: m += 'b'
         return m
 
+@contextmanager
+def umask(mask):
+    """Context manager for temporarily changing the umask value."""
+    orig = os.umask(mask)
+    try: yield
+    finally: os.umask(orig)
+        
+@contextmanager
 def __as_file(f):
+    """Takes a io.FileIO object and makes it usable as a raw file as a contextmanager."""
     f.flush()
-    fd2 = os.dup(f.fileno())
+    fileno = f.fileno()
+    fd2 = os.dup(fileno)
     f2 = os.fdopen(fd2, f.mode)
     orig_pos = os.lseek(fd2, 0, os.SEEK_CUR)
     f2.seek(f.tell())
-    return f2, orig_pos
-
-def __close_file(f, f2, orig_pos):
-    position = f2.tell()
-    f2.close()
-    os.lseek(f.fileno(), orig_pos, os.SEEK_SET)
-    f.seek(position)
+    try: yield f2
+    finally:
+        position = f2.tell()
+        f2.close()
+        os.lseek(fileno, orig_pos, os.SEEK_SET)
+        f.seek(position)
     
 def fromfile(f, dt=float, count=-1, sep=''):
     """Wrapper for numpy.fromfile that handles io.FileIO objects in Python 2"""
     if __is_py3 or isinstance(f, (basestring,file)): return npy_fromfile(f, dt, count, sep)
-    f2, orig_pos = __as_file(f)
-    arr = npy_fromfile(f2, dt, count, sep)
-    __close_file(f, f2, orig_pos)
+    with __as_file(f) as f2: arr = npy_fromfile(f2, dt, count, sep)
     return arr
 
 def tofile(arr, f, sep='', format='%s'): #pylint: disable=redefined-builtin
     """Wrapper for ndarray.tofile that handles io.FileIO objects in Python 2"""
     if __is_py3 or isinstance(f, (basestring,file)): arr.tofile(f, sep, format); return
-    f2, orig_pos = __as_file(f)
-    arr.tofile(f2, sep, format)
-    __close_file(f, f2, orig_pos)
+    with __as_file(f) as f2: arr.tofile(f2, sep, format)
 
 def any_in(a, b): return any(x in b for x in a)
 def check_file_obj(f, read, write, seek, binary=True, append=False):
