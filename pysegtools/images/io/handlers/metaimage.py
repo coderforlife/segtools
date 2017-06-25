@@ -177,8 +177,8 @@ def __get_header_fields(): #pylint: disable=too-many-locals
             for y in x:
                 if y == '?': continue
                 if y not in options: raise ValueError('AnatomicalOrientation tag is not well-formed')
-                del options[options[x]]
-                del options[x]
+                del options[options[y]]
+                del options[y]
             return x
         def write(self, x, fields): return x if any(c != '?' for c in x) else None # technically: return x[0] != '?'
 
