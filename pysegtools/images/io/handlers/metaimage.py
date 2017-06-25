@@ -3,6 +3,13 @@
 #   https://github.com/InsightSoftwareConsortium/ITK/tree/master/Modules/ThirdParty/MetaIO/src/MetaIO/src
 #   see metaImage.cxx, metaObject.cxx, and metaUtils.cxx
 
+
+# TODO: the 3D version is severely limited and was quickly hacked together
+# It isn't very memory efficient and is designed to make sure it works with imstack but not the
+# more general interface. The header is completely lacking and only supports read-only or
+# write-only, but not but. 
+
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -15,6 +22,7 @@ import os.path
 from numpy import empty
 
 from .._single import FileImageSource
+from .._stack import HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader
 from ...types import create_im_dtype, get_dtype_endian, get_im_dtype_and_nchan, im_decomplexify, im_decomplexify_dtype
 from ....general import Enum, String, Unicode, Byte, sys_endian, prod, delayed
 from ....general.io import openfile, get_file_size, array_read, array_save, array_read_ascii, array_save_ascii
@@ -864,3 +872,110 @@ space-seperated list of values. The following header fields are treated speciall
     def filenames(self):
         edf = self.__fields['ElementDataFile']
         return (self._filename,) if edf is None else (self._filename,edf)
+
+class MetaImageStack(HomogeneousFileImageStack):
+    @classmethod
+    def open(cls, filename, readonly=False, **options): #pylint: disable=arguments-differ
+        """
+        Opens an MHA file. Provide a filename or a file-like object. You can specify if it should be
+        opened readonly or not. No extra options are supported.
+        """
+        if len(options) > 0: raise ValueError('The MHA/MHD ImageStack does not support any additional options')
+        with openfile(filename, 'rb') as f: fields,_ = read_mha_header(f)    
+        if fields['NDims'] != 3 or fields.get('ElementNumberOfChannels', 1) > 5:
+            raise ValueError('MHA/MHD file not a 3D image')
+        _,data = imread_mha(filename)
+        return MetaImageStack(filename, readonly, fields, data)
+    
+    @classmethod
+    def _openable(cls, filename, f, readonly=False, **opts):
+        #pylint: disable=unused-argument
+        if len(opts) > 0: return False
+        try:
+            fields, _ = read_mha_header(f)
+            return fields['NDims'] == 3 and fields.get('ElementNumberOfChannels', 1) <= 5
+        except StandardError:
+            return False
+
+    @classmethod
+    def create(cls, filename, ims, writeonly=False, **fields): #pylint: disable=arguments-differ
+        """Creates a new MHA file. Provide a filename or a file-like object."""
+        if len(fields.viewkeys() & MetaImageStack.__forbidden) != 0: raise ValueError("Forbidden fields given")
+        fields.setdefault('BinaryData', True)
+        shape, dtype = (len(ims),) + ims.shape, ims.dtype
+        mha = os.path.splitext(filename)[1].lower() == '.mha'
+        if mha:
+            if 'ElementDataFile' in fields: raise ValueError('Cannot specify ElementDataFile with MHA file extension')
+            fields['ElementDataFile'] = None
+        elif 'ElementDataFile' not in fields:
+            ext = ('.zlib' if fields.get('CompressedData',False) else '.bin') if fields['BinaryData'] else '.txt'
+            fields['ElementDataFile'] = os.path.splitext(os.path.basename(filename))[0] + ext
+        elif fields['ElementDataFile'] in ('LOCAL','Local','local'): raise ValueError('Forbidden ElementDataFile sepcified')
+        ims = ims.stack
+        ims.flags.writeable = False
+        imsave_mha(filename, ims, **fields)
+        fields = parse_mha_fields(dtype, shape, fields)
+        return MetaImageStack(filename, False, fields, ims)
+        
+    __forbidden = {'ObjectType', 'ObjectSubType', 'NDims', 'DimSize', 'CompressedDataSize',
+                   'ElementNumberOfChannels', 'ElementNBits', 'ElementType'}
+
+    @classmethod
+    def _creatable(cls, filename, ext, writeonly=False, **fields):
+        return (ext in ('.mha', '.mhd') and
+                ('ElementDataFile' not in fields or not (ext == '.mhd' or fields['ElementDataFile'].startswith('LIST') or fields['ElementDataFile'] in ('LOCAL','Local','local')))
+                and len(fields.viewkeys() & MetaImageStack.__forbidden) == 0)
+
+    def _delete(self, idxs): raise NotImplemented()
+    def _insert(self, idx, ims): raise NotImplemented()
+
+    @classmethod
+    def name(cls): return "MHA/MHD"
+
+    @classmethod
+    def exts(cls): return ('.mha', '.mhd')
+    
+    @classmethod
+    def print_help(cls, width):
+        from ....imstack import Help
+        p = Help(width)
+        p.title("MetaImage Image Handler (MHA/MHD)")
+        p.text("""
+Reads and writes MetaImage files (.mha or .mhd). This supports 3D images with up to 5 channels and
+all basic numerical types (unsigned/signed ints and floating-point) except logical and complex
+(however these can be accomplished with conversion or multi-channel). See the 2D handler information
+for more information.""")
+        
+    def __init__(self, filename, readonly, fields, data):
+        self.__filename = filename
+        self.__fields = fields
+        self._data = data
+        w,h,d = fields['DimSize']
+        super(MetaImageStack, self).__init__(MHAHeader(fields), [MHASlice(self, z) for z in xrange(d)],
+                                             w, h, _get_dtype(fields), readonly)
+    @property
+    def filenames(self):
+        edf = self.__fields['ElementDataFile']
+        return (self._filename,) if edf is None else (self._filename,edf)
+
+    @property
+    def stack(self): return self.__data
+    
+class MHASlice(FileImageSlice):
+    def __init__(self, stack, z):
+        super(MHASlice, self).__init__(stack, z)
+        self._im = im = stack._data[z]
+        self._set_props(im.dtype, im.shape)
+    def _get_props(self): pass
+    def _get_data(self):
+        return self._im
+    def _set_data(self, im): raise NotImplemented()
+    def _update(self, z): raise NotImplemented()
+
+class MHAHeader(FileImageStackHeader):
+    _fields = None
+    _data = None
+    def __init__(self, fields):
+        self._fields = {}
+        self._data = fields
+        super(MHAHeader, self).__init__(check=False)
