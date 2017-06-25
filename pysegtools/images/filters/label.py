@@ -196,7 +196,7 @@ class ConsecutivelyNumberImageStack(_LabeledImageStack):
             self._number = _number2 if ordered else _renumber2
             super(ConsecutivelyNumberImageStack, self).__init__(ims, ConsecutivelyNumberImagePerSlice)
         elif not ims.is_dtype_homogeneous: raise ValueError('Cannot consecutively number the entire stack if it\'s data-type is not homogeneous')
-        elif ordered and ims.is_shape_homogeneous:
+        elif ordered or ims.is_shape_homogeneous:
             self._renumbered = None
             self._n_labels = None
             self._calc_n_labels = self._calc_renumbered
