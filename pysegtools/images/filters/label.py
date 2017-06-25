@@ -305,15 +305,15 @@ class ShrinkIntegerImageStack(FilteredImageStack):
             if self._d == 0:
                 self.__dtype = uint8 if self._min_dt is None else self._min_dt
             else:
-                kinds = [slc.dtype.base.kind for slc in self._slices]
+                kinds = [slc._input.dtype.base.kind for slc in self._slices]
                 if any(k not in 'iu' for k in kinds): raise ValueError('Can only take integral data types')
                 kinds = [k == 'u' for k in kinds]
                 slices = iter(self._slices)
                 slc = next(slices)
-                im = slc.data
+                im = slc._input.data
                 mn, mx = (0 if kinds[0] else im.min()), im.max()
                 for slc,unsigned in zip(slices,kinds):
-                    im = slc.data
+                    im = slc._input.data
                     mn, mx = min((0 if unsigned else im.min()), mn), max(im.max(), mx)
                 min_dt = self._min_dt
                 if min_dt is None:
