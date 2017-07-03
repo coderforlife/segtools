@@ -358,7 +358,7 @@ class _PILSource(object):
             w8 = w if w%8 == 0 else w+8-w%8
             return a.reshape((h,w8)+tuple(dt_final.shape))[:,:w]
         else:
-            a = frombuffer(self.im.tobytes(), dtype=dt).astype(dt_final, copy=False)
+            a = frombuffer(self.im.tobytes(), dtype=dt).astype(dt_final.base, copy=False)
         return a.reshape(tuple(reversed(dt_final.shape+self.im.size)))
     def set_data(self, im): # im is an ImageSource
         pil = imsrc2pil(im)
