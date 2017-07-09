@@ -60,8 +60,12 @@ class FileLock(object):
         if timeout is not None: timeout, start = float(timeout), time()
         while self.__lockfile is None:
             try:
-                self.__lockfile = os.open(self.__file, os.O_CREAT|os.O_EXCL|os.O_RDWR)
-                os.write(self.__lockfile, str(os.getpid()))
+                self.__lockfile = os.open(self.__file, os.O_CREAT|os.O_EXCL|os.O_RDWR, 0o666)
+                pid = str(os.getpid())
+                n = os.write(self.__lockfile, pid)
+                if n != len(pid):
+                    from warnings import warn
+                    warn("lockfile not written properly, wrote %d bytes instead of %d" % (n,len(pid)), category)
                 os.fsync(self.__lockfile)
             except OSError as e:
                 if e.errno != EEXIST: self.release(); raise
