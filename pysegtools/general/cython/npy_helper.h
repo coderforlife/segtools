@@ -212,17 +212,14 @@ template <typename T, template<class> class H> CONSTEXPR inline size_t hash_toge
 // once the type is known, especially if constexpr is supported. The function
 // takes a dummy value of the destination type because Cython needs an argument
 // to determine template types.
-template<typename T>
-inline T cast_with_clip(double x, T dummy)
-{
 #ifndef _MSC_VER
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-value"
 #endif
+template<typename T>
+inline T cast_with_clip(double x, T dummy)
+{
 	(dummy); // Cython needs to have an argument that is the type of the template, so we add a dummy one
-#ifndef _MSC_VER
-#pragma GCC diagnostic pop
-#endif
     if (std::numeric_limits<T>::is_integer)
 	{
 		// integral types need to be clipped between min and max, and finally rounded
@@ -233,6 +230,9 @@ inline T cast_with_clip(double x, T dummy)
 	}
     else { return (T)x; } // simply cast floating-points
 }
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif
 
 
 //////////////////// Numpy Half-Sized Float Class ////////////////////
