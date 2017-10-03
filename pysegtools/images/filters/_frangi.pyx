@@ -7,7 +7,7 @@
 
 from __future__ import division
 
-from pysegtools.general.cython.npy_helper cimport *
+from npy_helper cimport *
 import_array()
 
 from libc.math cimport floor, fabs, sqrt, exp, atan2, acos, cos, M_PI

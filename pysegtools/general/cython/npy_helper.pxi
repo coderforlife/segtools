@@ -12,7 +12,7 @@
 #     npy_lexsort2D
 # Along with cimporting all of npy_helper and running import_array()
 
-from pysegtools.general.cython.npy_helper cimport *
+from npy_helper cimport *
 
 ### Required to use the Numpy C-API ###
 import_array()

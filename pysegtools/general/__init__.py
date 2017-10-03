@@ -12,7 +12,6 @@ from .utils import sys_endian, sys_64bit, pairwise, String, Unicode, Byte, prod,
 
 # Also alias many of the module names
 from . import json
-from . import cython
 from . import interval
 from . import io
 from . import os_ext

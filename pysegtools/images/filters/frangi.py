@@ -22,12 +22,7 @@ __all__ = ['frangi2', 'frangi3', 'FrangiImageStack']
 
 
 ########## Single Slice Functions ##########
-# These are implemented in Cython (with fallbacks in Python). See _frangi.pyx. The _frangi.pyx can
-# take some time to compile the first time. The _frangi.pyd/.so created can be moved between
-# different "identical" systems. If the directory containing _frangi.pyx is writable, it will be
-# placed into that directory. If the directory is not writable, it will be placed somewhere in
-# ~/.pyxbld. It is aways checked for in those places before re-compiling.
-from ...general import cython; cython.install()
+# These are implemented in Cython. See _frangi.pyx.
 from . import _frangi
 def frangi2(im, sigmas=(1.0, 3.0, 5.0, 7.0, 9.0), beta=0.5, c=None, black=True, return_full=False):
     """

@@ -42,13 +42,12 @@ def __get_subprocess_version():
 __req_modules = ( # module, target version, actual version (or False)
     ('numpy', '1.7', __version_getter('numpy')()),
     ('scipy', '0.12', __version_getter('scipy')()),
+    ('psutil', '2.0', __version_getter('psutil')()),
     )
 __opt_modules = ( # module, target version, version getter, description (or None)
-    ('cython', '0.19', __version_getter('cython'), 'for some optimized libraries'),
     ('pillow', '2.0', __get_pillow_version, 'for loading common image formats'),
     # TODO: bioformats
     ('h5py',   '2.0', __version_getter('h5py'), 'for loading MATLAB v7.3 files'),
-    ('psutil', '2.0', __version_getter('psutil'), 'for tasks'),
     ('subprocess32', '3.2.6', __get_subprocess_version, 'for tasks on POSIX systems'),
     )
 

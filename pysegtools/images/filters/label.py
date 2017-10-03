@@ -23,14 +23,8 @@ __all__ = ['number','label','relabel','shrink_integer',
 
 
 ########## Core Functions ##########
-# These are implemented in Cython (with fallbacks in Python). See _label.pyx. The _label.pyx can
-# take quite a bit of time to compile the first time (on the order of minutes). The _label.pyd/.so
-# created can be moved between different "identical" systems. If the directory containing _label.pyx
-# is writable, it will be placed into that directory. If the directory is not writable, it will be
-# placed somewhere in ~/.pyxbld. It is aways checked for in those places before re-compiling.
-# Since pylint is not able to properly detect Cython-compiled code members, so we disable it here
+# These are implemented in Cython (with fallbacks in Python)
 #pylint: disable=no-member
-from ...general import cython; cython.install()
 from . import _label
 def __squeeze_last(a): return a.squeeze(-1) if a.shape[-1] == 1 else a
 def _number2(a):
@@ -53,6 +47,7 @@ def _label3(a, structure):
     if a.ndim == 4: a = __squeeze_last(a)
     a = a != 0
     return sp_label(a if a.ndim == 3 else a.any(3), structure, uintp)
+#pylint: enable=no-member
 
 
 ########## Single Slice Functions ##########
