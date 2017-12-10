@@ -1713,7 +1713,7 @@ class _MAT73File(_MATFile):
         if isinstance(entry, h5py.Group):
             for e in entry.itervalues(): self.__del_refs(e)
             del self._f[entry.name]
-        elif isinstance(entry, h5py.Dataset) and h5py.check_dtype(ref=e.dtype) == h5py.Reference:
+        elif isinstance(entry, h5py.Dataset) and h5py.check_dtype(ref=entry.dtype) == h5py.Reference:
             refs = entry[:].flat
             del self._f[entry.name]
             for ref in refs:
