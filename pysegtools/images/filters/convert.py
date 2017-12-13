@@ -8,9 +8,9 @@ from fractions import gcd
 from itertools import izip
 from collections import Sequence
 
-from numpy import empty, dtype, promote_types, subtract, add
+from numpy import empty, dtype, promote_types, subtract, add, dstack, rint
 
-from ..types import check_image_or_stack, create_im_dtype, im_dtype_desc
+from ..types import check_image_or_stack, check_image, create_im_dtype, im_dtype_desc
 from ..types import get_dtype_endian, get_im_min_max, get_dtype_min_max
 from ._stack import FilteredImageStack, FilteredImageSlice
 from .._stack import Homogeneous
@@ -31,7 +31,7 @@ def raw_convert(im, dt):
     return im.view(dt)
 
 
-__byte_orders = {
+_byte_orders = {
     '<': '<', 'l': '<', 'little': '<',
     '>': '>', 'b': '>', 'big': '>',
     '=': sys_endian, '@': sys_endian, 'n': sys_endian, 'native': sys_endian,
@@ -52,9 +52,55 @@ def convert_byte_order(im, new_byte_order):
     if new_byte_order in ('~', 'swap'):
         new_byte_order = '>' if get_dtype_endian(im.dtype) == '<' else '<'
     else:
-        new_byte_order = __byte_orders.get(new_byte_order)
+        new_byte_order = _byte_orders.get(new_byte_order)
         if new_byte_order is None: raise ValueError('invalid new byte order')
     return im.view(im.dtype.newbyteorder(new_byte_order))
+
+_grayscale_factors = {
+    'avg':      (1,1,1),
+    'rec601':   (299,587,114),
+    'rec709':   (2126,7152,722),
+    'smpte240m':(212,701,87),
+    }
+# convert: RGB [3 channels]
+# to:      single channel
+def grayscale(im, method='rec601'):
+    """
+    Convert 3-channel color image to single-channel grayscale using one of the following methods:
+        'avg'       the average of the 3-channels (R+G+B)/3
+        'rec601'    the Rec 601 standard (0.299*R + 0.587*G + 0.114*B) (default)
+        'rec709'    the Rec 709 standard (0.2126*R + 0.7152*G + 0.0722*B)
+        'smpte240M' the SMPTE 240M standard (0.212*R + 0.701*G + 0.087*B)
+    If a 4-channel image is given then it is assumed to be RGBA and the alpha is kept as-is and a
+    two-channel image is returned (LA).
+
+    The output image will have the same datatype as the input image. 
+    """
+    check_image(im)
+    if method not in _grayscale_factors: raise ValueError('invalid grayscale method')
+    if im.shape[2] not in (3, 4): raise ValueError('im must have 3 or 4 channels')
+    
+    # split off alpha channel if there
+    alpha = im[:,:,3] if im.shape[2] == 4 else None
+    dt = im.dtype
+    im = im[:,:,:3].astype(float)
+    
+    # Apply the grayscale conversion
+    factors = _grayscale_factors[method]
+    im *= factors
+    im = im.sum(2)
+    im /= sum(factors)
+
+    # Convert back to original data type
+    if dt.kind not in 'fc': rint(im, out=im)
+    im = im.astype(dt, copy=False)
+
+    # Add on alpha channel
+    if alpha is not None: im = dstack((im, alpha))
+
+    # All done!
+    return im
+
 
 # convert: any non-complex type
 # to:      any type with the same number of channels
@@ -177,13 +223,14 @@ class RawConvertImageSlice(FilteredImageSlice):
     def _get_props(self): self._set_props(None, self._input.shape)
     def _get_data(self): return raw_convert(self._input.data, self._dtype)
 
+
 class ConvertByteOrderImageStack(FilteredImageStack):
     def __init__(self, ims, new_byte_order):
-        if new_byte_order in __byte_orders:
-            new_byte_orders = __byte_orders[new_byte_order] * len(ims)
+        if new_byte_order in _byte_orders:
+            new_byte_orders = _byte_orders[new_byte_order] * len(ims)
         else:
             try:
-                new_byte_orders = "".join(__byte_orders[nbo] for nbo in new_byte_order)
+                new_byte_orders = "".join(_byte_orders[nbo] for nbo in new_byte_order)
                 if len(new_byte_orders) < len(ims):
                     new_byte_orders += new_byte_orders[-1]*(len(ims)-len(new_byte_orders))
             except KeyError: raise ValueError('invalid new byte order')
@@ -200,6 +247,20 @@ class ConvertByteOrderImageSlice(FilteredImageSlice):
         if nbo == '~': nbo = '>' if get_dtype_endian(dt) == '<' else '<'
         self._set_props(dt.newbyteorder(nbo), self._input.shape)
     def _get_data(self): return convert_byte_order(self._input.data, self.__new_byte_order)
+
+
+class GrayscaleImageStack(FilteredImageStack):
+    def __init__(self, ims, method='rec601'):
+        if method not in _grayscale_factors: raise ValueError('invalid grayscale method')
+        self.method = method
+        super(GrayscaleImageStack, self).__init__(ims, GrayscaleImageSlice)
+class GrayscaleImageSlice(FilteredImageSlice):
+    def _get_props(self):
+        dt = self._input.dtype
+        dt = dtype((dt.base, 2 if dt.shape[0] == 4 else 1))
+        self._set_props(dt, self._input.shape)
+    def _get_data(self): return grayscale(self._input.data, self._stack.method)
+
 
 class ScaleImageStack(FilteredImageStack):
     def __init__(self, ims, in_scale=None, out_scale=None, dt=None):
@@ -266,12 +327,13 @@ from signed to unsigned integers of the same size).
         return 'raw-convert to [%s]' % (",".join(im_dtype_desc(dt) for dt in self._dtype)) #pylint: disable=not-an-iterable
     def execute(self, stack): stack.push(RawConvertImageStack(stack.pop(), self._dtype))
 
+
 class ByteOrderConvertCommand(CommandEasy):
     _new = None
     @staticmethod
     def _cast_endian(x):
         if len(x) == 0: raise ValueError
-        try: return "".join(__byte_orders[x] for x in x)
+        try: return "".join(_byte_orders[x] for x in x)
         except KeyError: raise ValueError
 
     @classmethod
@@ -304,6 +366,39 @@ single-character symbols (e.g. '<><><>').
     def __str__(self):
         return ('byte-order-convert to %s' if len(self._new) == 1 else 'byte-order-convert to [%s]') % self._new
     def execute(self, stack): stack.push(ConvertByteOrderImageStack(stack.pop(), self._new))
+
+
+class GrayscaleConvertCommand(CommandEasy):
+    _method = None
+    @classmethod
+    def name(cls): return 'grayscale'
+    @classmethod
+    def _desc(cls): return """
+Convert the image from color to grayscale. The input must be a 3- or 4-channel image representing
+RGB or RGBA data. The output is either a 1- or 2-channel grayscale or grayscale+alpha image with
+the same data type.
+
+The method for converting to grayscale is one of the following: 
+  * avg:       the average of the 3-channels (R+G+B)/3 
+  * rec601:    the Rec 601 standard (0.299*R + 0.587*G + 0.114*B) 
+  * rec709:    the Rec 709 standard (0.2126*R + 0.7152*G + 0.0722*B) 
+  * smpte240m: the SMPTE 240M standard (0.212*R + 0.701*G + 0.087*B) 
+"""
+    @classmethod
+    def flags(cls): return ('gray', 'grayscale')
+    @classmethod
+    def _opts(cls): return (
+        Opt('method', 'The conversion method', Opt.cast_in('avg','rec601','rec709','smpte240m'), 'rec601'),
+        )
+    @classmethod
+    def _consumes(cls): return ('Image stack to be converted',)
+    @classmethod
+    def _produces(cls): return ('Converted image stack',)
+    @classmethod
+    def _see_also(cls): return ('threshold',)
+    def __str__(self): return 'grayscale using %s' % self._method
+    def execute(self, stack): stack.push(GrayscaleImageStack(stack.pop(), self._method))
+
 
 class ConvertScaleConvertCommand(CommandEasy):
     _in = None

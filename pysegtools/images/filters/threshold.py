@@ -359,7 +359,7 @@ list of thresholds - one for each slice.
     @classmethod
     def _produces(cls): return ('Thresholded image - a logical/bool image',)
     @classmethod
-    def _see_also(cls): return ('hysteresis-threshold','multithreshold','invert','scale')
+    def _see_also(cls): return ('hysteresis-threshold','multithreshold','invert','scale','grayscale')
     def __str__(self):
         #pylint: disable=not-an-iterable
         if self._thresh == 'auto':
