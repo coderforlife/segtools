@@ -292,9 +292,9 @@ class MinPaddingForImageStack(DelayLoadedList): # "Conservative"
         self.__ims, self.__color = ims, color
     def _loaditem(self, i):
         # loads all once the first one is requested
-        min_t,min_l,min_b,min_r = get_bg_padding(self.__ims[0], self.__color)
+        min_t,min_l,min_b,min_r = get_bg_padding(self.__ims[0].data, self.__color)
         for im in islice(self.__ims, 1, None):
-            t,l,b,r = get_bg_padding(im, self.__color)
+            t,l,b,r = get_bg_padding(im.data, self.__color)
             if t < min_t: min_t = t
             if l < min_l: min_l = l
             if b < min_b: min_b = b
@@ -314,9 +314,9 @@ class MaxPaddingForImageStack(DelayLoadedList): # "Aggressive"
         self.__ims, self.__color = ims, color
     def _loaditem(self, i):
         # loads all once the first one is requested
-        max_t,max_l,max_b,max_r = get_bg_padding(self.__ims[0], self.__color)
+        max_t,max_l,max_b,max_r = get_bg_padding(self.__ims[0].data, self.__color)
         for im in islice(self.__ims, 1, None):
-            t,l,b,r = get_bg_padding(im, self.__color)
+            t,l,b,r = get_bg_padding(im.data, self.__color)
             if t > max_t: max_t = t
             if l > max_l: max_l = l
             if b > max_b: max_b = b
@@ -452,6 +452,7 @@ _cast_fill = Opt.cast_or('mean', 'mirror', 'reflect', 'nearest', 'wrap', Opt.cas
 class BackgroundMaskCommand(CommandEasy):
     _color = None
     _rect = None
+    _projection = None
     @classmethod
     def name(cls): return 'background mask'
     @classmethod
@@ -473,8 +474,8 @@ class BackgroundMaskCommand(CommandEasy):
     def _produces(cls): return ('Background mask',)
     @classmethod
     def _see_also(cls): return ('fill', 'crop', 'pad', 'invert', 'threshold', 'colors')
-    def __str__(self): return 'calculate background padding '+(('of color %s '%self._color) if self._color=='auto' else '')+('(rectangular)' if self._rect else '')
-    def execute(self, stack): stack.push(BackgroundMask(stack.pop(), None if self._color=='auto' else self._color, self._rect))
+    def __str__(self): return 'calculate background padding '+(('of color %s '%self._color) if self._color!='auto' else '')+('(rectangular) ' if self._rect else '')+('(projected as %s)'%('all' if self._projection == MaskProjection.All else 'any') if self._projection != MaskProjection.None_ else '')
+    def execute(self, stack): stack.push(BackgroundMask(stack.pop(), None if self._color=='auto' else self._color, self._rect, self._projection))
 
 class FillCommand(CommandEasy):
     _fill = None
