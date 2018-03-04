@@ -531,7 +531,7 @@ cdef uintp __compact_mergetable(uintp* mergetable, uintp next_lbl,
                                PyArrayIterObject *ito, intp stride,
                                uintp* line, intp L) nogil:
     if next_lbl < 2: return 0 # we found no regions
-    cdef uintp src_lbl, dst_lbl = 1
+    cdef uintp src_lbl, dst_lbl = 2
     cdef intp i
     mergetable[0] = 0
     mergetable[1] = 1
