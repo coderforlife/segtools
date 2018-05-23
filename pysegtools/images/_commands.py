@@ -77,7 +77,7 @@ Examples:""")
                     # slice: different order from how Python normally operates
                     parts = [int(i) if len(i) > 0 else None for i in arg.split(':', 2)]
                     start, stop, step = parts[0], parts[-1], ((parts[1] if len(parts) == 2 else None) or 1)
-                    self.__inds.extend(slice(start, stop, step)) # not a real slice since stop is inclusive
+                    self.__inds.append(slice(start, stop, step)) # not a real slice since stop is inclusive
                 else: self.__inds.append(int(arg))
         except ValueError: raise ValueError("Only integers and slices ([first][:step]:[last]) are allowed")
     def execute(self, stack):
