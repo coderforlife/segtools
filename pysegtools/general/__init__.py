@@ -1,8 +1,3 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
-
 # Load the most common classes and methods directly
 from .datawrapper import * #pylint: disable=wildcard-import
 from .delayed import delayed
@@ -11,8 +6,6 @@ from .utils import sys_endian, sys_64bit, pairwise, String, Unicode, Byte, prod,
 
 # Also alias many of the module names
 from . import json
-from . import interval
 from . import io
 from . import os_ext
 from . import utils
-

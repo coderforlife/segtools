@@ -407,11 +407,11 @@ def file_remove_ranges(f, ranges, buf_size=16777216): # 16 MB
     get_file_size. By complete, the function must not stop short of the amount of data requested
     (unless end-of-file for readinto).
     """
-    from .interval import Interval, IntervalSet
-    intervals = IntervalSet(Interval(start,stop,upper_closed=False) for start,stop in ranges)
-    if not intervals: return # nothing to remove
-    keep_ints = IntervalSet([Interval(0, get_file_size(f), upper_closed=False)]) - intervals
-    if not keep_ints: f.truncate(0); return # remove everything
+    from intervals import Interval, closedopen
+    intervals = Interval([closedopen(start, stop) for start, stop in ranges])
+    if intervals.is_empty(): return # nothing to remove
+    keep_ints = Interval([closedopen(0, get_file_size(f))]) - intervals
+    if keep_ints.is_empty(): f.truncate(0); return # remove everything
     buf_raw = bytearray(buf_size)
     buf = memoryview(buf_raw) # allows us to slice without copying
     position = 0
