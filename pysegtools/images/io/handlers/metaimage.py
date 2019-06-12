@@ -15,6 +15,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from enum import Enum
 from collections import OrderedDict, defaultdict
 from itertools import product, izip
 import os.path
@@ -24,7 +25,7 @@ from numpy import empty
 from .._single import FileImageSource
 from .._stack import HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader
 from ...types import create_im_dtype, get_dtype_endian, get_im_dtype_and_nchan, im_decomplexify, im_decomplexify_dtype
-from ....general import Enum, String, Unicode, Byte, sys_endian, prod, delayed
+from ....general import String, Unicode, Byte, sys_endian, prod, delayed
 from ....general.io import openfile, get_file_size, array_read, array_save, array_read_ascii, array_save_ascii
 
 __sys_is_big_endian = sys_endian == '>'

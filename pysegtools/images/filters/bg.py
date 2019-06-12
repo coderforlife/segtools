@@ -4,6 +4,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from enum import Enum
 from numbers import Integral
 from itertools import islice
 
@@ -16,7 +17,7 @@ from ..types import check_image
 from .._stack import ImageStack, Homogeneous
 from ..colors import get_color, is_color
 from ...imstack import CommandEasy, Opt
-from ...general import DelayLoadedList, Enum
+from ...general import DelayLoadedList
 
 __all__ = ['get_bg_color','get_bg_padding','get_bg_mask','fill','fill_padding','crop','pad']
 

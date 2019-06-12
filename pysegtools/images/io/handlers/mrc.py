@@ -16,6 +16,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from enum import Enum
 from collections import OrderedDict
 from itertools import izip
 from struct import Struct
@@ -23,7 +24,7 @@ from numpy import int8, uint8, int16, uint16, int32, float32, complex64
 
 from .._stack import HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader, Field, FixedField
 from ...types import create_im_dtype, get_im_dtype_and_nchan, get_dtype_endian
-from ....general import Unicode, Enum, Flags, ListWrapper, ReadOnlyListWrapper
+from ....general import Unicode, Flags, ListWrapper, ReadOnlyListWrapper
 from ....general.io import copy_data, openfile, array_read, array_save, file_remove_ranges, get_file_name
 
 __all__ = ['MRC']

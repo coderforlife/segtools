@@ -9,8 +9,8 @@ from setuptools import setup
 
 import numpy
 
-# We require Python v3.3 or newer
-if sys.version_info[:2] < (3, 3): raise RuntimeError("This requires Python v3.3 or newer")
+# We require Python v3.5 or newer
+if sys.version_info[:2] < (3, 5): raise RuntimeError("This requires Python v3.5 or newer")
 
 # Prepare for compiling the source code
 compiler_name = get_default_compiler() # TODO: this isn't the compiler that will necessarily be used, but is a good guess...
