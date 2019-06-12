@@ -23,7 +23,7 @@ from numpy import uint8, ascontiguousarray
 from .._stack import FileImageStack, FileImageSlice, FileImageStackHeader, FixedField
 from .._single import FileImageSource
 from ...types import get_im_dtype_and_nchan
-from ....general import String, delayed, _bool
+from ....general import delayed, _bool
 from ....general.io import check_file_obj, get_file_name
 
 from distutils.version import StrictVersion
@@ -182,7 +182,7 @@ class _PILSource(object):
         """
         if palette is not True and palette is not False:
             from numbers import Integral
-            if isinstance(palette, String):
+            if isinstance(palette, str):
                 pal_lower = palette.lower() #pylint: disable=no-member
                 if   pal_lower in ('true', 't'): palette = True
                 elif pal_lower in ('false','f'): palette = False
@@ -236,7 +236,7 @@ class _PILSource(object):
 
         open_options, save_options = self._parse_options(True, not readonly, **options)
 
-        if isinstance(file, String):
+        if isinstance(file, str):
             filename, f = file, open(file, 'rb')
             try:
                 return self.__open(self._open_pil_image(f, filename, **open_options),
@@ -380,7 +380,7 @@ class _PILSource(object):
 
 def _get_prefix(f):
     from os import SEEK_CUR
-    if isinstance(f, String):
+    if isinstance(f, str):
         with open(f, 'rb') as f: return f.read(16) #pylint: disable=redefined-argument-from-local
     data = f.read(16)
     f.seek(-len(data), SEEK_CUR)
@@ -437,7 +437,7 @@ class _ICNSSource(_PILSource):
     def _parse_open_options(self, size=None, **options): #pylint: disable=arguments-differ
         open_options, options = super(_ICNSSource, self)._parse_open_options(**options)
         if size is not None:
-            if isinstance(size, String): size = size.split(',')
+            if isinstance(size, str): size = size.split(',')
             size = tuple(int(i) for i in size)
             if len(size) == 1: size = (size[0], size[0], 1)
             elif len(size) == 2: size = size + (1,)

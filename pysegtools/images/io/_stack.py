@@ -17,7 +17,7 @@ from .._stack import ImageStack, HomogeneousImageStack, ImageSlice, Homogeneous
 from ..types import is_image, get_im_dtype
 from ..source import ImageSource
 from ...imstack import Opt
-from ...general import String, DictionaryWrapperWithAttr
+from ...general import DictionaryWrapperWithAttr
 
 __all__ = ['FileImageStack','HomogeneousFileImageStack','FileImageSlice','FileImageStackHeader','Field','FixedField','NumericField']
 
@@ -71,7 +71,7 @@ class FileImageStack(ImageStack, HandlerManager):
         file names. The interpretation of handler is dependent on which form is given as well.
         Extra options are only supported by some handlers.
         """
-        if isinstance(filename, String):
+        if isinstance(filename, str):
             return HandlerManager.open.__func__(cls, filename, readonly, handler, **options)
         elif isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
@@ -86,7 +86,7 @@ class FileImageStack(ImageStack, HandlerManager):
         Otherwise it needs to be an iterable of file names. Extra options are only supported by
         some handlers.
         """
-        if isinstance(filename, String):
+        if isinstance(filename, str):
             return HandlerManager.openable.__func__(cls, filename, readonly, handler, **options)
         if isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
@@ -125,7 +125,7 @@ class FileImageStack(ImageStack, HandlerManager):
         honored. It is your word that you will not use any functions that get data from the
         stack.
         """
-        if isinstance(filename, String):
+        if isinstance(filename, str):
             return HandlerManager.create.__func__(cls, filename, im, writeonly, handler, **options)
         if filename is None or isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
@@ -140,7 +140,7 @@ class FileImageStack(ImageStack, HandlerManager):
         by some file handlers. When filenames is None or an empty iterable then you need to give a
         "pattern" option with an extension and %d in it.
         """
-        if isinstance(filename, String):
+        if isinstance(filename, str):
             return HandlerManager.creatable.__func__(cls, filename, writeonly, handler, **options)
         if filename is None or isinstance(filename, Iterable):
             from ._collection import FileCollectionStack
@@ -191,14 +191,12 @@ class FileImageStack(ImageStack, HandlerManager):
         def _filter(x):
             if isinstance(x, bytes) and not all((32 <= ord(c) < 128) or (c in (b'\t\r\n\v')) for c in x):
                 x = "<%d bytes of data>" % len(x)
-            elif isinstance(x, String):
-                x = unicode(x)
             elif isinstance(x, (Sequence, Set)):
-                x = ", ".join(unicode(y) for y in x)
+                x = ", ".join(str(y) for y in x)
             elif isinstance(x, Mapping):
                 x = ", ".join("%s=%s"%(k,v) for k,v in x.iteritems())
             else:
-                x = unicode(x)
+                x = str(x)
             if len(x) > flt_wdth: x = x[:(flt_wdth-3)]+"..."
             return x
         from textwrap import TextWrapper

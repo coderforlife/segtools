@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from numbers import Integral
 from numpy import fromfile as npy_fromfile, nditer, empty, ascontiguousarray, asfortranarray
 
-from . import String, GzipFile, prod
+from . import GzipFile, prod
 
 __all__ = ['FileMode', 'umask', 'fromfile', 'tofile',
            'check_file_obj', 'isfileobj', 'openfile', 'get_file_size', 'get_file_name',
@@ -136,7 +136,7 @@ def openfile(f, mode, compression=None, comp_level=9, off=None):
     if compression not in (None, 'deflate', 'zlib', 'gzip', 'auto') or compression and off is not None and off < 0: raise ValueError
     compressing = compression is not None
     if compression == 'auto': compression = None
-    if isinstance(f, String):
+    if isinstance(f, str):
         if compressing: return GzipFile(f, mode, method=compression, level=comp_level, start_off=off)
         f = io.open(f, mode)
     elif isinstance(f, io.IOBase) or not __is_py3 and (isinstance(f, file) or hasattr(f, 'fileno')):
@@ -256,7 +256,7 @@ def array_save_ascii(f, arr, order=None):
 
 def get_file_size(f):
     """Get the size of a file, either from the filename or the file-object."""
-    if isinstance(f, String): return os.path.getsize(f)
+    if isinstance(f, str): return os.path.getsize(f)
     try:
         return os.fstat(f.fileno()).st_size
     except StandardError:
@@ -308,9 +308,9 @@ def __get_name_from_fd(fd):
 def get_file_name(f):
     """Get the absolute path of a file, either from the filename or file-object."""
     #pylint: disable=unsubscriptable-object
-    if isinstance(f, String): return os.path.abspath(f)
+    if isinstance(f, str): return os.path.abspath(f)
     if hasattr(file, 'name'):
-        if isinstance(file.name, String) and len(file.name) > 0 and file.name[0] != '<' and file.name[-1] != '>':
+        if isinstance(file.name, str) and len(file.name) > 0 and file.name[0] != '<' and file.name[-1] != '>':
             return os.path.abspath(file.name)
         elif isinstance(file.name, Integral):
             return __get_name_from_fd(file.name)

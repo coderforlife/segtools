@@ -83,7 +83,7 @@ from numpy import (complex64, complex128, float32, float64, bool_, unicode_, str
                    int8, int16, int32, int64, intc, uint8, uint16, uint32, uint64)
 
 from .io import array_read, array_save, get_file_size, copy_data, file_remove_ranges, FileInsertIO
-from . import GzipFile, String, Unicode, Byte, prod, sys_endian, sys_64bit
+from . import GzipFile, prod, sys_endian, sys_64bit
 
 try:
     import h5py
@@ -99,7 +99,7 @@ except ImportError:
 
 __all__ = ['get_mat_version', 'openmat', 'is_invalid_matlab_name', 'mat_nice']
 
-def _dt_eq_str(dt, s): return isinstance(dt, String) and dt == s
+def _dt_eq_str(dt, s): return isinstance(dt, str) and dt == s
 
 def _complexify_dtype(dt):
     dtb = dt.base # removes channel information, if there
@@ -113,7 +113,7 @@ def _decomplexify(data):
     return data.view(dtype=_decomplexify_dtype(data.dtype))
 
 def _create_dtype(base, big_endian, channels=1):
-    return dtype((base, channels)).newbyteorder(big_endian if isinstance(big_endian, String) else ('>' if big_endian else '<'))
+    return dtype((base, channels)).newbyteorder(big_endian if isinstance(big_endian, str) else ('>' if big_endian else '<'))
 
 def _get_dtype_endian(dt):
     """Get a '<' or '>' from a dtype's byteorder (which can be |, =, <, or >)."""
@@ -167,11 +167,11 @@ def _as_savable_array(x):
     from numbers import Integral, Real, Complex
     from collections import Mapping
     if isinstance(x, (bool, bool_, Integral, Real, Complex)): return array(x).reshape((1,1)) # scalar
-    if isinstance(x, (bytes, Unicode)): return _squeeze2(array(x)) # string -> char array
+    if isinstance(x, (bytes, str)): return _squeeze2(array(x)) # string -> char array
     if _is_sparse(x) and x.dtype.kind in 'buifc': return x # sparse array pass through
     if isinstance(x, Mapping): # dict -> struct
         names = x.keys()
-        if any(not isinstance(fn, String) or is_invalid_matlab_name(fn) for fn in names): raise ValueError("Invalid struct field name")
+        if any(not isinstance(fn, str) or is_invalid_matlab_name(fn) for fn in names): raise ValueError("Invalid struct field name")
         out = zeros((1,1), dtype=dtype([(str(fn),object_) for fn in x.names]))
         for fn,v in izip(names, x.values()): out[0,0][fn] = _as_savable_array(v)
         return out
@@ -382,7 +382,7 @@ class _MAT45File(_MATFile): # a v4 or v5 file
         from numpy import append, cumsum, diff
         starts = append(fromiter(e._start for e in self._entries.itervalues()), get_file_size(self._f))
 
-        if isinstance(name, String):
+        if isinstance(name, str):
             # Simple case: just one name
             #pylint: disable=undefined-loop-variable
             for idx, n in enumerate(self._entries):
@@ -449,8 +449,8 @@ class _MAT45DummyEntry(_MATDummyEntry): # a v4 or v5 dummy entry
 ###### MATLAB v4 Files ######
 class _MAT4Entry(_MAT45Entry):
     #pylint: disable=protected-access
-    __long_le = Struct(str('<l'))
-    __structs = (Struct(str('<lllll')), Struct(str('>lllll')))
+    __long_le = Struct('<l')
+    __structs = (Struct('<lllll'), Struct('>lllll'))
     __HDR_SIZE = 20
     
     # Numeric format:
@@ -620,7 +620,7 @@ class _MAT4Entry(_MAT45Entry):
         mopt = 1000*M+10*P+T
         mrows, ncols = raw_shape
         imagf = 1 if is_complex else 0
-        if not isinstance(name, bytes): name = Unicode(name).encode('ascii','ignore')
+        if not isinstance(name, bytes): name = str(name).encode('ascii','ignore')
         name += b'\x00'
         namlen = len(name)
         if (f.write(mat._struct.pack(mopt, mrows, ncols, imagf, namlen)) != cls.__HDR_SIZE or
@@ -817,7 +817,7 @@ class _MAT5Entry(_MAT45Entry):
                 _, nbytes, skip = mat._read_tag(f, int32, (0 if len(shape) < 2 else shape[1])+1)
                 # Get the last value in that array which is the actual number of non-zero values
                 f.seek(nbytes-4, io.SEEK_CUR)
-                nnz, = unpack(str(endian+'i'), f.read(4))
+                nnz, = unpack(endian+'i', f.read(4))
                 f.seek(skip-nbytes, io.SEEK_CUR)
                 raw_shape = (nnz,)
                 size = nnz
@@ -873,7 +873,7 @@ class _MAT5Entry(_MAT45Entry):
                 f.seek(end) != end): raise ValueError()
             return e
 
-        if not isinstance(name, bytes): name = Unicode(name).encode('ascii','ignore')
+        if not isinstance(name, bytes): name = str(name).encode('ascii','ignore')
         data = _as_savable_array(data)
 
         matinfo, off, raw_shape, shape, raw_dt, dt, is_complex, is_sparse, sub_dt = \
@@ -1070,7 +1070,7 @@ class _MAT5Entry(_MAT45Entry):
         
     @classmethod
     def __calc_size_internal(cls, name, data):
-        if not isinstance(name, bytes): name = Unicode(name).encode('ascii','ignore')
+        if not isinstance(name, bytes): name = str(name).encode('ascii','ignore')
 
         def get_reduced_size(a):
             t = cls.__get_reduced_type(a)
@@ -1318,14 +1318,14 @@ class _MAT5File(_MAT45File):
         try:
             header = f.read(128)
             if len(header) != 128 or any(x == 0 for x in header[:4]): raise ValueError() # Always supposed to have non-null bytes in first 4 bytes
-            version, endian = (Byte(header[125]),Byte(header[124])), header[126:128]
+            version, endian = (header[125],header[124]), header[126:128]
             if endian not in (b'IM',b'MI'): raise ValueError()
             endian = '<' if endian == b'IM' else '>'
             if endian == '>': version = version[::-1]
             if version[0] != 1: raise ValueError()
             text = header[:116].rstrip(b'\0').rstrip() # or [:124]?
             ssdo = header[116:124]
-            ssdo = None if ssdo in (b'        ',b'\0\0\0\0\0\0\0\0') else unpack(str(endian+'Q'), ssdo)[0]
+            ssdo = None if ssdo in (b'        ',b'\0\0\0\0\0\0\0\0') else unpack(endian+'Q', ssdo)[0]
             mat = cls._open(fn, f, endian, text, ssdo, version)
         except: f.close(); raise
         if ssdo is not None:
@@ -1353,7 +1353,7 @@ class _MAT5File(_MAT45File):
     
     def __init__(self, filename, f, entries, endian, header_text, ssdo, version):
         self._endian = endian
-        self._long = Struct(str(endian+'L'))
+        self._long = Struct(endian+'L')
         self.__header_text = header_text
         self.__subsys_data_off = ssdo
         self.__version = version
@@ -1372,7 +1372,7 @@ class _MAT5File(_MAT45File):
             ssdo = 0
         else:
             self.__subsys_data_off = ssdo
-        if self._f.seek(116) != 116 or self._f.write(pack(str(self._endian+'Q'), ssdo)) != 8: raise IOError()
+        if self._f.seek(116) != 116 or self._f.write(pack(self._endian+'Q', ssdo)) != 8: raise IOError()
 
     def _read_tag_raw(self, f, first=False):
         """
@@ -1475,7 +1475,7 @@ class _MAT5File(_MAT45File):
             if dt == 'utf8':
                 # only other common-ish case  for variable names
                 data = data[:nbytes] if skip != nbytes else data
-                if any(Byte(x) > 127 for x in data): raise ValueError("Invalid variable name stored in header")
+                if any(x > 127 for x in data): raise ValueError("Invalid variable name stored in header")
                 return data
         if skip != nbytes: data = memoryview(data)[:nbytes]
         e = ('le' if self._endian == '<' else 'be')
@@ -1540,9 +1540,9 @@ class _MAT5File(_MAT45File):
         """
         Writes an entire subelement to the given file using data from the ndarray. The ndarray
         specifies the type and number of bytes to list in the tag. This will also write the
-        necessary padding after the subelement. The subelement must be an ndarray. Unicode and
-        strings are no directly supported but does support being passed a UTF dt in force_dt so that
-        the tag header has the right value.
+        necessary padding after the subelement. The subelement must be an ndarray. Strings are not
+        directly supported but does support being passed a UTF dt in force_dt so that the tag
+        header has the right value.
         """
         dt, nbytes = data.dtype.type, data.nbytes
         self._write_tag(f, force_dt or dt, nbytes)
@@ -1575,7 +1575,7 @@ class _MAT73File(_MATFile):
             if f.userblock_size < 128: raise ValueError()
             with io.open(fn, 'rb') as fh: header = fh.read(128)
             if len(header) != 128 or any(x == 0 for x in header[:4]): raise ValueError() # Always supposed to have non-null bytes in first 4 bytes
-            version, endian = (Byte(header[125]),Byte(header[124])), header[126:128]
+            version, endian = (header[125],header[124]), header[126:128]
             if endian not in (b'IM',b'MI'): raise ValueError()
             endian = '<' if endian == b'IM' else '>'
             if endian == '>': version = version[::-1]
@@ -1697,7 +1697,7 @@ class _MAT73File(_MATFile):
         return self.append(name, data)
 
     def __delitem__(self, name):
-        if isinstance(name, String):
+        if isinstance(name, str):
             if name not in self._entries: raise KeyError()
             self.__del_entry(name)
         else:
@@ -2010,10 +2010,10 @@ def get_mat_version(f):
     if _MAT4Entry.openable(header): return 0
 
     # Check v6/7 and v7.3
-    if len(header) != 128 or any(Byte(x) == 0 for x in header[:4]): return False
+    if len(header) != 128 or any(x == 0 for x in header[:4]): return False
     endian = header[126:128]
     if endian not in (b'IM',b'MI'): return False
-    major = Byte(header[125] if endian == b'IM' else header[124])
+    major = header[125] if endian == b'IM' else header[124]
     return major if major in (1,2) else False
 
 _MAT_open = [_MAT4File.open, _MAT5File.open, _MAT73File.open if _h5py_avail else None]
@@ -2039,7 +2039,7 @@ def openmat(filename, mode='r+', vers=None):
         return _MAT_open[vers](filename, mode)
     elif mode in ('w', 'w+'):
         if vers is None: vers = 7.3 if _h5py_avail else 7
-        elif isinstance(vers, String) and len(vers) > 0 and vers[0] == 'v': vers = vers[1:]
+        elif isinstance(vers, str) and len(vers) > 0 and vers[0] == 'v': vers = vers[1:]
         try: vers = float(vers)
         except ValueError: raise ValueError('Invalid version, must be one of 4, 6, 7, 7.3')
         if vers not in (4, 6, 7, 7.3): raise ValueError('Invalid version, must be one of 4, 6, 7, 7.3')

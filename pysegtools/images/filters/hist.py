@@ -18,7 +18,7 @@ from ._stack import UnchangingFilteredImageStack, UnchangingFilteredImageSlice
 from .._stack import ImageStack
 from ..types import get_im_min_max, get_dtype_min_max, get_dtype_max, get_dtype_min, check_image_single_channel
 from ...imstack import Command, Opt, Help
-from ...general import String, delayed
+from ...general import delayed
 
 __all__ = ['imhist', 'histeq_trans', 'histeq_apply', 'histeq', 'histeq_exact']
 
@@ -606,7 +606,7 @@ Exact Histogram Equalization References:
     def __str__(self):
         return '%shistogram equalization with %s%s%s%s' % (
             'exact ' if self.__exact.get('exact', False) else '',
-            ('bins from %s'%('stdin' if self.__hist=='-' else self.__hist)) if isinstance(self.__hist, String) else '%s equal bins'%self.__hist,
+            ('bins from %s'%('stdin' if self.__hist=='-' else self.__hist)) if isinstance(self.__hist, str) else '%s equal bins'%self.__hist,
             ' using a mask' if self.__use_mask else '',
             ' across entire stack' if self.__src_hist is True else ('' if self.__src_hist is None else (' using source histogram from %s'%('stdin' if self.__src_hist=='-' else self.__src_hist))),
             HistEqCommand.__exact_desc(self.__exact),
@@ -624,7 +624,7 @@ Exact Histogram Equalization References:
 
     @staticmethod
     def __get_hist(h):
-        if isinstance(h, String):
+        if isinstance(h, str):
             if h == '-': l = stdin.readline()
             else:
                 with open(h, 'r') as f: l = f.readline()

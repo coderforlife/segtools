@@ -5,7 +5,7 @@ from __future__ import unicode_literals
 
 import numbers, re
 from numpy import dtype, sctypes, promote_types, bool_, ndarray, ascontiguousarray
-from ..general import String, sys_endian, delayed
+from ..general import sys_endian, delayed
 from ..imstack import Help
 
 __all__ = [
@@ -45,7 +45,7 @@ def create_im_dtype(base, big_endian=None, channels=1):
     given in the base dtype. Additionally, this accepts all strings that im_dtype_desc can produce
     in which case the last two arguments are ignored.
     """
-    if isinstance(base, String):
+    if isinstance(base, str):
         result = __re_im_dtype.search(base)
         if result is None: raise ValueError('Image type not known')
         grps = result.groups()
@@ -69,7 +69,7 @@ def create_im_dtype(base, big_endian=None, channels=1):
     if base in __cmplx_types:
         if channels != 1: raise ValueError('Complex types must use 1 channel')
     elif base not in __basic_types: raise ValueError('Image base type not known')
-    endian = big_endian if isinstance(big_endian, String) else ('>' if big_endian else '<')
+    endian = big_endian if isinstance(big_endian, str) else ('>' if big_endian else '<')
     return dtype((base, channels)).newbyteorder(endian)
 def get_im_dtype(im_or_dtype):
     """

@@ -1,10 +1,10 @@
-# This is used to wrap Python function tasks so that their process has the proper working directory
-# and standard streams. Making it a seperate module helps the multiprocessing module on Windows not
-# have to import the entire actual module.
+"""
+This is used to wrap Python function tasks so that their process has the proper working directory
+and standard streams. Making it a seperate module helps the multiprocessing module on Windows not
+have to import the entire actual module.
+"""
 
 import sys, os
-
-String = str if (sys.version_info[0] == 3) else basestring
 
 __modes = [os.O_RDONLY, os.O_WRONLY|os.O_CREAT|os.O_TRUNC, os.O_WRONLY|os.O_APPEND]
 def __reopen(std, path, mode):

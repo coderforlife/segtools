@@ -25,7 +25,7 @@ from numpy import empty
 from .._single import FileImageSource
 from .._stack import HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader
 from ...types import create_im_dtype, get_dtype_endian, get_im_dtype_and_nchan, im_decomplexify, im_decomplexify_dtype
-from ....general import String, Unicode, Byte, sys_endian, prod, delayed
+from ....general import sys_endian, prod, delayed
 from ....general.io import openfile, get_file_size, array_read, array_save, array_read_ascii, array_save_ascii
 
 __sys_is_big_endian = sys_endian == '>'
@@ -51,7 +51,7 @@ def __read_ascii_char(f): return f.read(1).decode('ascii')
 def __read_utf8_char(f):
     s = f.read(1)
     if len(s) == 0: return ''
-    b = Byte(s)
+    b = s[0]
     if b & 0x10000000:
         if   b & 0x11100000 == 0x11000000: s += f.read(1)
         elif b & 0x11110000 == 0x11100000: s += f.read(2)
@@ -98,7 +98,7 @@ def __get_header_fields(): #pylint: disable=too-many-locals
         __metaclass__ = ABCMeta
         def __init__(self, name): self.name = name
         def _read_val(self, f, cast, read_to_newline=True):
-            text, ch = _read_until(f, Unicode.isspace, 500, _skip_to_val)
+            text, ch = _read_until(f, str.isspace, 500, _skip_to_val)
             if ch is None: raise ValueError('Cannot read %s from MHA/MHD file' % self.name)
             if read_to_newline and ch not in ('', '\n', '\r'): _read_until(f, lambda ch: ch in '\r\n')
             try: return cast(text)
@@ -126,7 +126,7 @@ def __get_header_fields(): #pylint: disable=too-many-locals
     class StringField(MHDField):
         def read(self, f, fields): return _read_until(f, lambda ch: ch in '\r\n', None, _skip_to_val)[0].rstrip()
         def check(self, x, fields):
-            x = Unicode(x)
+            x = str(x)
             if '\n' in x or '\r' in x: raise ValueError('Strings field values cannot contain new lines')
             return x
         def write(self, x, fields): return x if len(x) > 0 else None
@@ -139,7 +139,7 @@ def __get_header_fields(): #pylint: disable=too-many-locals
     class CompressedDataField(BoolField):
         def __init__(self): super(CompressedDataField, self).__init__('CompressedData')
         def check(self, x, fields):
-            if isinstance(x, Integral) and not isinstance(x, bool) or isinstance(x, String) and x.isdigit():
+            if isinstance(x, Integral) and not isinstance(x, bool) or isinstance(x, str) and x.isdigit():
                 x = int(x)
                 if x < 0 or x > 9: raise ValueError('CompressedData must be True, False, or a number from 0-9')
                 return False if x == 0 else x
@@ -208,7 +208,7 @@ def __get_header_fields(): #pylint: disable=too-many-locals
         __met2dtype['MET_ULONG'] = uint32
         def __init__(self): super(ElementTypeField, self).__init__('ElementType')
         def check(self, x, fields):
-            if isinstance(x, String):
+            if isinstance(x, str):
                 if x.endswith('_ARRAY'): x = x[:-6]
                 if x not in ElementTypeField.__met2dtype: raise ValueError('MHA/MHD file image type not supported')
                 return ElementTypeField.__met2dtype[x]
@@ -268,7 +268,7 @@ def __get_header_fields(): #pylint: disable=too-many-locals
                 if 'HeaderSize' in fields: raise ValueError('HeaderSize field cannot be used with MHA files')
                 return None
             if not isinstance(x, Iterable): raise ValueError('Invalid value for ElementDataFile field in MHA/MHD header')
-            if isinstance(x, String):
+            if isinstance(x, str):
                 if x.startswith('LIST'): raise ValueError('Invalid value for ElementDataFile field in MHA/MHD header (cannot start with LIST)')
                 if '%' in x: return ElementDataFileField.__parse_pattern(x, shape[0])
                 return x
@@ -280,7 +280,7 @@ def __get_header_fields(): #pylint: disable=too-many-locals
             return [str(fn) for fn in x]
         def write(self, x, fields):
             if x is None: return 'LOCAL'
-            if isinstance(x, String): return x
+            if isinstance(x, str): return x
             if isinstance(x, tuple): return ('%s %d' % x[:2]) if x[3] == 1 else '%s %d %d %d' % x
             if isinstance(x, list):
                 return ('LIST %dD\n'%ElementDataFileField.__get_file_ndims(len(x), fields['DimSize'])) + '\n'.join(x)
@@ -336,7 +336,7 @@ def __get_header_fields(): #pylint: disable=too-many-locals
         def __init__(self):
             super(HeaderSizeField, self).__init__('HeaderSize', int32, at_least=-1, dont_write=0)
         def check(self, x, fields):
-            if isinstance(x, Integral) or isinstance(x, String) and (x.isdigit() or x == '-1'):
+            if isinstance(x, Integral) or isinstance(x, str) and (x.isdigit() or x == '-1'):
                 return super(HeaderSizeField, self).check(x, fields)
             return bytes(x)
         def write(self, x, fields):
@@ -444,13 +444,13 @@ def _get_dtype(fields):
 def read_mha_header(f):
     # Read Header
     fields = OrderedDict()
-    k, sym = _read_until(f, (lambda ch: ch in '=:'), 500, Unicode.isspace)
+    k, sym = _read_until(f, (lambda ch: ch in '=:'), 500, str.isspace)
     while sym not in (None, ''):
         k = k.split('\n')[0].rstrip()
         k = __synonyms.get(k, k)
         fields[k] = __header_fields[k].read(f, fields)
         if k == 'ElementDataFile': break
-        k, sym = _read_until(f, (lambda ch: ch in '=:'), 500, Unicode.isspace)
+        k, sym = _read_until(f, (lambda ch: ch in '=:'), 500, str.isspace)
     else: raise ValueError('MHA/MHD file header does not have required field \'ElementDataFile\'')
 
     # Check/Parse Header
@@ -679,7 +679,7 @@ def save_mha_data(im, filename, fields):
         else:
             ds = write(im, datafile) # single external data file
             if comp: fields['CompressedDataSize'] = ds
-            if not isinstance(datafile, String): datafile.close()
+            if not isinstance(datafile, str): datafile.close()
     elif comp: fields['CompressedDataSize'] = b'0               ' # has space for exobytes
 
     # Order all fields
@@ -728,7 +728,7 @@ def __get_datafile(filename, fields):
         return [os.path.abspath(os.path.join(directory, pattern % i)) for i in xrange(start, stop+1, step)]
     if isinstance(datafile, list):
         return [os.path.abspath(os.path.join(directory, fn)) for fn in datafile]
-    if isinstance(datafile, String): return os.path.abspath(os.path.join(directory, datafile))
+    if isinstance(datafile, str): return os.path.abspath(os.path.join(directory, datafile))
     return datafile
 
 def __get_mha_writer(fields):
@@ -745,7 +745,7 @@ def __get_mha_writer(fields):
         headersize = len(header)
 
     def write(im, datafile):
-        file_handle = not isinstance(datafile, String)
+        file_handle = not isinstance(datafile, str)
         exists = not file_handle and os.path.exists(datafile)
         hs = -im.nbytes if headersize is not None and headersize < 0 else headersize 
         if hs is None or (hs <= 0 and (not exists or (exists and -hs >= get_file_size(datafile)))):

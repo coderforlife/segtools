@@ -13,7 +13,7 @@ from .._stack import FileImageStack, HomogeneousFileImageStack, FileImageSlice, 
 from ...source import ImageSource
 from ..._stack import ImageStack
 from ...types import is_image_desc
-from ....general import String, _bool
+from ....general import _bool
 from ....general.matlab import openmat, get_mat_version, is_invalid_matlab_name
 
 __all__ = ['MAT', 'MATStack']
@@ -86,7 +86,7 @@ class MAT(FileImageSource):
     @classmethod
     def _parse_vers(cls, version):
         if version is None: return 7 # 7.3 if h5py_avail else 7 - not needed here
-        if isinstance(version, String) and len(version) > 0 and version[0] == 'v': version = version[1:]
+        if isinstance(version, str) and len(version) > 0 and version[0] == 'v': version = version[1:]
         try: version = float(version)
         except ValueError: return False
         return version if version in (4, 6, 7, 7.3) else False
@@ -182,9 +182,9 @@ class MATStack(HomogeneousFileImageStack):
             if is_invalid_matlab_name(name): raise ValueError('Invalid name for MAT file entries')
         elif names is not None:
             if mode == 'stack': raise ValueError("If mode is 'stack', image slices names cannot be given")
-            if isinstance(names, String) and ',' in names or '#' not in names: names = names.split(',')
+            if isinstance(names, str) and ',' in names or '#' not in names: names = names.split(',')
             pattern = None
-            if isinstance(names, String):
+            if isinstance(names, str):
                 pattern = MATStack.__parse_pattern(names)
                 if is_invalid_matlab_name(pattern%0): raise ValueError('Invalid names for MAT file entries')
             elif any(is_invalid_matlab_name(n) for n in names): raise ValueError('Invalid names for MAT file entries')
@@ -220,8 +220,8 @@ class MATStack(HomogeneousFileImageStack):
             if mode == 'slices' or is_invalid_matlab_name(name): return False
         elif names is not None:
             if mode == 'stack': return False
-            if isinstance(names, String) and ',' in names or '#' not in names: names = names.split(',')
-            if isinstance(names, String):
+            if isinstance(names, str) and ',' in names or '#' not in names: names = names.split(',')
+            if isinstance(names, str):
                 if is_invalid_matlab_name(MATStack.__parse_pattern(names)%0): return False
             elif any(is_invalid_matlab_name(n) for n in names): return False            
         vers = get_mat_version(f)

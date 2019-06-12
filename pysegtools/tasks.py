@@ -63,8 +63,6 @@ except ImportError: saga = None
 #STDOUT = STDOUT
 DEVNULL = STDOUT-1
 
-String = str if (sys.version_info[0] == 3) else basestring
-
 this_proc = Process(getpid())
 time_format = '%Y-%m-%d %H:%M:%S' # static, constant
 
@@ -140,7 +138,7 @@ def DFS(itr, above=()):
     """
     if any(itr is a for a in above): raise ValueError('recursive iterables not supported')
     above += (itr,)
-    return (x for i in itr for x in (DFS(i, above) if isinstance(i, Iterable) and not isinstance(i, String) else (i,)))
+    return (x for i in itr for x in (DFS(i, above) if isinstance(i, Iterable) and not isinstance(i, str) else (i,)))
 
 # These constants are for when giving a certain amount of memory pressure to a
 # task. So 1 GB can be easily written as 1*GB.
@@ -164,13 +162,13 @@ class Task(object):
                  mem=1*MB, cpu=1):
         #if len(outputs) == 0: raise ValueError('Each task must output at least one file')
         self.name = name         # name of this task
-        if isinstance(inputs, String): inputs = (inputs,)
-        if isinstance(outputs, String): outputs = (outputs,)
+        if isinstance(inputs, str): inputs = (inputs,)
+        if isinstance(outputs, str): outputs = (outputs,)
          # relative inputs / outputs / working directory
         self.inputs = frozenset(normpath(f) for f in inputs)
         self.outputs = frozenset(normpath(f) for f in outputs)
         self.wd = wd
-        self.settings = frozenset((settings,) if isinstance(settings, String) else settings)
+        self.settings = frozenset((settings,) if isinstance(settings, str) else settings)
         self.before = set()       # tasks that come before this task
         self.after = set()        # tasks that come after this task
         # Standard streams
@@ -191,7 +189,7 @@ class Task(object):
     @staticmethod
     def __get_std(wd, std, is_stderr=False):
         if std is None or std is DEVNULL or (std is STDOUT and is_stderr): return std
-        if isinstance(std, String): return normpath(std) if wd is None else join_norm(wd, std)
+        if isinstance(std, str): return normpath(std) if wd is None else join_norm(wd, std)
         raise TypeError('standard stream must be either a filename, None, or subprocess.STDOUT (stderr only)')
     def __eq__(self, other): return type(self) == type(other) and self.name == other.name #pylint: disable=unidiomatic-typecheck
     def __lt__(self, other): return type(self) <  type(other) or  type(self) == type(other) and self.name < other.name #pylint: disable=unidiomatic-typecheck
@@ -305,7 +303,7 @@ class TaskUsingProcess(Task):
         are converted to strings (nested iterables are expanded). Other arguments are passed
         directly to the Task constructor.
         """
-        if isinstance(cmd, String):
+        if isinstance(cmd, str):
             import shlex
             cmd = shlex.split(cmd)
         else:
@@ -318,7 +316,7 @@ class TaskUsingProcess(Task):
         wd = self.workingdir(running)
         try:
             def open_std(std, mode, bufsize):
-                if isinstance(std, String): return open(join_norm(wd, std), mode, bufsize), True
+                if isinstance(std, str): return open(join_norm(wd, std), mode, bufsize), True
                 if std is DEVNULL: return open(os.devnull, mode, bufsize), True
                 return std, False # either None or STDOUT
             stdin,  owns_in  = open_std(self.stdin,  'r', 1)
@@ -354,11 +352,11 @@ class TaskUsingCluster(TaskUsingProcess):
 
         # TODO: when None (redirect to current) what should we do?
         # TODO: what about appending?
-        if isinstance(self.stdin, String): desc.input = self.stdin
+        if isinstance(self.stdin, str): desc.input = self.stdin
         elif self.stdin is not DEVNULL: raise ValueError("Commands running on a cluster only support filename and DEVNULL for STDIN")
-        if isinstance(self.stdout, String): desc.output = self.stdout
+        if isinstance(self.stdout, str): desc.output = self.stdout
         elif self.stdout is not DEVNULL: raise ValueError("Commands running on a cluster only support filename and DEVNULL for STDOUT")
-        if isinstance(self.stderr, String): desc.error = self.stderr
+        if isinstance(self.stderr, str): desc.error = self.stderr
         elif self.stderr is STDOUT: pass # TODO: support stdout redirection
         elif self.stderr is not DEVNULL: raise ValueError("Commands running on a cluster only support filename, DEVUNLL, and STDOUT for STDERR")
 
@@ -395,7 +393,7 @@ class TaskUsingCluster(TaskUsingProcess):
     @staticmethod
     def _get_time(x):
         if   isinstance(x, Real):     return float(x)
-        elif isinstance(x, String):   return strptime(x)
+        elif isinstance(x, str):      return strptime(x)
         elif isinstance(x, datetime): return (x-datetime.utcfromtimestamp(0)).total_seconds()
         else: raise ValueError()
     def terminate(self):
@@ -430,7 +428,7 @@ class TaskUsingPythonProcess(Task):
         from ._task_wrapper import _pyproc
         wd = self.workingdir(running)
         def get_std(std):
-            if isinstance(std, String): return join_norm(wd, std)
+            if isinstance(std, str): return join_norm(wd, std)
             if std is DEVNULL: return os.devnull
             if std is STDOUT: return -2 # the value of STDOUT, but need some known and controled constant
             return None # only option left

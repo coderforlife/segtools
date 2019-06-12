@@ -1,14 +1,7 @@
 """Utilities for library use."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
-
-import os, sys, struct, functools
-from operator import mul
-from collections import Iterable
-#from itertools import repeat
+import os, sys
+from collections.abc import Iterable
 
 sys_endian = '<' if sys.byteorder == 'little' else '>'
 sys_64bit = sys.maxsize > 2**32
@@ -18,26 +11,33 @@ def pairwise(iterable):
     Makes an iterator that gives the first and second items from iterable, then the second and
     third items, until the end. Overall one less pair of items are generated than are in iterable.
     """
-    import itertools
-    a, b = itertools.tee(iterable)
+    from itertools import tee
+    a, b = tee(iterable)
     next(b, None)
-    return itertools.izip(a, b)
+    return zip(a, b)
 
 
 ##### numpy-like functions for iterators #####
-def prod(itr): return functools.reduce(mul, itr, 1)
-def ravel(itr): return (x for i in itr for x in (ravel(i) if isinstance(i, Iterable) and not isinstance(i, String) else (i,)))
-def __reshape(itr, shape, otype): return otype((next(itr) for _ in xrange(shape[0])) if len(shape) == 1 else (reshape(itr, shape[1:], otype) for _ in xrange(shape[0])))
-def reshape(itr, shape, otype=list): return __reshape(iter(itr), tuple(shape) if isinstance(shape, Iterable) else (shape,), otype) # otype can be list or tuple
+def prod(itr):
+    from functools import reduce
+    from operator import mul
+    return reduce(mul, itr, 1)
+def ravel(itr):
+    return (x for i in itr for x in (ravel(i) if isinstance(i, Iterable) and not isinstance(i, str) else (i,)))
+def __reshape(itr, shape, otype):
+    return otype((next(itr) for _ in range(shape[0])) if len(shape) == 1 else (reshape(itr, shape[1:], otype) for _ in range(shape[0])))
+def reshape(itr, shape, otype=list):
+    return __reshape(iter(itr), tuple(shape) if isinstance(shape, Iterable) else (shape,), otype) # otype can be list or tuple
 
 
 ##### string and casting utilities #####
-String,Unicode,Byte = (str,str,int) if (sys.version_info[0] == 3) else (basestring,unicode,ord)
 def re_search(re, s):
-    re_search.match = m = re.search(s)
-    return m is not None
-def itr2str(itr, sep=' '): return sep.join(type(sep)(x) for x in itr)
-def splitstr(s, cast=lambda x:x, sep=None): return [cast(x) for x in s.split(sep)]
+    re_search.match = re.search(s)
+    return re_search.match is not None
+def itr2str(itr, sep=' '):
+    return sep.join(type(sep)(x) for x in itr)
+def splitstr(s, cast=lambda x: x, sep=None):
+    return [cast(x) for x in s.split(sep)]
 def get_list(data, shape, cast=int, sep=None, otype=list):
     """
     Convert a string of values to a list of a particular data type. The data can also come from an
@@ -47,7 +47,7 @@ def get_list(data, shape, cast=int, sep=None, otype=list):
     can also set it to tuple to get an imutable output.
     """
     shape = tuple(shape) if isinstance(shape, Iterable) else (shape,)
-    data = (cast(x) for x in data.split(sep)) if isinstance(data, String) else ravel(data)
+    data = (cast(x) for x in data.split(sep)) if isinstance(data, str) else ravel(data)
     #if isinstance(data, Iterable) else repeat(cast(data), prod(shape))
     return __reshape(data, shape, otype)
 def _bool(x, strict_str=False):
@@ -57,7 +57,7 @@ def _bool(x, strict_str=False):
     (otherwise other strings are sent to bool() which means an empty string is False and all other
     strings are True).
     """
-    if isinstance(x, String):
+    if isinstance(x, str):
         if x.lower() in ('false', 'f', '0'): return False
         if x.lower() in ('true',  't', '1'): return True
         if strict_str: raise ValueError('Invalid string to bool conversion')
@@ -70,17 +70,12 @@ def dtype_cast(x, dtype):
     return a[0] if a.ndim == 1 else tuple(a[0])
 
 
-##### struct utilities #####
-def pack(fmt, *v): return struct.pack(str(fmt), *v)
-def unpack(fmt, b): return struct.unpack(str(fmt), b)
-def unpack1(fmt, b): return struct.unpack(str(fmt), b)[0]
-
-
 ##### filesystem utilities #####
 def make_dir(path):
     """Makes a directory tree. If the path exists as a regular file already False is returned."""
     import errno
-    try: os.makedirs(path)
+    try:
+        os.makedirs(path)
     except OSError as exc:
         return exc.errno == errno.EEXIST and os.path.isdir(path)
     return True
@@ -94,18 +89,23 @@ def only_keep_num(d, allowed, match_slice=slice(None), pattern='*'):
 
     files = ((f, basename(f)[match_slice]) for f in iglob(join(d, pattern)) if isfile(f))
     for f in (f for f, x in files if x.isdigit() and int(x) not in allowed):
-        try: os.unlink(f)
-        except OSError: pass
+        try:
+            os.unlink(f)
+        except OSError:
+            pass
     files = ((f, basename(f)[match_slice]) for f in iglob(join(d, '.'+pattern)) if isfile(f))
     for f in (f for f, x in files if x.isdigit() and int(x) not in allowed):
-        try: os.unlink(f)
-        except OSError: pass
+        try:
+            os.unlink(f)
+        except OSError:
+            pass
 
 
 ##### Python utilities #####
 def all_subclasses(cls):
     subcls = cls.__subclasses__() # pylint: disable=no-member
-    for sc in list(subcls): subcls.extend(all_subclasses(sc))
+    for sc in list(subcls):
+        subcls.extend(all_subclasses(sc))
     return subcls
 def load_plugins(name):
     mod = sys.modules[name]
@@ -114,11 +114,11 @@ def load_plugins(name):
                if f[-3:] == ".py" and f[0] != "_" and os.path.isfile(os.path.join(directory, f))]
     if hasattr(mod, 'load_plugins'): del mod.load_plugins
     glbls = {
-            '__name__': name,
-            '__package__': mod.__package__,
-            '__file__': mod.__file__,
-            '__builtins__': __builtins__,
-            '__all__': plugins,
+        '__name__': name,
+        '__package__': mod.__package__,
+        '__file__': mod.__file__,
+        '__builtins__': __builtins__,
+        '__all__': plugins,
         }
     mod.__all__ = plugins
     for plugin in plugins:
@@ -126,7 +126,7 @@ def load_plugins(name):
             setattr(mod, plugin, getattr(__import__(name, glbls, glbls, [plugin], 0), plugin))
         except ImportError as ex:
             import warnings
-            warnings.warn("Failed to load %s plugin '%s': %s"%(name,plugin,ex))
+            warnings.warn("Failed to load %s plugin '%s': %s"%(name, plugin, ex))
 
 
 ##### OS utilities #####
@@ -134,17 +134,23 @@ def get_terminal_width():
     """Gets the width of the terminal if there is a terminal, in which case 80 is returned."""
     w = __get_terminal_width_windows() if os.name == "nt" else __get_terminal_width_nix()
     # Last resort, mainly for *nix, but also set the default of 80
-    if not w: w = os.environ.get('COLUMNS', 80)
+    if not w:
+        w = os.environ.get('COLUMNS', 80)
     return int(w)
 def __get_terminal_width_windows():
+    # pylint: disable=invalid-name, missing-docstring
     from ctypes import windll, c_short, c_ushort, c_int, c_uint, c_void_p, byref, Structure
-    class COORD(Structure): _fields_ = [("X", c_short), ("Y", c_short)]
-    class SMALL_RECT(Structure): _fields_ = [("Left", c_short), ("Top", c_short), ("Right", c_short), ("Bottom", c_short)]
-    class CONSOLE_SCREEN_BUFFER_INFO(Structure): _fields_ = [("dwSize", COORD), ("dwCursorPosition", COORD), ("wAttributes", c_ushort), ("srWindow", SMALL_RECT), ("dwMaximumWindowSize", COORD)]
+    class COORD(Structure):
+        _fields_ = [("X", c_short), ("Y", c_short)]
+    class SMALL_RECT(Structure):
+        _fields_ = [("Left", c_short), ("Top", c_short), ("Right", c_short), ("Bottom", c_short)]
+    class CONSOLE_SCREEN_BUFFER_INFO(Structure):
+        _fields_ = [("dwSize", COORD), ("dwCursorPosition", COORD), ("wAttributes", c_ushort), ("srWindow", SMALL_RECT), ("dwMaximumWindowSize", COORD)]
     GetStdHandle = windll.kernel32.GetStdHandle
     GetStdHandle.argtypes, GetStdHandle.restype = [c_uint], c_void_p
     GetConsoleScreenBufferInfo = windll.kernel32.GetConsoleScreenBufferInfo
-    GetConsoleScreenBufferInfo.argtypes, GetConsoleScreenBufferInfo.restype = [c_void_p, c_void_p], c_int
+    GetConsoleScreenBufferInfo.argtypes = [c_void_p, c_void_p]
+    GetConsoleScreenBufferInfo.restype = c_int
     def con_width(handle):
         handle = GetStdHandle(handle)
         if handle and handle != -1:
@@ -157,16 +163,20 @@ def __get_terminal_width_nix():
         import fcntl, termios
         def ioctl_GWINSZ(fd):
             try:
-                return struct.unpack(str('hh'), fcntl.ioctl(fd, termios.TIOCGWINSZ, '1234'))[1]
-            except (AttributeError, OSError, IOError, struct.error): return None
+                import struct
+                return struct.unpack('hh', fcntl.ioctl(fd, termios.TIOCGWINSZ, '1234'))[1]
+            except (AttributeError, OSError, IOError, struct.error):
+                return None
         w = ioctl_GWINSZ(1) or ioctl_GWINSZ(2) or ioctl_GWINSZ(0) # stdout, stderr, stdin
         if not w:
             try:
                 fd = os.open(os.ctermid(), os.O_RDONLY) # pylint: disable=no-member
                 w = ioctl_GWINSZ(fd)
                 os.close(fd)
-            except (AttributeError, OSError): pass
-    except ImportError: return None
+            except (AttributeError, OSError):
+                pass
+    except ImportError:
+        return None
     return w
 
 def get_rss_limit(pid=None):
@@ -201,4 +211,4 @@ def get_ncpus_usable():
     the total number of logical CPUs.
     """
     import psutil
-    return min(get_cpu_limit(), psutil.cpu_count(True)) 
+    return min(get_cpu_limit(), psutil.cpu_count(True))

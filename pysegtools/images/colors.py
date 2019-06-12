@@ -9,7 +9,6 @@ from numbers import Integral, Real
 from collections import Iterable
 from numpy import array, bool_
 
-from ..general import String
 from .types import get_im_dtype_and_nchan, get_im_min_max
 from ..imstack import Help
 
@@ -216,7 +215,7 @@ def __no_throw(f,x):
     except StandardError: return False
 
 def __is_color_channel(x):
-    if isinstance(x, String):
+    if isinstance(x, str):
         x = x.strip().lower()
         return x in ('true', 'false', 't', 'f') or __no_throw(complex,x) or __no_throw(long,x) or __no_throw(float,x)
     return isinstance(x, (bool, bool_, Real, complex))
@@ -227,7 +226,7 @@ def is_color(x):
     but get_color(x, im) fails for the same value x because im does not support the color value x.
     """
     if __is_color_channel(x): return True
-    if isinstance(x, String):
+    if isinstance(x, str):
         x = x.strip().lower()
         if __color_name_strip(x) in __colors: return True
         if len(x) > 1 and x[0] == '#': return __no_throw(lambda x:long(x[1:], 16), x)
@@ -239,14 +238,14 @@ def __get_bit_color(x):
     if isinstance(x, Real):
         if x == 1: return bool_(True)
         if x == 0: return bool_(False)
-    elif isinstance(x, String):
+    elif isinstance(x, str):
         if x in ('1', 'true',  't'): return bool_(True)
         if x in ('0', 'false', 'f'): return bool_(False)
     raise ValueError()
 
 def __get_int_color(x, dt):
     mn, mx = get_im_min_max(dt)
-    if isinstance(x, String):
+    if isinstance(x, str):
         try: x = dt.type(x)
         except ValueError: x = float(x)
     if isinstance(x, Integral):
@@ -309,7 +308,7 @@ def get_color(x, im_or_dtype):
 
     # Basic conversion, mainly string conversion
     # At the end of this block we have always have a tuple
-    if isinstance(x, String):
+    if isinstance(x, str):
         x = x.strip().lower()
         cn = __color_name_strip(x)
         if cn in __colors: x = __colors[cn]

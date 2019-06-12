@@ -11,7 +11,7 @@ numeric_pattern = re.compile("(^[^#]*)(#+)([^#]*[.][^#]+)$")
 from ._stack import FileImageStack
 from ._single import FileImageSource
 from ...imstack import Command, Opt, Args, Help
-from ...general import re_search, String
+from ...general import re_search
 
 @staticmethod
 def cast_num_pattern(s):
@@ -121,7 +121,7 @@ Examples:""")
         argument for "readonly" (default True).
         """
         if not isinstance(args, Args):
-            if isinstance(args, String):
+            if isinstance(args, str):
                 import shlex
                 args = shlex.split(args)
             args = Args(['load'] + list(args))
@@ -289,7 +289,7 @@ Examples:""")
         to be saved and the optional argument for "writeonly" (default True).
         """
         if not isinstance(args, Args):
-            if isinstance(args, String):
+            if isinstance(args, str):
                 import shlex
                 args = shlex.split(args)
             args = Args(['save'] + list(args))

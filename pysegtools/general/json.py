@@ -5,11 +5,6 @@ library (which this uses internally).
 Jeffrey Bush, 2017, NCMIR, UCSD
 """
 
-from __future__ import division
-from __future__ import unicode_literals
-from __future__ import absolute_import
-from __future__ import print_function
-        
 __all__ = ['save', 'load', 'add_class_name']
 
 def save(path, data):
@@ -20,8 +15,8 @@ def save(path, data):
     from pysegtools.general import GzipFile
     from json import dump
     with GzipFile(path, 'wb') as f:
-        dump(data, f, separators=(',',':'), default=__json_save_hook)
-        
+        dump(data, f, separators=(',', ':'), default=__json_save_hook)
+
 def load(path):
     """
     Loads given gzipped JSON file supporting NumPy arrays and other objects in addition to the
@@ -41,7 +36,7 @@ def add_class_name(name, cls):
         warn('overriding classname already registered in JSON save/load')
     __json_class_names[name] = cls
 __json_class_names = {}
-    
+
 def __json_save_hook(o):
     """
     Function to use as default in json.dump/json.dumps for encoding a Model, SubModels, Filters,
@@ -55,7 +50,7 @@ def __json_save_hook(o):
     # Storing arrays as lists:
     # * Human readable
     # * No byte order issues
-    # * Data readable in any environment with a JSON decoder 
+    # * Data readable in any environment with a JSON decoder
     # * Integer arrays likely to be much smaller
     # * After compression close to the same size even for floating-point numbers
     # * Might be closer in time in Python 3.x as it uses an improved json module
@@ -69,11 +64,11 @@ def __json_save_hook(o):
     if isinstance(o, ndarray):
         if o.size <= 1024:
             # Arrays with only 1024 elements are saved as lists
-            return {'__ndarray__':o.tolist(),'dtype':o.dtype.str}
+            return {'__ndarray__':o.tolist(), 'dtype':o.dtype.str}
         # Embed raw data as a single base-64 string
         from base64 import b64encode
-        return {'__ndarray__': b64encode(o.tobytes()),'dtype':o.dtype.str,'shape':o.shape}
-    for name,base in __json_class_names.iteritems():
+        return {'__ndarray__': b64encode(o.tobytes()), 'dtype':o.dtype.str, 'shape':o.shape}
+    for name, base in __json_class_names.items():
         if isinstance(o, base): return {name: __json_save_obj(o)}
     raise TypeError('cannot convert object of '+type(o)+' to JSON')
 
@@ -81,7 +76,7 @@ def __json_save_obj(o):
     """For saving one of the object types registered."""
     cls = o.__class__
     name = getattr(cls, '__qualname__', cls.__name__)
-    attr = getattr(o, '__getstate__', lambda:o.__dict__)()
+    attr = getattr(o, '__getstate__', lambda: o.__dict__)()
     return [cls.__module__, name, attr]
 
 def __json_load_hook(o):
@@ -99,13 +94,16 @@ def __json_load_hook(o):
         data = fromstring(b64decode(data), dt_native).reshape(o['shape'])
         if dt.byteorder != '=': data = data.byteswap(True)
         return data
-    return next((__json_load_obj(base, *o[name]) for name,base in __json_class_names.iteritems() if name in o), o)
+    return next(
+        (__json_load_obj(base, *o[name]) for name, base in __json_class_names.items() if name in o),
+        o)
 
 def __json_load_obj(base, mod, cls, attr):
     """For loading one of the object types registered."""
     from importlib import import_module
     c = import_module(mod)
-    for cn in cls.split('.'): c = getattr(c, cn)
+    for cn in cls.split('.'):
+        c = getattr(c, cn)
     if not issubclass(c, base): raise TypeError('Unknown or bad '+base.__name__+' in model')
     o = c.__new__(c)
     getattr(o, '__setstate__', o.__dict__.update)(attr)

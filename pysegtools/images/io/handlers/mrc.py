@@ -24,7 +24,7 @@ from numpy import int8, uint8, int16, uint16, int32, float32, complex64
 
 from .._stack import HomogeneousFileImageStack, FileImageSlice, FileImageStackHeader, Field, FixedField
 from ...types import create_im_dtype, get_im_dtype_and_nchan, get_dtype_endian
-from ....general import Unicode, ListWrapper, ReadOnlyListWrapper
+from ....general import ListWrapper, ReadOnlyListWrapper
 from ....general.io import copy_data, openfile, array_read, array_save, file_remove_ranges, get_file_name
 
 __all__ = ['MRC']
@@ -104,7 +104,7 @@ class MRC(HomogeneousFileImageStack):
             stamp = raw[212:216]
             if stamp in (MRCEndian.Big, MRCEndian.BigAlt): endian = '>'
             elif stamp not in (MRCEndian.Little, MRCEndian.LittleAlt, MRCEndian.LittleAlt2): return False
-        u32_struct = Struct(str(endian+'i'))
+        u32_struct = Struct(endian+'i')
         u32 = lambda b,off: u32_struct.unpack_from(b,off)[0]
         return (u32(raw, 0) > 0 and u32(raw, 4) > 0 and u32(raw, 8) >= 0 and # nx/ny/nz
                 u32(raw, 12) in MRCMode and # mode
@@ -219,8 +219,7 @@ def _f_fix(cast, value): return FixedField(cast, value, False)
 def _b4(value): # 4-byte value not influenced by byte ordering (although if given an integer it assumes little endian)
     from numbers import Integral
     if isinstance(value, Integral):
-        from struct import pack
-        value = pack(str('<i'), int(value))
+        value = struct.pack('<i', int(value))
     elif not isinstance(value, bytes) or len(value) != 4: raise ValueError
     return value
 
@@ -298,7 +297,7 @@ class MRCHeader(FileImageStackHeader):
                 self._is_new = False
                 flds, s = MRCHeader.__fields_old, MRCHeader.__format_old
             self._fields.update(flds)
-            self._struct = Struct(str(s))
+            self._struct = Struct(s)
             self._data = h = OrderedDict(izip(self._fields, self._struct.unpack(raw)))
             #if self._data['mode'] == 5: self._data['mode'] = 0
             self._check()
@@ -357,7 +356,7 @@ class MRCHeader(FileImageStackHeader):
         # Create the header and write it
         ny, nx = shape
         self._fields.update(MRCHeader.__fields_new)
-        self._struct = Struct(str(endian + MRCHeader.__format_new))
+        self._struct = Struct(endian + MRCHeader.__format_new)
         flags = (MRCFlags.SignedByte|MRCFlags.RMSNegIfInvalid) if dt.type == int8 else MRCFlags.RMSNegIfInvalid
         self._data = OrderedDict([
             ('nx',nx), ('ny',ny), ('nz',0),
@@ -409,7 +408,7 @@ class MRCHeader(FileImageStackHeader):
         self._data['rms'] = float32(-1.0)
         self._fields = MRCHeader.__fields_base.copy()
         self._fields.update(MRCHeader.__fields_new)
-        self._struct = Struct(str('<' + MRCHeader.__format_new))
+        self._struct = Struct('<' + MRCHeader.__format_new)
         self._is_new = True
 
     @property
@@ -462,7 +461,7 @@ class MRCHeader(FileImageStackHeader):
     @labels.setter
     def labels(self, lbls):
         if self._imstack._readonly: raise Exception('readonly')
-        lbls = [Unicode(l) for l in lbls]
+        lbls = [str(l) for l in lbls]
         if len(lbls) > LBL_COUNT: raise ValueError('lbls is too long (max label count is %d)' % LBL_COUNT)
         if any(len(l) > LBL_LEN for l in lbls): raise ValueError('lbls contains label that is too long (max label length is %d)' % LBL_LEN)
         self._labels[:] = lbls # copy it this way so that any references to the list are updated as well
@@ -522,12 +521,12 @@ class LabelList(ListWrapper):
         del self._data[i]
         self._hdr['nlabl'] = int32(len(self._data))
     def __setitem__(self, i, value):
-        value = Unicode(value)
+        value = str(value)
         if len(value) > LBL_LEN: raise ValueError('label too long')
         self._data[i] = value
         #self._hdr['nlabl'] = len(self._data)
     def insert(self, i, value):
-        value = Unicode(value)
+        value = str(value)
         if len(value) > LBL_LEN: raise ValueError('label too long')
         if len(self._data) >= LBL_COUNT:
             if i == len(self): del self._data[0] # appending
@@ -535,7 +534,7 @@ class LabelList(ListWrapper):
         self._data.insert(i, value)
         self._hdr['nlabl'] = int32(len(self._data))
     def extend(self, itr):
-        values = [Unicode(value) for value in itr]
+        values = [str(value) for value in itr]
         if len(values) > LBL_COUNT: raise ValueError('adding too many labels')
         if any(len(value) > LBL_LEN for value in values): raise ValueError('label too long')
         if len(self._data) + len(values) > LBL_COUNT:

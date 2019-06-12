@@ -33,7 +33,6 @@ if __name__ == "__main__":
     sys.exit() # should never reach here
     
 from abc import ABCMeta, abstractmethod
-String = str if sys.version_info[0] == 3 else basestring
 from numbers import Integral, Real, Complex
 from collections import Sequence, OrderedDict
 from itertools import chain
@@ -150,9 +149,9 @@ class Args(object):
         """
         if isinstance(key, Integral) and key < len(self._args):
             return key, self._args[key]
-        elif isinstance(key, String) and key in self._kwargs:
+        elif isinstance(key, str) and key in self._kwargs:
             return key, self._kwargs[key]
-        elif isinstance(key, Sequence) and len(key) == 2 and isinstance(key[0], Integral) and isinstance(key[1], String):
+        elif isinstance(key, Sequence) and len(key) == 2 and isinstance(key[0], Integral) and isinstance(key[1], str):
             pos, name = key
             possed, named = pos < len(self._args), name in self._kwargs
             if possed != named: return (pos, self._args[pos]) if possed else (name, self._kwargs[name])
@@ -220,7 +219,7 @@ class Args(object):
         else:
             key, _ = self.__get(key)
             if key is None: raise KeyError(key)
-            if isinstance(key, String): del self._kwargs[key]
+            if isinstance(key, str): del self._kwargs[key]
             else: del self._args[key]
     def clear(self):
         del self._args[:]
@@ -277,7 +276,7 @@ class Opt(object):
         or TypeError and returns that value. If all raise errors, a ValueError is raised. The casts
         can be functions or strings (which are automatically wrapped in a cast_equal function).
         """
-        casts = [Opt.cast_equal(c) if isinstance(c, String) else c for c in casts]
+        casts = [Opt.cast_equal(c) if isinstance(c, str) else c for c in casts]
         def _cast_or(x):
             for c in casts:
                 try: return c(x)
@@ -402,7 +401,7 @@ class Opt(object):
         """
         def _cast_number(x):
             from math import isnan
-            if isinstance(x, String):
+            if isinstance(x, str):
                 if 'i' in x or 'j' in x: x = complex(x)
                 elif '.' in x: x = float(x)
                 else:          x = int(x)
@@ -433,7 +432,7 @@ class Opt(object):
         used, but seperator is not.
         """
         def _cast_tuple_of(x):
-            lst = tuple(cast(i) for i in (x.split(seperator) if isinstance(x, String) else (x if isinstance(x, Sequence) else (x,))))
+            lst = tuple(cast(i) for i in (x.split(seperator) if isinstance(x, str) else (x if isinstance(x, Sequence) else (x,))))
             if len(lst) < min_len or max_len is not None and len(lst) > max_len: raise ValueError
             return lst
         return _cast_tuple_of
@@ -675,7 +674,7 @@ class Help(object):
         Also note that every Command subclass automatically has it's print_help registered under its
         flag and names.
         """
-        if isinstance(topics, String): topics = (topics,)
+        if isinstance(topics, str): topics = (topics,)
         for t in topics: Help._topics[t.strip()] = content
 
     @staticmethod
@@ -684,7 +683,7 @@ class Help(object):
         else:
             content = Help._topics.get(topic.strip())
             if content is None: _err_msg("Help topic not found.")
-            if isinstance(content, String):
+            if isinstance(content, str):
                 for l in content.splitlines(): print(fill(l))
             else: content(out_width)
         sys.exit(0)

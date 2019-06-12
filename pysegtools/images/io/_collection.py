@@ -11,7 +11,7 @@ from ._stack import FileImageStack, FileImageSlice, FileImageStackHeader, Field,
 from ._single import FileImageSource
 from ..types import get_im_dtype
 from ..source import ImageSource
-from ...general import String, Unicode, ravel
+from ...general import ravel
 
 __all__ = ['FileCollectionStack']
 
@@ -44,7 +44,7 @@ class FileCollectionStack(FileImageStack):
         when appending new slices. If you wish to have all the files from a pattern, you can do:
           ims = FileCollectionStack.open((pattern%(i*step+start) for i in xrange(existing_count)), pattern=pattern, start=start, step=step)
         """
-        if isinstance(files, String): files = [files]
+        if isinstance(files, str): files = [files]
         elif not isinstance(files, Iterable): raise ValueError('files must be an iterable of filenames')
         files = [os.path.abspath(f) for f in files]
         num_files_found = next((i for i,f in enumerate(files) if not os.path.isfile(f)), len(files))
@@ -59,7 +59,7 @@ class FileCollectionStack(FileImageStack):
         """
         try:
             if pattern is not None: cast_pattern(pattern); int(start); int(step)
-            if isinstance(files, String): files = [files]
+            if isinstance(files, str): files = [files]
             elif not isinstance(files, Iterable): return False
             files = [os.path.abspath(f) for f in files]
             num_files_found = next((i for i,f in enumerate(files) if not os.path.isfile(f)), len(files))
@@ -84,7 +84,7 @@ class FileCollectionStack(FileImageStack):
          * step: a positive integer (or convertible) for the step index of the image stack to feed
            into pattern
         """
-        if isinstance(files, String): files = [files]
+        if isinstance(files, str): files = [files]
         elif files is None: files = []
         elif not isinstance(files, Iterable): raise ValueError('files must be an iterable of filenames')
         files = [os.path.abspath(f) for f in files]
@@ -100,7 +100,7 @@ class FileCollectionStack(FileImageStack):
         """
         try:
             if pattern is not None: cast_pattern(pattern); int(start); int(step)
-            if isinstance(files, String): files = [files]
+            if isinstance(files, str): files = [files]
             elif files is None: files = []
             elif not isinstance(files, Iterable): return False
             files = [os.path.abspath(f) for f in files]
@@ -217,7 +217,7 @@ class DummyFileImageSource(FileImageSource):
     def _set_data(self, im): raise RuntimeError()
 
 def cast_pattern(s):
-    s = os.path.abspath(Unicode(s))
+    s = os.path.abspath(str(s))
     try: _ = s % 0
     except: raise ValueError('pattern must have a single printf-style replacement option similar to %d')
     return s

@@ -86,20 +86,19 @@ _exts = {
     'deflate' : '.deflate',
     }
 
-String,Unicode,Byte = (str,str,int) if (sys.version_info[0] == 3) else (basestring,unicode,ord)
 _re_not_zero = re.compile(br'[^\0]')
-_uint16 = struct.Struct(str('<H'))
-_uint32 = struct.Struct(str('<L'))
-_uint16_be = struct.Struct(str('>H'))
-_uint32_be = struct.Struct(str('>L'))
+_uint16 = struct.Struct('<H')
+_uint32 = struct.Struct('<L')
+_uint16_be = struct.Struct('>H')
+_uint32_be = struct.Struct('>L')
 def _get_filename(f, default=None):
-    if isinstance(f, String): return f
-    elif hasattr(f, 'name') and isinstance(f.name, String) and (len(f.name) < 2 or f.name[0] != '<' and f.name[-1] != '>'):
+    if isinstance(f, str): return f
+    elif hasattr(f, 'name') and isinstance(f.name, str) and (len(f.name) < 2 or f.name[0] != '<' and f.name[-1] != '>'):
         return f.name
     return default
 def _gzip_header_str(s):
     if s is None: return None
-    s = Unicode(s)
+    s = str(s)
     i = s.find('\x00')
     if i >= 0: s = s[:i]
     s.encode('iso-8859-1') # just to make sure it will be encodable
@@ -162,7 +161,7 @@ def compress_file(inpt, output=None, level=9, method=None):
 
     # Copy data
     with GzipFile(output, 'wb', level, method, **opts) as output:
-        owns_handle = isinstance(inpt, String)
+        owns_handle = isinstance(inpt, str)
         if owns_handle: inpt = io.open(inpt, 'rb')
         try:
             while True:
@@ -194,7 +193,7 @@ def decompress_file(inpt, output=None, method=None):
         if not output: raise ValueError('Unable to determine output filename')
 
         # Copy data
-        owns_handle = isinstance(output, String)
+        owns_handle = isinstance(output, str)
         if owns_handle: output = io.open(output, 'wb')
         try:
             while True:
@@ -258,7 +257,7 @@ def decompress(inpt, method=None):
     else: raise ValueError('Compression method must be one of deflate, zlib, gzip, or None')
 def __decompress_gzip(inpt):
     if len(inpt) < 18 or inpt[:3] != b'\x1F\x8B\x08': raise IOError('Not a gzipped file')
-    flags = Byte(inpt[3])
+    flags = inpt[3]
     if flags & 0xE0: raise IOError('Unknown flags')
     off = (_uint16.unpack_from(inpt, 10)[0] + 12) if flags & _FEXTRA else 10
     if flags & _FNAME:    off = inpt.index(b'\x00', off) + 1
@@ -284,7 +283,7 @@ def __decompress_zlib(inpt):
 
 def guess_file_compression_method(f):
     #pylint: disable=redefined-argument-from-local
-    if isinstance(f, String):
+    if isinstance(f, str):
         with io.open(f, 'rb') as f: return guess_compression_method(f.read(3))
     else: return guess_compression_method(f.read(3))
 
@@ -375,7 +374,7 @@ class GzipFile(io.BufferedIOBase):
         start_off = GzipFile.__check_start_off(start_off, mode)
 
         # Setup properties
-        self.owns_handle = isinstance(file, String)
+        self.owns_handle = isinstance(file, str)
         self.name = _get_filename(file, '')
         if writing and method == 'gzip':
             self.__gzip_options = GzipFile.__check_gzip_opts(kwargs, self.name)
@@ -406,7 +405,7 @@ class GzipFile(io.BufferedIOBase):
 
     @staticmethod
     def __check_mode(f, mode):
-        is_filename = isinstance(f, String)
+        is_filename = isinstance(f, str)
         if not mode: mode = f.mode if not is_filename and hasattr(f, 'mode') else 'rb'
         if any(c not in 'rwa+btU' for c in mode) or sum(mode.count(c) for c in 'rwa') != 1 or sum(mode.count(c) for c in 'bt') > 1: raise ValueError('Mode contains invalid characters')
         if 'b' not in mode: raise ValueError('Text mode not supported')
@@ -439,7 +438,7 @@ class GzipFile(io.BufferedIOBase):
             raise ValueError('Gzip options must only include text, os, mtime, filename, comment, and extras')
 
         gzip_os = kwargs.get('os', default_gzip_os)
-        gzip_os = gzip_oses[gzip_os] if isinstance(gzip_os, String) else int(gzip_os)
+        gzip_os = gzip_oses[gzip_os] if isinstance(gzip_os, str) else int(gzip_os)
         if gzip_os > 255 or gzip_os < 0: raise ValueError('Gzip OS is an invalid value')
 
         mtime = kwargs.get('mtime', datetime.now())
@@ -714,12 +713,12 @@ class GzipFile(io.BufferedIOBase):
         header = self.__read_base(10)
         chk16 = zlib.crc32(header) & 0xffffffff
         if header[:3] != b'\x1F\x8B\x08': raise IOError('Not a gzipped file')
-        flags = Byte(header[3])
+        flags = header[3]
         if flags & 0xE0: raise IOError('Unknown flags')
         opts['text'] = (flags & _FTEXT) != 0
         opts['mtime'] = datetime.fromtimestamp(_uint32.unpack_from(header, 4)[0])
-        opts['xf'] = Byte(header[8])
-        opts['os'] = Byte(header[9])
+        opts['xf'] = header[8]
+        opts['os'] = header[9]
         if flags & _FEXTRA:
             # Read the extra field
             xlen = self.__read_base(2)
