@@ -3,6 +3,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from enum import IntFlag
 from abc import ABCMeta, abstractmethod
 from collections import Iterable, OrderedDict
 from itertools import islice
@@ -11,13 +12,12 @@ from weakref import proxy
 
 from numpy import ndarray
 
-from ..general import Flags
 from .types import is_image, check_image, get_im_dtype, im_dtype_desc
 from .source import ImageSource, DeferredPropertiesImageSource
 
 __all__ = ["ImageStack", "HomogeneousImageStack", "ImageSlice", "Homogeneous"]
 
-class Homogeneous(int, Flags):
+class Homogeneous(IntFlag):
     None_ = 0
     Shape = 1
     DType = 2

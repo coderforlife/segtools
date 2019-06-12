@@ -15,7 +15,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-from enum import Enum
+from enum import IntEnum
 from collections import OrderedDict, defaultdict
 from itertools import product, izip
 import os.path
@@ -37,7 +37,7 @@ METDistanceUnits = Enum('METDistanceUnits',
                         {'?':0, 'um':1, 'mm':2, 'cm':3, 'UNKNOWN':0},
                         module=__name__, typ=int)
 
-class METModality(int, Enum):
+class METModality(IntEnum):
     MET_MOD_CT      = 0
     MET_MOD_MR      = 1
     MET_MOD_NM      = 2

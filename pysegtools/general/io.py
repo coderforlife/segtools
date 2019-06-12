@@ -6,11 +6,12 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import os, sys, io
+from enum import IntFlag
 from contextlib import contextmanager
 from numbers import Integral
 from numpy import fromfile as npy_fromfile, nditer, empty, ascontiguousarray, asfortranarray
 
-from . import String, GzipFile, Flags, prod
+from . import String, GzipFile, prod
 
 __all__ = ['FileMode', 'umask', 'fromfile', 'tofile',
            'check_file_obj', 'isfileobj', 'openfile', 'get_file_size', 'get_file_name',
@@ -19,7 +20,7 @@ __all__ = ['FileMode', 'umask', 'fromfile', 'tofile',
 
 __is_py3 = sys.version_info[0] == 3
 
-class FileMode(int, Flags):
+class FileMode(IntFlag):
     """
     File mode as a flags object instead of the Python standard string method. Methods are provided
     for converting between the Python string definitions.

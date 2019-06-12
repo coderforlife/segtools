@@ -9,8 +9,8 @@ from setuptools import setup
 
 import numpy
 
-# We require Python v3.5 or newer
-if sys.version_info[:2] < (3, 5): raise RuntimeError("This requires Python v3.5 or newer")
+# We require Python v3.6 or newer
+if sys.version_info[:2] < (3, 6): raise RuntimeError("This requires Python v3.6 or newer")
 
 # Prepare for compiling the source code
 compiler_name = get_default_compiler() # TODO: this isn't the compiler that will necessarily be used, but is a good guess...
@@ -79,7 +79,8 @@ setup(name='pysegtools',
       zip_safe=False, # dynamic-load system prevents this
       package_data={'': ['*.pyx', '*.pyxdep', '*.pxi', '*.pxd', '*.h', '*.txt']}, # Cython files
       setup_requires=['numpy>=1.7'],
-      install_requires=['numpy>=1.7', 'scipy>=0.16', 'psutil>=2.0', 'cython>=0.22'],
+      install_requires=['numpy>=1.7', 'scipy>=0.16', 'cython>=0.22',
+                        'psutil>=2.0', 'python-intervals>=1.5.1'],
       extras_require={
           'OPT': ['pyfftw>=0.9.2'],
           'PIL': ['pillow>=2.0'],
